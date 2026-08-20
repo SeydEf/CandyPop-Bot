@@ -161,13 +161,35 @@ async def get_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
         return []
 
 
-async def update_client(email: str, update_data: dict[str, Any]) -> dict[str, Any]:
+async def update_client(
+    email: str,
+    client_data: dict[str, Any],
+    inbound_ids: list[int] | None = None,
+) -> dict[str, Any]:
     """
     Update a client by email. Must send the full client payload
     (the server replaces the row, it does not patch).
+
+    The X-UI Go backend expects:
+      - The payload wrapped as {"client": {...}, "inboundIds": [...]}
+      - The 'id' field to be a string (the client's UUID), not the integer DB row ID.
     """
+    payload_client = dict(client_data)
+
+    # The Go backend expects 'id' as a string (UUID), but the GET response
+    # returns 'id' as an integer (DB row ID). Replace it with the uuid field.
+    if "uuid" in payload_client:
+        payload_client["id"] = payload_client["uuid"]
+    elif isinstance(payload_client.get("id"), int):
+        # Remove integer id if we can't replace it — let server handle it
+        payload_client.pop("id", None)
+
+    payload: dict[str, Any] = {"client": payload_client}
+    if inbound_ids is not None:
+        payload["inboundIds"] = inbound_ids
+
     data = await _request(
-        "POST", f"/panel/api/clients/update/{email}", json_data=update_data
+        "POST", f"/panel/api/clients/update/{email}", json_data=payload
     )
     return data
 

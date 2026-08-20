@@ -135,7 +135,7 @@ async def view_subscription(callback: types.CallbackQuery) -> None:
     client_full = await xui_api.get_client_full(email)
 
     if not client:
-        await callback.answer("❌ اشتراک در پنل یافت نشد.", show_alert=True)
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
         return
 
     total_bytes = client.get("totalGB", 0)
