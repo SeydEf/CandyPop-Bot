@@ -26,8 +26,8 @@ CARD_HOLDER: str = os.getenv("CARD_HOLDER", "")
 SUB_BASE_URL: str = os.getenv("SUB_BASE_URL", "").rstrip("/")
 
 # --- Test Subscription ---
-TEST_DATA_GB: int = 1          # 1 GB
-TEST_DURATION_DAYS: int = 1    # 1 day
+TEST_DATA_GB: int = 1  # 1 GB
+TEST_DURATION_DAYS: int = 1  # 1 day
 
 # --- Invoice ---
 INVOICE_EXPIRY_MINUTES: int = 20

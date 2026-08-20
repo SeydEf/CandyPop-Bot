@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
 
 from aiogram import Bot, F, Router, types
 from aiogram.fsm.context import FSMContext
@@ -84,7 +83,9 @@ async def buy_start(message: types.Message, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "buy_back_duration")
-async def buy_back_to_duration(callback: types.CallbackQuery, state: FSMContext) -> None:
+async def buy_back_to_duration(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
     """Go back to duration selection."""
     await state.clear()
     await callback.message.edit_text(  # type: ignore[union-attr]
@@ -162,7 +163,9 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             await message.answer("❌ حداکثر حجم قابل سفارش ۵۰۰ گیگابایت است.")
             return
     except (ValueError, TypeError):
-        await message.answer("❌ لطفاً یک عدد صحیح وارد کنید. مثال: <code>25</code>", parse_mode="HTML")
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح وارد کنید. مثال: <code>25</code>", parse_mode="HTML"
+        )
         return
 
     data = await state.get_data()
@@ -255,9 +258,7 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.regexp(r"^buy_wallet_confirm_\d+_\d+_\d+$"))
-async def buy_wallet_confirm(
-    callback: types.CallbackQuery, bot: Bot
-) -> None:
+async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
     """Confirm wallet purchase — debit, create client, deliver config."""
     if not callback.from_user:
         return
@@ -286,7 +287,7 @@ async def buy_wallet_confirm(
         total_bytes = gb_to_bytes(gb)
         expiry_ms = int((time.time() + duration * 86400) * 1000)
 
-        result = await xui_api.add_client(
+        await xui_api.add_client(
             email=email,
             total_gb=total_bytes,
             expiry_time=expiry_ms,
@@ -339,10 +340,10 @@ async def buy_wallet_confirm(
         logger.exception("Failed to create client for user %d", tg_id)
         # Refund on failure
         from db.models import credit_wallet
+
         await credit_wallet(tg_id, price)
         await callback.message.edit_text(  # type: ignore[union-attr]
-            f"❌ خطا در ساخت اشتراک. مبلغ به کیف پول شما بازگشت داده شد.\n"
-            f"خطا: {e}",
+            f"❌ خطا در ساخت اشتراک. مبلغ به کیف پول شما بازگشت داده شد.\nخطا: {e}",
             parse_mode="HTML",
         )
 
@@ -353,9 +354,7 @@ async def buy_wallet_confirm(
 
 
 @router.callback_query(F.data.regexp(r"^buy_pay_card_\d+_\d+_\d+$"))
-async def buy_card_payment(
-    callback: types.CallbackQuery, state: FSMContext
-) -> None:
+async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
     """Generate invoice and show card payment details."""
     if not callback.from_user:
         return
@@ -369,9 +368,7 @@ async def buy_card_payment(
     invoice = await create_invoice(tg_id, price, duration, gb)
     invoice_id = invoice["id"]
 
-    card_display = " ".join(
-        [CARD_NUMBER[i: i + 4] for i in range(0, len(CARD_NUMBER), 4)]
-    )
+    " ".join([CARD_NUMBER[i : i + 4] for i in range(0, len(CARD_NUMBER), 4)])
 
     text = (
         f"💳 <b>پرداخت کارت به کارت</b>\n\n"
@@ -392,7 +389,9 @@ async def buy_card_payment(
     await callback.answer()
 
     # Schedule expiration
-    asyncio.create_task(_expire_invoice_after(invoice_id, callback, INVOICE_EXPIRY_MINUTES * 60))
+    asyncio.create_task(
+        _expire_invoice_after(invoice_id, callback, INVOICE_EXPIRY_MINUTES * 60)
+    )
 
 
 async def _expire_invoice_after(

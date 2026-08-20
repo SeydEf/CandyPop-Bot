@@ -89,6 +89,7 @@ class ChannelCheckMiddleware(BaseMiddleware):
 
         # Ensure user exists in database
         from db.models import ensure_user
+
         username = user_obj.username if user_obj else None
         full_name = user_obj.full_name if user_obj else None
         await ensure_user(user_id, username, full_name)

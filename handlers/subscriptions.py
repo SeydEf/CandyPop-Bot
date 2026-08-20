@@ -98,7 +98,7 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("sub_view_"))
 async def view_subscription(callback: types.CallbackQuery) -> None:
     """Show subscription dashboard with live stats."""
-    email = callback.data[len("sub_view_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_view_") :]  # type: ignore[union-attr]
     sub = await get_subscription_by_email(email)
 
     if not sub:
@@ -151,13 +151,12 @@ async def view_subscription(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("sub_rename_"))
 async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None:
     """Start rename flow — ask for new name."""
-    email = callback.data[len("sub_rename_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_rename_") :]  # type: ignore[union-attr]
     await state.set_state(SubStates.waiting_rename)
     await state.update_data(rename_email=email)
 
     await callback.message.edit_text(  # type: ignore[union-attr]
-        "✏️ <b>نام جدید سرویس را وارد کنید:</b>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "✏️ <b>نام جدید سرویس را وارد کنید:</b>\n\nبرای انصراف /cancel را بزنید.",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -196,7 +195,7 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("sub_regen_"))
 async def regen_confirm(callback: types.CallbackQuery) -> None:
     """Ask for confirmation before regenerating subscription link."""
-    email = callback.data[len("sub_regen_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_regen_") :]  # type: ignore[union-attr]
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⚠️ <b>آیا مطمئن هستید؟</b>\n\n"
         "با تغییر لینک اشتراک، لینک‌ قبلی و UUID های قبلی غیرفعال شده "
@@ -211,7 +210,7 @@ async def regen_confirm(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("sub_confirm_regen_"))
 async def regen_execute(callback: types.CallbackQuery) -> None:
     """Execute the link regeneration — generate new UUID for the client."""
-    email = callback.data[len("sub_confirm_regen_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_confirm_regen_") :]  # type: ignore[union-attr]
 
     # Get current client data
     client = await xui_api.get_client(email)
@@ -233,6 +232,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
 
         # Update local DB
         from db.database import get_db
+
         db = await get_db()
         await db.execute(
             "UPDATE subscriptions SET sub_id = ? WHERE email = ?",
@@ -262,7 +262,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("sub_delete_"))
 async def delete_confirm(callback: types.CallbackQuery) -> None:
     """Ask for confirmation before deleting subscription."""
-    email = callback.data[len("sub_delete_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_delete_") :]  # type: ignore[union-attr]
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⚠️ <b>آیا مطمئن هستید که می‌خواهید این سرویس را حذف کنید؟</b>\n\n"
         "این عملیات قابل بازگشت نیست!",
@@ -275,7 +275,7 @@ async def delete_confirm(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("sub_confirm_del_"))
 async def delete_execute(callback: types.CallbackQuery) -> None:
     """Execute the subscription deletion."""
-    email = callback.data[len("sub_confirm_del_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_confirm_del_") :]  # type: ignore[union-attr]
 
     try:
         # Delete from X-UI
@@ -299,7 +299,7 @@ async def delete_execute(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("sub_qr_"))
 async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
     """Generate and send QR code for subscription link."""
-    email = callback.data[len("sub_qr_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_qr_") :]  # type: ignore[union-attr]
     sub = await get_subscription_by_email(email)
     client = await xui_api.get_client(email)
 
@@ -331,7 +331,7 @@ async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
 @router.callback_query(F.data.startswith("sub_links_"))
 async def show_links(callback: types.CallbackQuery) -> None:
     """Show individual config links for the subscription."""
-    email = callback.data[len("sub_links_"):]  # type: ignore[union-attr]
+    email = callback.data[len("sub_links_") :]  # type: ignore[union-attr]
 
     links = await xui_api.get_client_links(email)
 

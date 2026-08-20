@@ -24,12 +24,12 @@ def format_size(bytes_val: int) -> str:
     """
     if bytes_val <= 0:
         return to_persian_digits("0 GB")
-    gb = bytes_val / (1024 ** 3)
+    gb = bytes_val / (1024**3)
     if gb >= 1:
         if gb == int(gb):
             return to_persian_digits(f"{int(gb)} GB")
         return to_persian_digits(f"{gb:.1f} GB")
-    mb = bytes_val / (1024 ** 2)
+    mb = bytes_val / (1024**2)
     return to_persian_digits(f"{mb:.0f} MB")
 
 

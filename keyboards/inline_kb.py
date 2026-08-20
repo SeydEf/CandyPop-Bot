@@ -22,7 +22,10 @@ def duration_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=label, callback_data=f"buy_dur_{days}")
         )
     return InlineKeyboardMarkup(
-        inline_keyboard=[buttons, [InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel")]]
+        inline_keyboard=[
+            buttons,
+            [InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel")],
+        ]
     )
 
 
@@ -43,17 +46,21 @@ def volume_keyboard(duration: int) -> InlineKeyboardMarkup:
             row = []
 
     # Custom volume option
-    rows.append([
-        InlineKeyboardButton(
-            text="📝 حجم دلخواه",
-            callback_data=f"buy_vol_{duration}_custom",
-        )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📝 حجم دلخواه",
+                callback_data=f"buy_vol_{duration}_custom",
+            )
+        ]
+    )
     # Back button
-    rows.append([
-        InlineKeyboardButton(text="🔙 بازگشت", callback_data="buy_back_duration"),
-        InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(text="🔙 بازگشت", callback_data="buy_back_duration"),
+            InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -84,9 +91,7 @@ def payment_method_keyboard(duration: int, gb: int, price: int) -> InlineKeyboar
     )
 
 
-def wallet_confirm_keyboard(
-    duration: int, gb: int, price: int
-) -> InlineKeyboardMarkup:
+def wallet_confirm_keyboard(duration: int, gb: int, price: int) -> InlineKeyboardMarkup:
     """Wallet payment confirmation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -103,7 +108,9 @@ def wallet_confirm_keyboard(
     )
 
 
-def card_payment_keyboard(invoice_id: str, card_number: str, amount: int) -> InlineKeyboardMarkup:
+def card_payment_keyboard(
+    invoice_id: str, card_number: str, amount: int
+) -> InlineKeyboardMarkup:
     """Card-to-card payment interface with copy buttons."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -164,12 +171,14 @@ def subscriptions_list_keyboard(
     for sub in subs:
         email = sub["email"]
         name = sub["service_name"]
-        rows.append([
-            InlineKeyboardButton(
-                text=f"📦 {name}",
-                callback_data=f"sub_view_{email}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"📦 {name}",
+                    callback_data=f"sub_view_{email}",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

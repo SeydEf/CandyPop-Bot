@@ -19,7 +19,7 @@ from db.models import (
     update_invoice_status,
 )
 from services import xui_api
-from utils.formatting import format_price, format_size_gb, to_persian_digits
+from utils.formatting import format_size_gb, to_persian_digits
 from utils.helpers import gb_to_bytes, generate_email, generate_service_name
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         await callback.answer("❌ شما دسترسی ندارید.", show_alert=True)
         return
 
-    invoice_id = callback.data[len("admin_approve_"):]  # type: ignore[union-attr]
+    invoice_id = callback.data[len("admin_approve_") :]  # type: ignore[union-attr]
     invoice = await get_invoice(invoice_id)
 
     if not invoice:
@@ -54,7 +54,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     tg_id = invoice["tg_id"]
     duration = invoice["duration_days"]
     gb = invoice["data_gb"]
-    amount = invoice["amount"]
+    invoice["amount"]
 
     # Update invoice status
     await update_invoice_status(invoice_id, "approved")
@@ -135,7 +135,9 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             pass
 
     except Exception as e:
-        logger.exception("Failed to create client after approval for invoice %s", invoice_id)
+        logger.exception(
+            "Failed to create client after approval for invoice %s", invoice_id
+        )
         await update_invoice_status(invoice_id, "paid")  # Revert status
         await callback.answer(f"❌ خطا در ساخت اشتراک: {e}", show_alert=True)
         return
@@ -153,7 +155,7 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
         await callback.answer("❌ شما دسترسی ندارید.", show_alert=True)
         return
 
-    invoice_id = callback.data[len("admin_reject_"):]  # type: ignore[union-attr]
+    invoice_id = callback.data[len("admin_reject_") :]  # type: ignore[union-attr]
     invoice = await get_invoice(invoice_id)
 
     if not invoice:

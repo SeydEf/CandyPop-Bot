@@ -17,9 +17,7 @@ from config import INVOICE_EXPIRY_MINUTES
 
 async def get_user(tg_id: int) -> dict[str, Any] | None:
     db = await get_db()
-    row = await db.execute_fetchall(
-        "SELECT * FROM users WHERE tg_id = ?", (tg_id,)
-    )
+    row = await db.execute_fetchall("SELECT * FROM users WHERE tg_id = ?", (tg_id,))
     if row:
         return dict(row[0])
     return None
@@ -48,16 +46,6 @@ async def ensure_user(
     await db.commit()
 
 
-async def get_user(tg_id: int) -> dict[str, Any] | None:
-    db = await get_db()
-    row = await db.execute_fetchall(
-        "SELECT * FROM users WHERE tg_id = ?", (tg_id,)
-    )
-    if row:
-        return dict(row[0])
-    return None
-
-
 async def create_user(
     tg_id: int,
     username: str | None,
@@ -78,9 +66,7 @@ async def create_user(
 async def set_test_used(tg_id: int) -> None:
     await ensure_user(tg_id)
     db = await get_db()
-    await db.execute(
-        "UPDATE users SET test_used = 1 WHERE tg_id = ?", (tg_id,)
-    )
+    await db.execute("UPDATE users SET test_used = 1 WHERE tg_id = ?", (tg_id,))
     await db.commit()
 
 

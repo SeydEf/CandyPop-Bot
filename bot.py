@@ -45,6 +45,7 @@ async def on_shutdown(bot: Bot) -> None:
 
 PROXY_URL = "http://127.0.0.1:10808"
 
+
 async def main() -> None:
     """Main entry point."""
     if not BOT_TOKEN:
@@ -56,7 +57,7 @@ async def main() -> None:
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        session=session
+        session=session,
     )
     dp = Dispatcher()
 
