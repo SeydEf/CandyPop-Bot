@@ -164,29 +164,26 @@ async def get_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
 async def update_client(
     email: str,
     client_data: dict[str, Any],
-    inbound_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """
-    Update a client by email. Must send the full client payload
-    (the server replaces the row, it does not patch).
+    Update a client by email. Sends a flat JSON body with client fields.
 
     The X-UI Go backend expects:
-      - The payload wrapped as {"client": {...}, "inboundIds": [...]}
+      - A flat JSON object with client fields (email, totalGB, etc.)
       - The 'id' field to be a string (the client's UUID), not the integer DB row ID.
     """
-    payload_client = dict(client_data)
+    payload = dict(client_data)
 
     # The Go backend expects 'id' as a string (UUID), but the GET response
     # returns 'id' as an integer (DB row ID). Replace it with the uuid field.
-    if "uuid" in payload_client:
-        payload_client["id"] = payload_client["uuid"]
-    elif isinstance(payload_client.get("id"), int):
-        # Remove integer id if we can't replace it — let server handle it
-        payload_client.pop("id", None)
+    if "uuid" in payload:
+        payload["id"] = payload["uuid"]
+    elif isinstance(payload.get("id"), int):
+        payload.pop("id", None)
 
-    payload: dict[str, Any] = {"client": payload_client}
-    if inbound_ids is not None:
-        payload["inboundIds"] = inbound_ids
+    # Ensure email is present (required by the API)
+    if "email" not in payload:
+        payload["email"] = email
 
     data = await _request(
         "POST", f"/panel/api/clients/update/{email}", json_data=payload
