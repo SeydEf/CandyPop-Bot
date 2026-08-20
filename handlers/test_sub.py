@@ -15,7 +15,7 @@ from config import INBOUND_IDS, SUB_BASE_URL, TEST_DATA_GB, TEST_DURATION_DAYS
 from db.models import create_subscription, is_test_used, set_test_used
 from keyboards.reply_kb import BTN_TEST
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits
+from utils.formatting import format_size_gb
 from utils.helpers import gb_to_bytes, generate_email, generate_service_name
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ async def test_subscription(message: types.Message) -> None:
             f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
             f"📦 نام سرویس: {service_name}\n"
             f"📊 حجم: {format_size_gb(TEST_DATA_GB)}\n"
-            f"⏱ مدت: {to_persian_digits(TEST_DURATION_DAYS)} روز\n\n"
+            f"⏱ مدت: {TEST_DURATION_DAYS} روز\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
             f"{links_text}",
             parse_mode="HTML",

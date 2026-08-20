@@ -14,7 +14,7 @@ def to_persian_digits(text: str | int | float) -> str:
 def format_price(amount: int) -> str:
     """Format price in Tomans with commas and Persian digits: ۵۰,۰۰۰ تومان"""
     formatted = f"{amount:,}"
-    return to_persian_digits(formatted) + " تومان"
+    return f"{formatted} تومان"
 
 
 def format_size(bytes_val: int) -> str:
@@ -23,21 +23,21 @@ def format_size(bytes_val: int) -> str:
     Returns GB if ≥ 1 GB, otherwise MB.
     """
     if bytes_val <= 0:
-        return to_persian_digits("0 GB")
+        return "0 GB"
     gb = bytes_val / (1024**3)
     if gb >= 1:
         if gb == int(gb):
-            return to_persian_digits(f"{int(gb)} GB")
-        return to_persian_digits(f"{gb:.1f} GB")
+            return f"{int(gb)} GB"
+        return f"{gb:.1f} GB"
     mb = bytes_val / (1024**2)
-    return to_persian_digits(f"{mb:.0f} MB")
+    return f"{mb:.0f} MB"
 
 
 def format_size_gb(gb: int | float) -> str:
     """Format a value already in GB."""
     if gb == int(gb):
-        return to_persian_digits(f"{int(gb)} GB")
-    return to_persian_digits(f"{gb:.1f} GB")
+        return f"{int(gb)} GB"
+    return f"{gb:.1f} GB"
 
 
 def format_remaining_days(expiry_ms: int) -> str:
@@ -49,9 +49,9 @@ def format_remaining_days(expiry_ms: int) -> str:
     now_ms = int(time.time() * 1000)
     remaining_ms = expiry_ms - now_ms
     if remaining_ms <= 0:
-        return to_persian_digits("0") + " روز"
+        return "0 روز"
     days = remaining_ms // (1000 * 60 * 60 * 24)
-    return to_persian_digits(str(days)) + " روز"
+    return f"{days} روز"
 
 
 def format_traffic_usage(up: int, down: int, total: int) -> str:

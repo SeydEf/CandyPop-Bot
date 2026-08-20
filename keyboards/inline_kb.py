@@ -7,7 +7,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import VOLUME_TIERS, DURATION_OPTIONS
-from utils.formatting import to_persian_digits, format_price
+from utils.formatting import format_price
 
 
 # ──────────────────────────── Buy Flow ────────────────────────────
@@ -17,7 +17,7 @@ def duration_keyboard() -> InlineKeyboardMarkup:
     """Step 1: Duration selection (30/60/90 days)."""
     buttons = []
     for days in DURATION_OPTIONS:
-        label = to_persian_digits(f"{days} روز")
+        label = f"{days} روز"
         buttons.append(
             InlineKeyboardButton(text=label, callback_data=f"buy_dur_{days}")
         )
@@ -35,7 +35,7 @@ def volume_keyboard(duration: int) -> InlineKeyboardMarkup:
     row: list[InlineKeyboardButton] = []
 
     for i, (gb, price) in enumerate(VOLUME_TIERS.items()):
-        label = f"{to_persian_digits(gb)} GB — {format_price(price)}"
+        label = f"{gb} GB — {format_price(price)}"
         btn = InlineKeyboardButton(
             text=label,
             callback_data=f"buy_vol_{duration}_{gb}",

@@ -59,4 +59,3 @@ DURATION_OPTIONS: list[int] = [30, 60, 90]
 
 # --- Database ---
 DB_PATH: str = os.getenv("DB_PATH", "data/candypop.db")
-

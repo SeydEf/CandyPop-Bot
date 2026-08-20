@@ -19,7 +19,7 @@ from db.models import (
     update_invoice_status,
 )
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits
+from utils.formatting import format_size_gb
 from utils.helpers import gb_to_bytes, generate_email, generate_service_name
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             f"✅ <b>پرداخت شما تأیید شد و اشتراک فعال گردید!</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
             f"📦 نام سرویس: {service_name}\n"
-            f"⏱ مدت: {to_persian_digits(duration)} روز\n"
+            f"⏱ مدت: {duration} روز\n"
             f"📊 حجم: {format_size_gb(gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
             f"{links_text}"

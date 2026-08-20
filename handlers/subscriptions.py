@@ -33,7 +33,6 @@ from utils.formatting import (
     format_remaining_days,
     format_size,
     format_traffic_usage,
-    to_persian_digits,
 )
 from utils.helpers import generate_qr
 
@@ -64,8 +63,7 @@ async def my_subscriptions(message: types.Message) -> None:
         return
 
     await message.answer(
-        f"📋 <b>اشتراک‌های شما ({to_persian_digits(len(subs))}):</b>\n\n"
-        "یکی را انتخاب کنید:",
+        f"📋 <b>اشتراک‌های شما ({len(subs)}):</b>\n\nیکی را انتخاب کنید:",
         reply_markup=subscriptions_list_keyboard(subs),
         parse_mode="HTML",
     )
@@ -84,8 +82,7 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
         )
     else:
         await callback.message.edit_text(  # type: ignore[union-attr]
-            f"📋 <b>اشتراک‌های شما ({to_persian_digits(len(subs))}):</b>\n\n"
-            "یکی را انتخاب کنید:",
+            f"📋 <b>اشتراکهای شما ({len(subs)}):</b>\n\nیکی را انتخاب کنید:",
             reply_markup=subscriptions_list_keyboard(subs),
             parse_mode="HTML",
         )
@@ -341,7 +338,7 @@ async def show_links(callback: types.CallbackQuery) -> None:
 
     text = "🔗 <b>لینک‌های کانفیگ:</b>\n\n"
     for i, link in enumerate(links, 1):
-        text += f"<b>{to_persian_digits(i)}.</b>\n<code>{link}</code>\n\n"
+        text += f"<b>{i}.</b>\n<code>{link}</code>\n\n"
 
     # Send as a new message since links can be very long
     await callback.message.answer(  # type: ignore[union-attr]

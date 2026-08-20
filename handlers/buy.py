@@ -48,7 +48,7 @@ from keyboards.inline_kb import (
 )
 from keyboards.reply_kb import BTN_BUY, main_menu_keyboard
 from services import xui_api
-from utils.formatting import format_price, format_size_gb, to_persian_digits
+from utils.formatting import format_price, format_size_gb
 from utils.helpers import (
     calculate_custom_price,
     gb_to_bytes,
@@ -104,7 +104,7 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
     """Duration selected — show volume selection."""
     duration = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"📊 <b>حجم اشتراک {to_persian_digits(duration)} روزه را انتخاب کنید:</b>",
+        f"📊 <b>حجم اشتراک {duration} روزه را انتخاب کنید:</b>",
         reply_markup=volume_keyboard(duration),
         parse_mode="HTML",
     )
@@ -118,7 +118,7 @@ async def buy_back_to_volume(callback: types.CallbackQuery, state: FSMContext) -
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[-1])
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"📊 <b>حجم اشتراک {to_persian_digits(duration)} روزه را انتخاب کنید:</b>",
+        f"📊 <b>حجم اشتراک {duration} روزه را انتخاب کنید:</b>",
         reply_markup=volume_keyboard(duration),
         parse_mode="HTML",
     )
@@ -175,7 +175,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {to_persian_digits(duration)} روز\n"
+        f"⏱ مدت: {duration} روز\n"
         f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 قیمت: {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
@@ -203,7 +203,7 @@ async def buy_select_volume(callback: types.CallbackQuery) -> None:
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {to_persian_digits(duration)} روز\n"
+        f"⏱ مدت: {duration} روز\n"
         f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 قیمت: {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
@@ -243,7 +243,7 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
     after_balance = balance - price
     text = (
         f"💰 <b>پرداخت از کیف پول</b>\n\n"
-        f"📦 سفارش: {format_size_gb(gb)} / {to_persian_digits(duration)} روز\n"
+        f"📦 سفارش: {format_size_gb(gb)} / {duration} روز\n"
         f"💰 مبلغ: {format_price(price)}\n\n"
         f"👛 موجودی فعلی: {format_price(balance)}\n"
         f"👛 موجودی پس از خرید: {format_price(after_balance)}\n\n"
@@ -323,7 +323,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
         success_text = (
             f"✅ <b>اشتراک شما با موفقیت ایجاد شد!</b>\n\n"
             f"📦 نام سرویس: {service_name}\n"
-            f"⏱ مدت: {to_persian_digits(duration)} روز\n"
+            f"⏱ مدت: {duration} روز\n"
             f"📊 حجم: {format_size_gb(gb)}\n"
             f"💰 روش پرداخت: کیف پول\n"
             f"👛 موجودی جدید: {format_price(new_balance)}\n\n"
@@ -373,11 +373,11 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     text = (
         f"💳 <b>پرداخت کارت به کارت</b>\n\n"
         f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n\n"
-        f"📦 سفارش: {format_size_gb(gb)} / {to_persian_digits(duration)} روز\n"
+        f"📦 سفارش: {format_size_gb(gb)} / {duration} روز\n"
         f"💰 مبلغ: {format_price(price)}\n\n"
         f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
         f"👤 به نام: {CARD_HOLDER}\n\n"
-        f"⏱ <b>مهلت پرداخت: {to_persian_digits(INVOICE_EXPIRY_MINUTES)} دقیقه</b>\n\n"
+        f"⏱ <b>مهلت پرداخت: {INVOICE_EXPIRY_MINUTES} دقیقه</b>\n\n"
         f"پس از واریز، دکمه «✅ پرداخت کردم» را بزنید."
     )
 
@@ -504,7 +504,7 @@ async def receive_receipt_photo(
         admin_text += f" (@{message.from_user.username})"
     admin_text += (
         f"\n\n📦 سفارش: {format_size_gb(invoice['data_gb'])} / "
-        f"{to_persian_digits(invoice['duration_days'])} روز\n"
+        f"{invoice['duration_days']} روز\n"
         f"💰 مبلغ: {format_price(invoice['amount'])}\n"
     )
 
@@ -569,7 +569,7 @@ async def receive_receipt_text(
         admin_text += f" (@{message.from_user.username})"
     admin_text += (
         f"\n\n📦 سفارش: {format_size_gb(invoice['data_gb'])} / "
-        f"{to_persian_digits(invoice['duration_days'])} روز\n"
+        f"{invoice['duration_days']} روز\n"
         f"💰 مبلغ: {format_price(invoice['amount'])}\n\n"
         f"📝 متن رسید:\n<code>{receipt_text}</code>"
     )
