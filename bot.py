@@ -1,0 +1,85 @@
+"""
+CandyPop VPN Bot — Entry Point
+
+Initializes the bot, registers handlers & middleware, and starts polling.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.client.session.aiohttp import AiohttpSession
+
+from config import BOT_TOKEN
+from db.database import close_db, init_db
+from handlers import start, buy, subscriptions, test_sub, admin
+from middlewares.channel_check import ChannelCheckMiddleware
+from services.xui_api import close_client
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+async def on_startup(bot: Bot) -> None:
+    """Called when the bot starts up."""
+    await init_db()
+    me = await bot.get_me()
+    logger.info("Bot started: @%s (%s)", me.username, me.full_name)
+
+
+async def on_shutdown(bot: Bot) -> None:
+    """Called when the bot shuts down."""
+    await close_db()
+    await close_client()
+    logger.info("Bot shut down gracefully.")
+
+
+PROXY_URL = "http://127.0.0.1:10808"
+
+async def main() -> None:
+    """Main entry point."""
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN is not set! Check your .env file.")
+        return
+
+    session = AiohttpSession(proxy=PROXY_URL)
+
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session
+    )
+    dp = Dispatcher()
+
+    # Register startup/shutdown hooks
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+
+    # Register channel-check middleware on all updates
+    dp.message.outer_middleware(ChannelCheckMiddleware())
+    dp.callback_query.outer_middleware(ChannelCheckMiddleware())
+
+    # Register routers (order matters — first match wins)
+    dp.include_routers(
+        start.router,
+        buy.router,
+        subscriptions.router,
+        test_sub.router,
+        admin.router,
+    )
+
+    logger.info("Starting CandyPop Bot...")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
