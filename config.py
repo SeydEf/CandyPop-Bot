@@ -6,6 +6,8 @@ load_dotenv()
 # --- Bot ---
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 ADMIN_CHAT_ID: int = int(os.getenv("ADMIN_CHAT_ID", "0"))
+PROXY_URL: str | None = os.getenv("PROXY_URL") or None
+
 
 # --- Channel ---
 CHANNEL_ID: str = os.getenv("CHANNEL_ID", "")  # e.g. "@channel_name" or "-100..."

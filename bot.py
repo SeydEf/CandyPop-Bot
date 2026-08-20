@@ -14,9 +14,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.client.session.aiohttp import AiohttpSession
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
-from handlers import start, buy, subscriptions, test_sub, admin
+from handlers import admin, buy, start, subscriptions, test_sub
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.xui_api import close_client
 
@@ -43,16 +43,13 @@ async def on_shutdown(bot: Bot) -> None:
     logger.info("Bot shut down gracefully.")
 
 
-PROXY_URL = "http://127.0.0.1:10808"
-
-
 async def main() -> None:
     """Main entry point."""
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN is not set! Check your .env file.")
         return
 
-    session = AiohttpSession(proxy=PROXY_URL)
+    session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
 
     bot = Bot(
         token=BOT_TOKEN,
