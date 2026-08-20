@@ -16,7 +16,7 @@ from db.models import create_subscription, is_test_used, set_test_used
 from keyboards.reply_kb import BTN_TEST
 from services import xui_api
 from utils.formatting import format_size_gb
-from utils.helpers import gb_to_bytes, generate_email, generate_service_name
+from utils.helpers import gb_to_bytes, generate_email
 
 logger = logging.getLogger(__name__)
 router = Router(name="test_sub")
@@ -42,8 +42,8 @@ async def test_subscription(message: types.Message) -> None:
     await message.answer("⏳ در حال ساخت اشتراک تست...", parse_mode="HTML")
 
     try:
-        email = generate_email(tg_id)
-        service_name = f"Test-{generate_service_name(tg_id)}"
+        username = message.from_user.username
+        email = generate_email(tg_id, username)
         total_bytes = gb_to_bytes(TEST_DATA_GB)
         expiry_ms = int((time.time() + TEST_DURATION_DAYS * 86400) * 1000)
 
@@ -65,7 +65,7 @@ async def test_subscription(message: types.Message) -> None:
             tg_id=tg_id,
             email=email,
             sub_id=sub_id,
-            service_name=service_name,
+            service_name=email,
             data_gb=TEST_DATA_GB,
             duration_days=TEST_DURATION_DAYS,
             is_test=True,
@@ -84,7 +84,7 @@ async def test_subscription(message: types.Message) -> None:
 
         await message.answer(
             f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
-            f"📦 نام سرویس: {service_name}\n"
+            f"📦 نام سرویس: {email}\n"
             f"📊 حجم: {format_size_gb(TEST_DATA_GB)}\n"
             f"⏱ مدت: {TEST_DURATION_DAYS} روز\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"

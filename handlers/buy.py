@@ -53,7 +53,6 @@ from utils.helpers import (
     calculate_custom_price,
     gb_to_bytes,
     generate_email,
-    generate_service_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -282,8 +281,8 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
 
     # Create client in X-UI
     try:
-        email = generate_email(tg_id)
-        service_name = generate_service_name(tg_id)
+        username = callback.from_user.username
+        email = generate_email(tg_id, username)
         total_bytes = gb_to_bytes(gb)
         expiry_ms = int((time.time() + duration * 86400) * 1000)
 
@@ -304,7 +303,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
             tg_id=tg_id,
             email=email,
             sub_id=sub_id,
-            service_name=service_name,
+            service_name=email,
             data_gb=gb,
             duration_days=duration,
         )
@@ -322,7 +321,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
 
         success_text = (
             f"✅ <b>اشتراک شما با موفقیت ایجاد شد!</b>\n\n"
-            f"📦 نام سرویس: {service_name}\n"
+            f"📦 نام سرویس: {email}\n"
             f"⏱ مدت: {duration} روز\n"
             f"📊 حجم: {format_size_gb(gb)}\n"
             f"💰 روش پرداخت: کیف پول\n"

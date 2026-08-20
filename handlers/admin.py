@@ -16,11 +16,12 @@ from config import ADMIN_CHAT_ID, INBOUND_IDS, SUB_BASE_URL
 from db.models import (
     create_subscription,
     get_invoice,
+    get_user,
     update_invoice_status,
 )
 from services import xui_api
 from utils.formatting import format_size_gb
-from utils.helpers import gb_to_bytes, generate_email, generate_service_name
+from utils.helpers import gb_to_bytes, generate_email
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -63,9 +64,12 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)  # type: ignore[union-attr]
 
     try:
+        # Get the user's username from DB for email generation
+        user = await get_user(tg_id)
+        username = user.get("username") if user else None
+
         # Create client in X-UI
-        email = generate_email(tg_id)
-        service_name = generate_service_name(tg_id)
+        email = generate_email(tg_id, username)
         total_bytes = gb_to_bytes(gb)
         expiry_ms = int((time.time() + duration * 86400) * 1000)
 
@@ -86,7 +90,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             tg_id=tg_id,
             email=email,
             sub_id=sub_id,
-            service_name=service_name,
+            service_name=email,
             data_gb=gb,
             duration_days=duration,
         )
@@ -105,7 +109,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         user_text = (
             f"✅ <b>پرداخت شما تأیید شد و اشتراک فعال گردید!</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-            f"📦 نام سرویس: {service_name}\n"
+            f"📦 نام سرویس: {email}\n"
             f"⏱ مدت: {duration} روز\n"
             f"📊 حجم: {format_size_gb(gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"

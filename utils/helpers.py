@@ -29,19 +29,17 @@ def generate_qr(data: str) -> io.BytesIO:
     return buf
 
 
-def generate_email(tg_id: int) -> str:
-    """Generate a unique email identifier for an X-UI client.
+def generate_email(tg_id: int, username: str | None = None) -> str:
+    """Generate a unique email/remark identifier for an X-UI client.
 
-    Format: cp_<tg_id>_<short_uuid>
+    Format: <username>_<tg_id>_<short_uuid>
+    Falls back to 'user' if username is None.
     """
-    short = uuid.uuid4().hex[:8]
-    return f"cp_{tg_id}_{short}"
-
-
-def generate_service_name(tg_id: int) -> str:
-    """Generate a default service name."""
-    short = uuid.uuid4().hex[:4]
-    return f"CandyPop-{short}"
+    short = uuid.uuid4().hex[:6]
+    name = username or "user"
+    # Sanitise: only keep alphanumeric and underscores
+    name = "".join(c if c.isalnum() or c == "_" else "" for c in name)
+    return f"{name}_{tg_id}_{short}"
 
 
 def calculate_custom_price(gb: int) -> int:

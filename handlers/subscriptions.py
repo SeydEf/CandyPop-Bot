@@ -1,8 +1,9 @@
 """
 My Subscriptions handler.
 
-Lists user's active subscriptions, shows live stats from X-UI,
-and provides management actions (rename, regenerate link, delete, QR, links).
+Lists user's active subscriptions by querying X-UI panel in real-time
+using the user's Telegram ID, and provides management actions
+(rename, regenerate link, delete, QR, links).
 """
 
 from __future__ import annotations
@@ -15,12 +16,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import SUB_BASE_URL
-from db.models import (
-    delete_subscription,
-    get_subscription_by_email,
-    get_user_subscriptions,
-    update_subscription_name,
-)
 from keyboards.inline_kb import (
     confirm_delete_keyboard,
     confirm_regen_keyboard,
@@ -32,7 +27,7 @@ from services import xui_api
 from utils.formatting import (
     format_remaining_days,
     format_size,
-    format_traffic_usage,
+    to_persian_digits,
 )
 from utils.helpers import generate_qr
 
@@ -44,16 +39,52 @@ class SubStates(StatesGroup):
     waiting_rename = State()
 
 
+# ──────────────────────────── Helpers ────────────────────────────
+
+
+async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
+    """Fetch subscriptions from X-UI panel by Telegram user ID.
+
+    Returns a list of dicts with keys the rest of the handler expects:
+        email, service_name (=email/remark), sub_id, totalGB, expiryTime,
+        usedTraffic, enable
+    """
+    raw = await xui_api.get_clients_by_tg_id(tg_id)
+    subs: list[dict] = []
+    for entry in raw:
+        client = entry.get("client", {})
+        subs.append(
+            {
+                "email": client.get("email", ""),
+                "service_name": client.get("email", ""),  # remark = email
+                "sub_id": client.get("subId", ""),
+                "totalGB": client.get("totalGB", 0),
+                "expiryTime": client.get("expiryTime", 0),
+                "usedTraffic": entry.get("usedTraffic", 0),
+                "enable": client.get("enable", True),
+                "inboundIds": entry.get("inboundIds", []),
+            }
+        )
+    return subs
+
+
+def _build_sub_link(sub_id: str) -> str:
+    """Build subscription URL from subId."""
+    if sub_id:
+        return f"{SUB_BASE_URL}/{sub_id}"
+    return "نامشخص"
+
+
 # ──────────────────────────── List Subscriptions ────────────────────────────
 
 
 @router.message(F.text == BTN_MY_SUBS)
 async def my_subscriptions(message: types.Message) -> None:
-    """Show list of user's subscriptions."""
+    """Show list of user's subscriptions from X-UI panel."""
     if not message.from_user:
         return
 
-    subs = await get_user_subscriptions(message.from_user.id)
+    subs = await _fetch_subs_from_xui(message.from_user.id)
     if not subs:
         await message.answer(
             "📭 <b>شما هیچ اشتراک فعالی ندارید.</b>\n\n"
@@ -63,7 +94,8 @@ async def my_subscriptions(message: types.Message) -> None:
         return
 
     await message.answer(
-        f"📋 <b>اشتراک‌های شما ({len(subs)}):</b>\n\nیکی را انتخاب کنید:",
+        f"📋 <b>اشتراک‌های شما ({to_persian_digits(len(subs))}):</b>\n\n"
+        "یکی را انتخاب کنید:",
         reply_markup=subscriptions_list_keyboard(subs),
         parse_mode="HTML",
     )
@@ -74,7 +106,7 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
     """Go back to subscription list."""
     if not callback.from_user:
         return
-    subs = await get_user_subscriptions(callback.from_user.id)
+    subs = await _fetch_subs_from_xui(callback.from_user.id)
     if not subs:
         await callback.message.edit_text(  # type: ignore[union-attr]
             "📭 <b>شما هیچ اشتراک فعالی ندارید.</b>",
@@ -82,7 +114,8 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
         )
     else:
         await callback.message.edit_text(  # type: ignore[union-attr]
-            f"📋 <b>اشتراکهای شما ({len(subs)}):</b>\n\nیکی را انتخاب کنید:",
+            f"📋 <b>اشتراک‌های شما ({to_persian_digits(len(subs))}):</b>\n\n"
+            "یکی را انتخاب کنید:",
             reply_markup=subscriptions_list_keyboard(subs),
             parse_mode="HTML",
         )
@@ -94,40 +127,37 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("sub_view_"))
 async def view_subscription(callback: types.CallbackQuery) -> None:
-    """Show subscription dashboard with live stats."""
+    """Show subscription dashboard with live stats from X-UI."""
     email = callback.data[len("sub_view_") :]  # type: ignore[union-attr]
-    sub = await get_subscription_by_email(email)
-
-    if not sub:
-        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
-        return
 
     # Fetch live data from X-UI
-    traffic = await xui_api.get_client_traffic(email)
     client = await xui_api.get_client(email)
+    client_full = await xui_api.get_client_full(email)
 
-    if traffic:
-        up = traffic.get("up", 0)
-        down = traffic.get("down", 0)
-        total = traffic.get("total", 0)
-        expiry_ms = traffic.get("expiryTime", 0)
-        used = up + down
-        remaining = max(0, total - used)
+    if not client:
+        await callback.answer("❌ اشتراک در پنل یافت نشد.", show_alert=True)
+        return
 
-        usage_text = format_traffic_usage(up, down, total)
+    total_bytes = client.get("totalGB", 0)
+    expiry_ms = client.get("expiryTime", 0)
+    used_traffic = client_full.get("usedTraffic", 0) if client_full else 0
+    remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
+    sub_id = client.get("subId", "")
+    sub_link = _build_sub_link(sub_id)
+
+    # Format traffic
+    if total_bytes > 0:
+        usage_text = f"{format_size(used_traffic)} / {format_size(total_bytes)}"
         remaining_text = format_size(remaining)
-        days_text = format_remaining_days(expiry_ms)
     else:
-        usage_text = "نامشخص"
-        remaining_text = "نامشخص"
-        days_text = "نامشخص"
+        usage_text = f"{format_size(used_traffic)} / نامحدود"
+        remaining_text = "نامحدود"
 
-    sub_id = sub.get("sub_id", "") or (client.get("subId", "") if client else "")
-    sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
+    days_text = format_remaining_days(expiry_ms)
 
     text = (
         f"📦 <b>داشبورد اشتراک</b>\n\n"
-        f"📛 نام سرویس: {sub['service_name']}\n"
+        f"📛 نام سرویس: {client.get('email', email)}\n"
         f"📊 مصرف ترافیک: {usage_text}\n"
         f"📉 ترافیک باقیمانده: {remaining_text}\n"
         f"⏱ روزهای باقیمانده: {days_text}\n\n"
@@ -161,7 +191,7 @@ async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None
 
 @router.message(SubStates.waiting_rename, F.text)
 async def rename_process(message: types.Message, state: FSMContext) -> None:
-    """Process the new service name."""
+    """Process the new service name — updates the email/remark in X-UI."""
     if not message.text:
         return
 
@@ -171,19 +201,35 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
         return
 
     data = await state.get_data()
-    email = data.get("rename_email")
-    if not email:
+    old_email = data.get("rename_email")
+    if not old_email:
         await state.clear()
         return
 
-    new_name = message.text.strip()[:50]  # Limit name length
-    await update_subscription_name(email, new_name)
-    await state.clear()
+    new_name = message.text.strip()[:50]
 
-    await message.answer(
-        f"✅ نام سرویس به <b>{new_name}</b> تغییر کرد.",
-        parse_mode="HTML",
-    )
+    # Fetch current client data from X-UI
+    client = await xui_api.get_client(old_email)
+    if not client:
+        await state.clear()
+        await message.answer("❌ کلاینت در پنل یافت نشد.")
+        return
+
+    # Update email/remark in X-UI (email is the remark/name field)
+    update_data = dict(client)
+    update_data["email"] = new_name
+
+    try:
+        await xui_api.update_client(old_email, update_data)
+        await state.clear()
+        await message.answer(
+            f"✅ نام سرویس به <b>{new_name}</b> تغییر کرد.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.exception("Failed to rename client %s", old_email)
+        await state.clear()
+        await message.answer(f"❌ خطا در تغییر نام: {e}")
 
 
 # ──────────────────────────── Regenerate Link ────────────────────────────
@@ -221,23 +267,13 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
 
     # Update client with new credentials
     update_data = dict(client)
-    update_data["id"] = new_uuid
+    update_data["uuid"] = new_uuid
     update_data["subId"] = new_sub_id
 
     try:
         await xui_api.update_client(email, update_data)
 
-        # Update local DB
-        from db.database import get_db
-
-        db = await get_db()
-        await db.execute(
-            "UPDATE subscriptions SET sub_id = ? WHERE email = ?",
-            (new_sub_id, email),
-        )
-        await db.commit()
-
-        new_link = f"{SUB_BASE_URL}/{new_sub_id}"
+        new_link = _build_sub_link(new_sub_id)
 
         await callback.message.edit_text(  # type: ignore[union-attr]
             f"✅ <b>لینک اشتراک با موفقیت تغییر کرد!</b>\n\n"
@@ -275,18 +311,17 @@ async def delete_execute(callback: types.CallbackQuery) -> None:
     email = callback.data[len("sub_confirm_del_") :]  # type: ignore[union-attr]
 
     try:
-        # Delete from X-UI
         await xui_api.delete_client(email)
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "✅ <b>سرویس با موفقیت حذف شد.</b>",
+            parse_mode="HTML",
+        )
     except Exception:
         logger.exception("Failed to delete client %s from X-UI", email)
-
-    # Delete from local DB
-    await delete_subscription(email)
-
-    await callback.message.edit_text(  # type: ignore[union-attr]
-        "✅ <b>سرویس با موفقیت حذف شد.</b>",
-        parse_mode="HTML",
-    )
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "❌ خطا در حذف سرویس.",
+            parse_mode="HTML",
+        )
     await callback.answer()
 
 
@@ -297,20 +332,14 @@ async def delete_execute(callback: types.CallbackQuery) -> None:
 async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
     """Generate and send QR code for subscription link."""
     email = callback.data[len("sub_qr_") :]  # type: ignore[union-attr]
-    sub = await get_subscription_by_email(email)
     client = await xui_api.get_client(email)
 
-    sub_id = ""
-    if sub:
-        sub_id = sub.get("sub_id", "")
-    if not sub_id and client:
-        sub_id = client.get("subId", "")
-
+    sub_id = client.get("subId", "") if client else ""
     if not sub_id:
         await callback.answer("❌ لینک اشتراک یافت نشد.", show_alert=True)
         return
 
-    sub_link = f"{SUB_BASE_URL}/{sub_id}"
+    sub_link = _build_sub_link(sub_id)
     qr_image = generate_qr(sub_link)
 
     await bot.send_photo(
@@ -338,7 +367,7 @@ async def show_links(callback: types.CallbackQuery) -> None:
 
     text = "🔗 <b>لینک‌های کانفیگ:</b>\n\n"
     for i, link in enumerate(links, 1):
-        text += f"<b>{i}.</b>\n<code>{link}</code>\n\n"
+        text += f"<b>{to_persian_digits(i)}.</b>\n<code>{link}</code>\n\n"
 
     # Send as a new message since links can be very long
     await callback.message.answer(  # type: ignore[union-attr]

@@ -110,7 +110,29 @@ async def add_client(
 
 
 async def get_client(email: str) -> dict[str, Any] | None:
-    """Fetch a single client by email. Returns None if not found."""
+    """Fetch a single client by email.
+
+    The API returns a nested object: {client: {...}, inboundIds: [...], ...}.
+    This function returns the inner 'client' dict for convenience.
+    Returns None if not found.
+    """
+    try:
+        data = await _request("GET", f"/panel/api/clients/get/{email}")
+        obj = data.get("obj")
+        if obj is None:
+            return None
+        # API may return the wrapper object with 'client' key
+        if isinstance(obj, dict) and "client" in obj:
+            return obj["client"]
+        return obj
+    except (RuntimeError, httpx.HTTPStatusError):
+        return None
+
+
+async def get_client_full(email: str) -> dict[str, Any] | None:
+    """Fetch a single client by email — returns the FULL wrapper object
+    including client, inboundIds, externalLinks, usedTraffic.
+    """
     try:
         data = await _request("GET", f"/panel/api/clients/get/{email}")
         return data.get("obj")
@@ -119,7 +141,14 @@ async def get_client(email: str) -> dict[str, Any] | None:
 
 
 async def get_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
-    """Fetch all clients associated with a Telegram user ID."""
+    """Fetch all clients associated with a Telegram user ID.
+
+    Returns a list of wrapper objects, each containing:
+      - client: dict with email, subId, uuid, totalGB, expiryTime, tgId, ...
+      - inboundIds: list[int]
+      - usedTraffic: int (bytes)
+      - externalLinks: list
+    """
     try:
         data = await _request("GET", f"/panel/api/clients/get/tgId/{tg_id}")
         obj = data.get("obj")
