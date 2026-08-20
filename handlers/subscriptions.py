@@ -208,19 +208,21 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
 
     new_name = message.text.strip()[:50]
 
-    # Fetch current client data from X-UI
-    client = await xui_api.get_client(old_email)
-    if not client:
+    # Fetch current full client data from X-UI (includes inboundIds)
+    full = await xui_api.get_client_full(old_email)
+    if not full or "client" not in full:
         await state.clear()
         await message.answer("❌ کلاینت در پنل یافت نشد.")
         return
 
+    client_data = dict(full["client"])
+    inbound_ids = full.get("inboundIds", [])
+
     # Update email/remark in X-UI (email is the remark/name field)
-    update_data = dict(client)
-    update_data["email"] = new_name
+    client_data["email"] = new_name
 
     try:
-        await xui_api.update_client(old_email, update_data)
+        await xui_api.update_client(old_email, client_data, inbound_ids)
         await state.clear()
         await message.answer(
             f"✅ نام سرویس به <b>{new_name}</b> تغییر کرد.",
@@ -255,23 +257,25 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
     """Execute the link regeneration — generate new UUID for the client."""
     email = callback.data[len("sub_confirm_regen_") :]  # type: ignore[union-attr]
 
-    # Get current client data
-    client = await xui_api.get_client(email)
-    if not client:
+    # Get current full client data (includes inboundIds)
+    full = await xui_api.get_client_full(email)
+    if not full or "client" not in full:
         await callback.answer("❌ کلاینت در پنل یافت نشد.", show_alert=True)
         return
+
+    client_data = dict(full["client"])
+    inbound_ids = full.get("inboundIds", [])
 
     # Generate new UUID and subId
     new_uuid = str(uuid.uuid4())
     new_sub_id = uuid.uuid4().hex[:16]
 
     # Update client with new credentials
-    update_data = dict(client)
-    update_data["uuid"] = new_uuid
-    update_data["subId"] = new_sub_id
+    client_data["uuid"] = new_uuid
+    client_data["subId"] = new_sub_id
 
     try:
-        await xui_api.update_client(email, update_data)
+        await xui_api.update_client(email, client_data, inbound_ids)
 
         new_link = _build_sub_link(new_sub_id)
 
