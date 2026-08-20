@@ -12,6 +12,7 @@ venv/
 env/
 ENV/
 *.db
+*.db*
 *.sqlite
 *.sqlite3
 .vscode/
