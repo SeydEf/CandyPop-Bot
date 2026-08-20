@@ -14,9 +14,11 @@ __pycache__
 .vscode
 .idea
 *.db
+*.db*
 *.sqlite
 *.sqlite3
+data/
 *.log
-logs
+logs/
 Dockerfile
 docker-compose.yml

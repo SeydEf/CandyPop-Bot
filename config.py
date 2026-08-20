@@ -58,4 +58,5 @@ CUSTOM_PRICE_DEFAULT_PER_GB: int = 3_800  # for volumes > 100 GB
 DURATION_OPTIONS: list[int] = [30, 60, 90]
 
 # --- Database ---
-DB_PATH: str = os.getenv("DB_PATH", "candypop.db")
+DB_PATH: str = os.getenv("DB_PATH", "data/candypop.db")
+

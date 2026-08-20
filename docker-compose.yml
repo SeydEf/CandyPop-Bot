@@ -6,4 +6,5 @@ services:
     env_file:
       - .env
     volumes:
-      - ./candypop.db:/app/candypop.db
+      - ./data:/app/data
+
