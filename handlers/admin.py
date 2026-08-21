@@ -22,7 +22,7 @@ from db.models import (
 )
 from keyboards.inline_kb import sub_config_links_keyboard
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits
+from utils.formatting import format_price, format_size_gb, to_persian_digits
 from utils.helpers import gb_to_bytes, generate_email
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,26 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     try:
         users_count = invoice.get("users_count", 1)
         target_email = invoice.get("target_email")
+
+        if target_email == "TOPUP" or (duration == 0 and gb == 0):
+            # Top-up wallet deposit
+            from db.models import credit_wallet
+
+            amount = invoice["amount"]
+            new_balance = await credit_wallet(tg_id, amount)
+
+            user_text = (
+                f"✅ <b>پرداخت شما تأیید شد و کیف پول شارژ گردید!</b>\n\n"
+                f"🆔 فاکتور: <code>{invoice_id}</code>\n"
+                f"💰 مبلغ واریزی: {format_price(amount)}\n"
+                f"👛 موجودی جدید کیف پول: {format_price(new_balance)}"
+            )
+            await bot.send_message(chat_id=tg_id, text=user_text, parse_mode="HTML")
+            await callback.message.edit_text(
+                f"✅ فاکتور <code>{invoice_id}</code> (شارژ کیف پول به مبلغ {format_price(amount)}) با موفقیت تأیید شد.",
+                parse_mode="HTML",
+            )
+            return
 
         if target_email:
             # Renew existing client

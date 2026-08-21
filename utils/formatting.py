@@ -3,12 +3,18 @@ Persian text and number formatting utilities.
 """
 
 _PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
+_PERSIAN_TO_ENGLISH = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
 
 def to_persian_digits(text: str | int | float) -> str:
     """Convert Latin digits (0-9) in *text* to their Persian equivalents."""
     s = str(text)
     return "".join(_PERSIAN_DIGITS[int(ch)] if ch.isdigit() else ch for ch in s)
+
+
+def persian_to_english_digits(text: str) -> str:
+    """Convert Persian and Arabic digits in text to English digits."""
+    return text.translate(_PERSIAN_TO_ENGLISH)
 
 
 def format_price(amount: int) -> str:

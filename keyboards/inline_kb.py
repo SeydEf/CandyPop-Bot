@@ -493,3 +493,30 @@ def sub_config_links_keyboard(email: str) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def deposit_amount_keyboard() -> InlineKeyboardMarkup:
+    """Preset deposit amount selection keyboard."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="50,000 تومان", callback_data="deposit_amt_50000"
+                ),
+                InlineKeyboardButton(
+                    text="100,000 تومان", callback_data="deposit_amt_100000"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="200,000 تومان", callback_data="deposit_amt_200000"
+                ),
+                InlineKeyboardButton(
+                    text="500,000 تومان", callback_data="deposit_amt_500000"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="❌ انصراف", callback_data="deposit_cancel"),
+            ],
+        ]
+    )
