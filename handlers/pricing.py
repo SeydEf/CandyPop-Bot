@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from keyboards.reply_kb import BTN_PRICING
 from services.pricing import get_pricing_config
@@ -67,9 +66,5 @@ async def build_pricing_text() -> str:
 @router.message(F.text == BTN_PRICING)
 async def show_pricing(message: types.Message) -> None:
     text = await build_pricing_text()
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🛒 خرید اشتراک", callback_data="buy_start")]
-        ]
-    )
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+    await message.answer(text, parse_mode="HTML")
