@@ -87,8 +87,8 @@ async def my_subscriptions(message: types.Message) -> None:
     subs = await _fetch_subs_from_xui(message.from_user.id)
     if not subs:
         await message.answer(
-            "📭 <b>شما هیچ اشتراک فعالی ندارید.</b>\n\n"
-            "از منوی اصلی گزینه «🛒 خرید اشتراک» را انتخاب کنید.",
+            "📭 <b>شما درحال حاضر اشتراک فعالی ندارید.</b>\n\n"
+            "برای خرید اشتراک از منوی اصلی گزینه «🛒 خرید اشتراک» را انتخاب کنید.",
             parse_mode="HTML",
         )
         return
@@ -101,15 +101,15 @@ async def my_subscriptions(message: types.Message) -> None:
     )
 
 
-@router.callback_query(F.data == "sub_back_list")
-async def back_to_list(callback: types.CallbackQuery) -> None:
-    """Go back to subscription list."""
+async def _render_subscriptions_list(callback: types.CallbackQuery) -> None:
+    """Render subscription list or empty state."""
     if not callback.from_user:
         return
     subs = await _fetch_subs_from_xui(callback.from_user.id)
     if not subs:
         await callback.message.edit_text(  # type: ignore[union-attr]
-            "📭 <b>شما هیچ اشتراک فعالی ندارید.</b>",
+            "📭 <b>شما درحال حاضر اشتراک فعالی ندارید.</b>\n\n"
+            "برای خرید اشتراک از منوی اصلی گزینه «🛒 خرید اشتراک» را انتخاب کنید.",
             parse_mode="HTML",
         )
     else:
@@ -119,6 +119,12 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
             reply_markup=subscriptions_list_keyboard(subs),
             parse_mode="HTML",
         )
+
+
+@router.callback_query(F.data == "sub_back_list")
+async def back_to_list(callback: types.CallbackQuery) -> None:
+    """Go back to subscription list."""
+    await _render_subscriptions_list(callback)
     await callback.answer()
 
 
@@ -307,22 +313,18 @@ async def delete_confirm(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("sub_confirm_del_"))
 async def delete_execute(callback: types.CallbackQuery) -> None:
-    """Execute the subscription deletion."""
+    """Execute the subscription deletion and return to list."""
     email = callback.data[len("sub_confirm_del_") :]  # type: ignore[union-attr]
 
     try:
         await xui_api.delete_client(email)
-        await callback.message.edit_text(  # type: ignore[union-attr]
-            "✅ <b>سرویس با موفقیت حذف شد.</b>",
-            parse_mode="HTML",
-        )
+        await callback.answer("✅ سرویس با موفقیت حذف شد.", show_alert=True)
     except Exception:
         logger.exception("Failed to delete client %s from X-UI", email)
-        await callback.message.edit_text(  # type: ignore[union-attr]
-            "❌ خطا در حذف سرویس.",
-            parse_mode="HTML",
-        )
-    await callback.answer()
+        await callback.answer("❌ خطا در حذف سرویس.", show_alert=True)
+        return
+
+    await _render_subscriptions_list(callback)
 
 
 # ──────────────────────────── QR Code ────────────────────────────
