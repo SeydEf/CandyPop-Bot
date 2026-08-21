@@ -18,7 +18,7 @@ from config import BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
 from handlers import (
     admin,
-    admin_pricing,
+    admin_control,
     buy,
     pricing,
     profile,
@@ -86,7 +86,7 @@ async def main() -> None:
         wallet.router,
         test_sub.router,
         admin.router,
-        admin_pricing.router,
+        admin_control.router,
     )
 
     logger.info("Starting CandyPop Bot...")

@@ -1,11 +1,12 @@
 """
-Admin Pricing Control Panel handler.
+Admin Control Panel handler.
 
 Allows the bot admin to dynamically configure:
   - Base per-GB rate
   - Per-user surcharges
   - Duration surcharges (30, 60, 90 days)
   - Tiered volume discount thresholds and per-GB rates
+  - Free test subscription parameters (GB, duration, cooldown) & reset cooldown
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import ADMIN_CHAT_ID
+from db.models import reset_all_test_subs
 from services.pricing import (
     get_pricing_config,
     reset_pricing_config_to_defaults,
@@ -39,10 +41,10 @@ from utils.formatting import (
 )
 
 logger = logging.getLogger(__name__)
-router = Router(name="admin_pricing")
+router = Router(name="admin_control")
 
 
-class AdminPricingStates(StatesGroup):
+class AdminControlStates(StatesGroup):
     waiting_base_rate = State()
     waiting_user_surcharge = State()
     waiting_dur_60 = State()
@@ -60,12 +62,17 @@ def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     """Build pricing control panel text and keyboard."""
     config = await get_pricing_config()
+    test_config = await get_test_sub_config()
 
     base_rate = config["base_gb_rate"]
     user_surcharge = config["user_surcharge"]
     dur_surcharges: dict[int, int] = config["duration_surcharges"]
     volume_tiers: list[tuple[int, int]] = config["volume_tiers"]
     fallback_rate: int = config["fallback_gb_rate"]
+
+    test_gb = test_config["gb"]
+    test_dur = test_config["duration_days"]
+    test_cool = test_config["cooldown_days"]
 
     tiers_text = ""
     for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
@@ -79,14 +86,21 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"  • ۳۰ روز: +{format_price(dur_surcharges.get(30, 0))}\n"
         f"  • ۶۰ روز: +{format_price(dur_surcharges.get(60, 0))}\n"
         f"  • ۹۰ روز: +{format_price(dur_surcharges.get(90, 0))}\n"
-        )
+    )
+
+    test_text = (
+        f"  • حجم: {format_size_gb(test_gb)}\n"
+        f"  • مدت: {to_persian_digits(test_dur)} روز\n"
+        f"  • کول‌داون: {to_persian_digits(test_cool)} روز\n"
+    )
 
     text = (
-        f"⚙️ <b>مدیریت و تنظیمات</b>\n\n"
-        f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n\n"
+        f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
+        f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
-        f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}"
+        f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
+        f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -123,6 +137,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="♻️ بازنشانی تست همه کاربران",
+                    callback_data="admin_test_reset_all",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔄 بازنشانی قیمت‌ها به پیش‌فرض",
                     callback_data="admin_price_reset",
                 ),
@@ -141,9 +161,9 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
 # ──────────────────────────── Panel Entry Points ────────────────────────────
 
 
-@router.message(Command("pricing", "pricing_settings"))
+@router.message(Command("pricing", "pricing_settings", "control", "admin_control"))
 async def admin_pricing_cmd(message: types.Message, state: FSMContext) -> None:
-    """Open pricing control panel via admin command."""
+    """Open pricing/control panel via admin command."""
     if not _is_admin(message):
         return
     await state.clear()
@@ -179,7 +199,7 @@ async def admin_price_base_start(
     """Prompt for new base GB rate."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_base_rate)
+    await state.set_state(AdminControlStates.waiting_base_rate)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "💵 <b>نرخ پایه جدید هر گیگ (به تومان) را وارد کنید:</b>\n"
         "مثال: <code>5000</code>\n\n"
@@ -189,7 +209,7 @@ async def admin_price_base_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_base_rate, F.text)
+@router.message(AdminControlStates.waiting_base_rate, F.text)
 async def admin_price_base_save(message: types.Message, state: FSMContext) -> None:
     """Save new base GB rate."""
     if not message.text or message.text.strip() == "/cancel":
@@ -232,7 +252,7 @@ async def admin_price_user_start(
     """Prompt for new per-user surcharge."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_user_surcharge)
+    await state.set_state(AdminControlStates.waiting_user_surcharge)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "👤 <b>هزینه اضافه به ازای هر کاربر اضافه (به تومان) را وارد کنید:</b>\n"
         "مثال: <code>50000</code>\n\n"
@@ -242,7 +262,7 @@ async def admin_price_user_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_user_surcharge, F.text)
+@router.message(AdminControlStates.waiting_user_surcharge, F.text)
 async def admin_price_user_save(message: types.Message, state: FSMContext) -> None:
     """Save new per-user surcharge."""
     if not message.text or message.text.strip() == "/cancel":
@@ -325,7 +345,7 @@ async def admin_price_dur_60_start(
     """Prompt for 60-day duration surcharge."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_dur_60)
+    await state.set_state(AdminControlStates.waiting_dur_60)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⏱ <b>مبلغ اضافه برای اشتراک ۶۰ روزه (به تومان) را وارد کنید:</b>\n"
         "مثال: <code>50000</code>\n\n"
@@ -335,7 +355,7 @@ async def admin_price_dur_60_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_dur_60, F.text)
+@router.message(AdminControlStates.waiting_dur_60, F.text)
 async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> None:
     """Save 60-day duration surcharge."""
     if not message.text or message.text.strip() == "/cancel":
@@ -372,7 +392,7 @@ async def admin_price_dur_90_start(
     """Prompt for 90-day duration surcharge."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_dur_90)
+    await state.set_state(AdminControlStates.waiting_dur_90)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⏱ <b>مبلغ اضافه برای اشتراک ۹۰ روزه (به تومان) را وارد کنید:</b>\n"
         "مثال: <code>100000</code>\n\n"
@@ -382,7 +402,7 @@ async def admin_price_dur_90_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_dur_90, F.text)
+@router.message(AdminControlStates.waiting_dur_90, F.text)
 async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> None:
     """Save 90-day duration surcharge."""
     if not message.text or message.text.strip() == "/cancel":
@@ -422,7 +442,7 @@ async def admin_price_tiers_start(
     """Prompt for custom volume discount tiers format."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_tiers_text)
+    await state.set_state(AdminControlStates.waiting_tiers_text)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "📊 <b>تنظیم پله‌های تخفیف حجم</b>\n\n"
         "لطفاً پله‌های تخفیف را سطر به سطر به فرمت <code>سقف_حجم:نرخ_هرگیگ</code> وارد کنید.\n"
@@ -438,7 +458,7 @@ async def admin_price_tiers_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_tiers_text, F.text)
+@router.message(AdminControlStates.waiting_tiers_text, F.text)
 async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> None:
     """Parse and save volume discount tiers."""
     if not message.text or message.text.strip() == "/cancel":
@@ -564,7 +584,7 @@ async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) 
     """Prompt for new test sub GB volume."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_test_gb)
+    await state.set_state(AdminControlStates.waiting_test_gb)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "📊 <b>حجم اشتراک تست را به گیگابایت (اعشاری یا صحیح) وارد کنید:</b>\n"
         "مثال: <code>0.5</code> یا <code>1</code> یا <code>2</code>\n\n"
@@ -574,9 +594,9 @@ async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) 
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_test_gb, F.text)
+@router.message(AdminControlStates.waiting_test_gb, F.text)
 async def admin_test_gb_save(message: types.Message, state: FSMContext) -> None:
-    """Save new test sub GB volume."""
+    """Save new test sub GB volume and return to control panel."""
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -589,8 +609,10 @@ async def admin_test_gb_save(message: types.Message, state: FSMContext) -> None:
             raise ValueError
         await update_test_sub_config(gb=val)
         await state.clear()
+        panel_text, keyboard = await _build_pricing_panel()
         await message.answer(
-            f"✅ حجم اشتراک تست به <b>{format_size_gb(val)}</b> تغییر یافت.",
+            f"✅ حجم اشتراک تست به <b>{format_size_gb(val)}</b> تغییر یافت.\n\n{panel_text}",
+            reply_markup=keyboard,
             parse_mode="HTML",
         )
     except ValueError:
@@ -607,7 +629,7 @@ async def admin_test_dur_start(
     """Prompt for new test sub duration."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_test_dur)
+    await state.set_state(AdminControlStates.waiting_test_dur)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⏱ <b>مدت زمان اعتبار اشتراک تست را به روز وارد کنید:</b>\n"
         "مثال: <code>1</code> یا <code>2</code>\n\n"
@@ -617,9 +639,9 @@ async def admin_test_dur_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_test_dur, F.text)
+@router.message(AdminControlStates.waiting_test_dur, F.text)
 async def admin_test_dur_save(message: types.Message, state: FSMContext) -> None:
-    """Save new test sub duration."""
+    """Save new test sub duration and return to control panel."""
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -632,8 +654,10 @@ async def admin_test_dur_save(message: types.Message, state: FSMContext) -> None
             raise ValueError
         await update_test_sub_config(duration_days=val)
         await state.clear()
+        panel_text, keyboard = await _build_pricing_panel()
         await message.answer(
-            f"✅ مدت زمان اشتراک تست به <b>{to_persian_digits(val)} روز</b> تغییر یافت.",
+            f"✅ مدت زمان اشتراک تست به <b>{to_persian_digits(val)} روز</b> تغییر یافت.\n\n{panel_text}",
+            reply_markup=keyboard,
             parse_mode="HTML",
         )
     except ValueError:
@@ -647,7 +671,7 @@ async def admin_test_cooldown_start(
     """Prompt for new test sub cooldown in days."""
     if not _is_admin(callback):
         return
-    await state.set_state(AdminPricingStates.waiting_test_cooldown)
+    await state.set_state(AdminControlStates.waiting_test_cooldown)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "🔄 <b>فاصله زمانی دریافت مجدد (کول‌داون) را به روز وارد کنید:</b>\n"
         "مثال: <code>14</code> یا <code>7</code>\n\n"
@@ -657,9 +681,9 @@ async def admin_test_cooldown_start(
     await callback.answer()
 
 
-@router.message(AdminPricingStates.waiting_test_cooldown, F.text)
+@router.message(AdminControlStates.waiting_test_cooldown, F.text)
 async def admin_test_cooldown_save(message: types.Message, state: FSMContext) -> None:
-    """Save new test sub cooldown in days."""
+    """Save new test sub cooldown in days and return to control panel."""
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -672,9 +696,29 @@ async def admin_test_cooldown_save(message: types.Message, state: FSMContext) ->
             raise ValueError
         await update_test_sub_config(cooldown_days=val)
         await state.clear()
+        panel_text, keyboard = await _build_pricing_panel()
         await message.answer(
-            f"✅ کول‌داون اشتراک تست به <b>{to_persian_digits(val)} روز</b> تغییر یافت.",
+            f"✅ کول‌داون اشتراک تست به <b>{to_persian_digits(val)} روز</b> تغییر یافت.\n\n{panel_text}",
+            reply_markup=keyboard,
             parse_mode="HTML",
         )
     except ValueError:
         await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_test_reset_all")
+async def admin_test_reset_all(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Reset test subscription usage for all users and return to control panel."""
+    if not _is_admin(callback):
+        return
+    await state.clear()
+    count = await reset_all_test_subs()
+    panel_text, keyboard = await _build_pricing_panel()
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"✅ امکان دریافت اشتراک تست برای <b>{to_persian_digits(count)} کاربر</b> با موفقیت بازنشانی شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
