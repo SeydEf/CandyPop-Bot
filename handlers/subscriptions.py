@@ -263,7 +263,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
 
     # Generate new UUID and subId
     new_uuid = str(uuid.uuid4())
-    new_sub_id = uuid.uuid4().hex[:16]
+    new_sub_id = str(uuid.uuid4())
 
     # Update client with new credentials
     update_data = dict(client)

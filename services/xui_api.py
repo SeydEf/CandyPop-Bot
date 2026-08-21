@@ -176,10 +176,8 @@ async def update_client(
 
     # The Go backend expects 'id' as a string (UUID), but the GET response
     # returns 'id' as an integer (DB row ID). Replace it with the uuid field.
-    if "uuid" in payload:
-        payload["id"] = payload["uuid"]
-    elif isinstance(payload.get("id"), int):
-        payload.pop("id", None)
+    payload.pop("id", None)
+    payload.pop("allowedIPs", None)
 
     # Ensure email is present (required by the API)
     if "email" not in payload:
