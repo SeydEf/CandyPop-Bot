@@ -11,24 +11,42 @@ import logging
 import time
 
 from aiogram import Bot, F, Router, types
+from aiogram.filters import Command
 
 from config import ADMIN_CHAT_ID, INBOUND_IDS, SUB_BASE_URL
 from db.models import (
-    create_subscription,
     get_invoice,
     get_user,
+    reset_all_test_subs,
     update_invoice_status,
 )
 from services import xui_api
-from utils.formatting import format_size_gb
+from utils.formatting import format_size_gb, to_persian_digits
 from utils.helpers import gb_to_bytes, generate_email
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
 
 
-def _is_admin(callback: types.CallbackQuery) -> bool:
-    return callback.from_user is not None and callback.from_user.id == ADMIN_CHAT_ID
+def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+
+
+# ──────────────────────────── Reset All Test Subs (Admin Command) ────────────────────────────
+
+
+@router.message(Command("reset_test", "reset_tests"))
+async def admin_reset_tests(message: types.Message) -> None:
+    """Admin command to reset test subscriptions for all users."""
+    if not _is_admin(message):
+        return
+
+    count = await reset_all_test_subs()
+    await message.answer(
+        f"✅ <b>اشتراک‌های تست تمامی کاربران با موفقیت بازنشانی شد!</b>\n\n"
+        f"👥 تعداد کاربران به‌روزرسانی شده: {to_persian_digits(count)}",
+        parse_mode="HTML",
+    )
 
 
 # ──────────────────────────── Approve Payment ────────────────────────────
@@ -84,16 +102,6 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         # Get subId
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
-
-        # Save subscription
-        await create_subscription(
-            tg_id=tg_id,
-            email=email,
-            sub_id=sub_id,
-            service_name=email,
-            data_gb=gb,
-            duration_days=duration,
-        )
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 

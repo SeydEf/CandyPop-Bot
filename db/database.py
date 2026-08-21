@@ -30,12 +30,13 @@ async def init_db() -> None:
 
     await db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
-            tg_id       INTEGER PRIMARY KEY,
-            username    TEXT,
-            full_name   TEXT,
-            joined_at   TEXT NOT NULL DEFAULT (datetime('now')),
-            referrer_id INTEGER,
-            test_used   INTEGER NOT NULL DEFAULT 0
+            tg_id        INTEGER PRIMARY KEY,
+            username     TEXT,
+            full_name    TEXT,
+            joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            referrer_id  INTEGER,
+            test_used    INTEGER NOT NULL DEFAULT 0,
+            last_test_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS wallets (
@@ -55,18 +56,6 @@ async def init_db() -> None:
             receipt_file_id TEXT,
             receipt_text  TEXT,
             message_id    INTEGER
-        );
-
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            tg_id         INTEGER NOT NULL REFERENCES users(tg_id),
-            email         TEXT NOT NULL,
-            sub_id        TEXT,
-            service_name  TEXT NOT NULL,
-            data_gb       INTEGER NOT NULL,
-            duration_days INTEGER NOT NULL,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            is_test       INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS referrals (

@@ -11,11 +11,17 @@ import time
 
 from aiogram import F, Router, types
 
-from config import INBOUND_IDS, SUB_BASE_URL, TEST_DATA_GB, TEST_DURATION_DAYS
-from db.models import create_subscription, is_test_used, set_test_used
+from config import (
+    INBOUND_IDS,
+    SUB_BASE_URL,
+    TEST_COOLDOWN_DAYS,
+    TEST_DATA_GB,
+    TEST_DURATION_DAYS,
+)
+from db.models import can_get_test_sub, set_test_used
 from keyboards.reply_kb import BTN_TEST
 from services import xui_api
-from utils.formatting import format_size_gb
+from utils.formatting import format_size_gb, to_persian_digits
 from utils.helpers import gb_to_bytes, generate_email
 
 logger = logging.getLogger(__name__)
@@ -30,11 +36,20 @@ async def test_subscription(message: types.Message) -> None:
 
     tg_id = message.from_user.id
 
-    # Check if already used
-    if await is_test_used(tg_id):
+    # Check cooldown / test usage
+    can_claim, rem_days, rem_hours = await can_get_test_sub(tg_id)
+    if not can_claim:
+        time_parts = []
+        if rem_days > 0:
+            time_parts.append(f"{to_persian_digits(rem_days)} روز")
+        if rem_hours > 0 or rem_days == 0:
+            time_parts.append(f"{to_persian_digits(rem_hours)} ساعت")
+        time_text = " و ".join(time_parts)
+
         await message.answer(
-            "❌ <b>شما قبلاً از اشتراک تست استفاده کرده‌اید.</b>\n\n"
-            "هر کاربر فقط یک بار می‌تواند اشتراک تست دریافت کند.",
+            f"❌ <b>امکان دریافت اشتراک تست وجود ندارد.</b>\n\n"
+            f"هر کاربر هر {to_persian_digits(TEST_COOLDOWN_DAYS)} روز یک‌بار می‌تواند اشتراک تست دریافت کند.\n\n"
+            f"⏱ <b>زمان باقیمانده تا دریافت بعدی:</b> {time_text}",
             parse_mode="HTML",
         )
         return
@@ -43,7 +58,7 @@ async def test_subscription(message: types.Message) -> None:
 
     try:
         username = message.from_user.username
-        email = generate_email(tg_id, username)
+        email = generate_email(tg_id, username, test=True)
         total_bytes = gb_to_bytes(TEST_DATA_GB)
         expiry_ms = int((time.time() + TEST_DURATION_DAYS * 86400) * 1000)
 
@@ -60,16 +75,7 @@ async def test_subscription(message: types.Message) -> None:
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
 
-        # Save locally
-        await create_subscription(
-            tg_id=tg_id,
-            email=email,
-            sub_id=sub_id,
-            service_name=email,
-            data_gb=TEST_DATA_GB,
-            duration_days=TEST_DURATION_DAYS,
-            is_test=True,
-        )
+        # Mark test as used
         await set_test_used(tg_id)
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"

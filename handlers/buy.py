@@ -30,7 +30,6 @@ from config import (
 )
 from db.models import (
     create_invoice,
-    create_subscription,
     debit_wallet,
     get_balance,
     get_invoice,
@@ -297,16 +296,6 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
         # Get the created client to retrieve subId
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
-
-        # Save subscription locally
-        await create_subscription(
-            tg_id=tg_id,
-            email=email,
-            sub_id=sub_id,
-            service_name=email,
-            data_gb=gb,
-            duration_days=duration,
-        )
 
         # Build subscription link
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"

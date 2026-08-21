@@ -29,7 +29,7 @@ def generate_qr(data: str) -> io.BytesIO:
     return buf
 
 
-def generate_email(tg_id: int, username: str | None = None) -> str:
+def generate_email(tg_id: int, username: str | None = None, test: bool = False) -> str:
     """Generate a unique email/remark identifier for an X-UI client.
 
     Format: <username>_<tg_id>_<short_uuid>
@@ -39,7 +39,10 @@ def generate_email(tg_id: int, username: str | None = None) -> str:
     name = username or "user"
     # Sanitise: only keep alphanumeric and underscores
     name = "".join(c if c.isalnum() or c == "_" else "" for c in name)
-    return f"{name}_{tg_id}_{short}"
+    if test:
+        return f"{name}_{tg_id}_{short}_test"
+    else:
+        return f"{name}_{tg_id}_{short}"
 
 
 def calculate_custom_price(gb: int) -> int:

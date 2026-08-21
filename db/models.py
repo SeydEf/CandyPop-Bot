@@ -66,19 +66,73 @@ async def create_user(
 async def set_test_used(tg_id: int) -> None:
     await ensure_user(tg_id)
     db = await get_db()
-    await db.execute("UPDATE users SET test_used = 1 WHERE tg_id = ?", (tg_id,))
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE users SET test_used = 1, last_test_at = ? WHERE tg_id = ?",
+        (now_iso, tg_id),
+    )
     await db.commit()
 
 
-async def is_test_used(tg_id: int) -> bool:
+async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
+    """Check if a user can claim a test subscription.
+
+    Returns:
+        (can_claim: bool, remaining_days: int, remaining_hours: int)
+    """
+    from config import TEST_COOLDOWN_DAYS
+
     await ensure_user(tg_id)
     db = await get_db()
     rows = await db.execute_fetchall(
-        "SELECT test_used FROM users WHERE tg_id = ?", (tg_id,)
+        "SELECT test_used, last_test_at FROM users WHERE tg_id = ?", (tg_id,)
     )
-    if rows:
-        return bool(rows[0]["test_used"])
-    return False
+
+    if not rows:
+        return True, 0, 0
+
+    user = rows[0]
+    last_test_at_str = user["last_test_at"]
+    test_used = bool(user["test_used"])
+
+    if not test_used and not last_test_at_str:
+        return True, 0, 0
+
+    now = datetime.now(timezone.utc)
+
+    if last_test_at_str:
+        try:
+            last_test_at = datetime.fromisoformat(last_test_at_str)
+            if last_test_at.tzinfo is None:
+                last_test_at = last_test_at.replace(tzinfo=timezone.utc)
+            elapsed_seconds = (now - last_test_at).total_seconds()
+            cooldown_seconds = TEST_COOLDOWN_DAYS * 86400
+
+            if elapsed_seconds < cooldown_seconds:
+                remaining_sec = cooldown_seconds - elapsed_seconds
+                days = int(remaining_sec // 86400)
+                hours = int((remaining_sec % 86400) // 3600)
+                return False, days, hours
+            else:
+                return True, 0, 0
+        except Exception:
+            return False, TEST_COOLDOWN_DAYS, 0
+
+    # If test_used is 1 but last_test_at is NULL (legacy user), enforce cooldown or allow based on reset
+    return False, TEST_COOLDOWN_DAYS, 0
+
+
+async def is_test_used(tg_id: int) -> bool:
+    can_claim, _, _ = await can_get_test_sub(tg_id)
+    return not can_claim
+
+
+async def reset_all_test_subs() -> int:
+    """Reset test subscription usage for all users."""
+    db = await get_db()
+    cursor = await db.execute("UPDATE users SET test_used = 0, last_test_at = NULL")
+    await db.commit()
+    return cursor.rowcount
 
 
 # ──────────────────────────── Wallets ────────────────────────────
@@ -223,63 +277,6 @@ async def expire_old_invoices() -> int:
     )
     await db.commit()
     return cursor.rowcount
-
-
-# ──────────────────────────── Subscriptions ────────────────────────────
-
-
-async def create_subscription(
-    tg_id: int,
-    email: str,
-    sub_id: str | None,
-    service_name: str,
-    data_gb: int,
-    duration_days: int,
-    is_test: bool = False,
-) -> int:
-    await ensure_user(tg_id)
-    db = await get_db()
-    cursor = await db.execute(
-        """INSERT INTO subscriptions (tg_id, email, sub_id, service_name, data_gb, duration_days, is_test)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (tg_id, email, sub_id, service_name, data_gb, duration_days, int(is_test)),
-    )
-    await db.commit()
-    return cursor.lastrowid  # type: ignore[return-value]
-
-
-async def get_user_subscriptions(tg_id: int) -> list[dict[str, Any]]:
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT * FROM subscriptions WHERE tg_id = ? ORDER BY created_at DESC",
-        (tg_id,),
-    )
-    return [dict(r) for r in rows]
-
-
-async def get_subscription_by_email(email: str) -> dict[str, Any] | None:
-    db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT * FROM subscriptions WHERE email = ?", (email,)
-    )
-    if rows:
-        return dict(rows[0])
-    return None
-
-
-async def update_subscription_name(email: str, new_name: str) -> None:
-    db = await get_db()
-    await db.execute(
-        "UPDATE subscriptions SET service_name = ? WHERE email = ?",
-        (new_name, email),
-    )
-    await db.commit()
-
-
-async def delete_subscription(email: str) -> None:
-    db = await get_db()
-    await db.execute("DELETE FROM subscriptions WHERE email = ?", (email,))
-    await db.commit()
 
 
 # ──────────────────────────── Referrals ────────────────────────────
