@@ -292,3 +292,25 @@ async def create_referral(referrer_tg_id: int, referred_tg_id: int) -> None:
         (referrer_tg_id, referred_tg_id),
     )
     await db.commit()
+
+
+# ──────────────────────────── Settings ────────────────────────────
+
+
+async def get_setting(key: str, default: str | None = None) -> str | None:
+    """Get a setting value by key."""
+    db = await get_db()
+    rows = await db.execute_fetchall("SELECT value FROM settings WHERE key = ?", (key,))
+    if rows:
+        return rows[0]["value"]
+    return default
+
+
+async def set_setting(key: str, value: str) -> None:
+    """Set or update a setting value."""
+    db = await get_db()
+    await db.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
+        (key, value),
+    )
+    await db.commit()

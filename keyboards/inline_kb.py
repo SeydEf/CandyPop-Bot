@@ -63,14 +63,15 @@ def users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
     )
 
 
-def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    """Step 3: Data volume selection with prices."""
+async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+    """Step 3: Data volume selection with dynamic pricing."""
+    from services.pricing import calculate_total_price
+
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
-    extra_price = (users - 1) * 50_000
 
-    for i, (gb, base_price) in enumerate(VOLUME_TIERS.items()):
-        total_price = base_price + extra_price
+    for i, (gb, _) in enumerate(VOLUME_TIERS.items()):
+        total_price = await calculate_total_price(gb, duration, users)
         label = f"{gb}GB — {format_price(total_price)}"
         btn = InlineKeyboardButton(
             text=label,

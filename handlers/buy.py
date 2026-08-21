@@ -27,7 +27,6 @@ from config import (
     INBOUND_IDS,
     INVOICE_EXPIRY_MINUTES,
     SUB_BASE_URL,
-    VOLUME_TIERS,
 )
 from db.models import (
     create_invoice,
@@ -50,9 +49,12 @@ from keyboards.inline_kb import (
 )
 from keyboards.reply_kb import BTN_BUY, main_menu_keyboard
 from services import xui_api
+from services.pricing import (
+    get_price_breakdown,
+    get_pricing_config,
+)
 from utils.formatting import format_price, format_size_gb, to_persian_digits
 from utils.helpers import (
-    calculate_custom_price,
     gb_to_bytes,
     generate_email,
 )
@@ -72,12 +74,26 @@ class BuyStates(StatesGroup):
 # ──────────────────────────── Step 1: Duration ────────────────────────────
 
 
+async def _get_duration_step_text() -> str:
+    config = await get_pricing_config()
+    durs = config["duration_surcharges"]
+    dur60 = durs.get(60, 0)
+    dur90 = durs.get(90, 0)
+    return (
+        "⏱ <b>مدت زمان اشتراک را انتخاب کنید:</b>\n\n"
+        "• ۳۰ روزه: (بدون هزینه اضافه)\n"
+        f"• ۶۰ روزه: +{format_price(dur60)}\n"
+        f"• ۹۰ روزه: +{format_price(dur90)}"
+    )
+
+
 @router.message(F.text == BTN_BUY)
 async def buy_start(message: types.Message, state: FSMContext) -> None:
     """Start the buy flow — show duration selection."""
     await state.clear()
+    text = await _get_duration_step_text()
     await message.answer(
-        "⏱ <b>مدت زمان اشتراک را انتخاب کنید:</b>",
+        text,
         reply_markup=duration_keyboard(),
         parse_mode="HTML",
     )
@@ -89,8 +105,9 @@ async def buy_back_to_duration(
 ) -> None:
     """Go back to duration selection."""
     await state.clear()
+    text = await _get_duration_step_text()
     await callback.message.edit_text(  # type: ignore[union-attr]
-        "⏱ <b>مدت زمان اشتراک را انتخاب کنید:</b>",
+        text,
         reply_markup=duration_keyboard(),
         parse_mode="HTML",
     )
@@ -100,13 +117,22 @@ async def buy_back_to_duration(
 # ──────────────────────────── Step 2: User Count ────────────────────────────
 
 
+async def _get_users_step_text() -> str:
+    config = await get_pricing_config()
+    user_surcharge = config["user_surcharge"]
+    return (
+        "👤 <b>تعداد کاربران همزمان را انتخاب کنید:</b>\n\n"
+        f"💡 به ازای هر کاربر اضافه، <b>+{format_price(user_surcharge)}</b> به مبلغ اشتراک افزوده می‌شود."
+    )
+
+
 @router.callback_query(F.data.startswith("buy_dur_"))
 async def buy_select_duration(callback: types.CallbackQuery) -> None:
     """Duration selected — show user count selection."""
     duration = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
+    text = await _get_users_step_text()
     await callback.message.edit_text(  # type: ignore[union-attr]
-        "👤 <b>تعداد کاربران را انتخاب کنید:</b>\n\n"
-        "به ازای هر کاربر اضافه، ۵۰,۰۰۰ تومان به مبلغ اشتراک افزوده می‌شود.",
+        text,
         reply_markup=users_keyboard(duration, users=1),
         parse_mode="HTML",
     )
@@ -138,9 +164,9 @@ async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) ->
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[3])
     users = int(parts[4])
+    text = await _get_users_step_text()
     await callback.message.edit_text(  # type: ignore[union-attr]
-        "👤 <b>تعداد کاربران را انتخاب کنید:</b>\n\n"
-        "به ازای هر کاربر اضافه، ۵۰,۰۰۰ تومان به مبلغ اشتراک افزوده می‌شود.",
+        text,
         reply_markup=users_keyboard(duration, users),
         parse_mode="HTML",
     )
@@ -150,15 +176,35 @@ async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) ->
 # ──────────────────────────── Step 3: Volume ────────────────────────────
 
 
+async def _get_volume_step_text(duration: int, users: int) -> str:
+    config = await get_pricing_config()
+    volume_tiers = config["volume_tiers"]
+    fallback_rate = config["fallback_gb_rate"]
+
+    tiers_info = ""
+    for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
+        tiers_info += (
+            f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
+        )
+    last_max = volume_tiers[-1][0] if volume_tiers else 100
+    tiers_info += f"  • بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} / GB\n"
+
+    return (
+        f"📊 <b>حجم اشتراک {duration} روزه ({to_persian_digits(users)} کاربره) را انتخاب کنید:</b>\n\n"
+        f"💡 <b>تعرفه‌ها و پله‌های تخفیف حجم:</b>\n{tiers_info}"
+    )
+
+
 @router.callback_query(F.data.regexp(r"^buy_users_confirm_\d+_\d+$"))
 async def buy_users_confirm(callback: types.CallbackQuery) -> None:
     """User count selected — show volume selection."""
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[3])
     users = int(parts[4])
+    text = await _get_volume_step_text(duration, users)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"📊 <b>حجم اشتراک {duration} روزه ({to_persian_digits(users)} کاربره) را انتخاب کنید:</b>",
-        reply_markup=volume_keyboard(duration, users),
+        text,
+        reply_markup=await volume_keyboard(duration, users),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -171,9 +217,10 @@ async def buy_back_to_volume(callback: types.CallbackQuery, state: FSMContext) -
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[3])
     users = int(parts[4])
+    text = await _get_volume_step_text(duration, users)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"📊 <b>حجم اشتراک {duration} روزه ({to_persian_digits(users)} کاربره) را انتخاب کنید:</b>",
-        reply_markup=volume_keyboard(duration, users),
+        text,
+        reply_markup=await volume_keyboard(duration, users),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -226,17 +273,26 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
     data = await state.get_data()
     duration = data["duration"]
     users = data.get("users", 1)
-    base_price = calculate_custom_price(gb)
-    extra_price = (users - 1) * 50_000
-    price = base_price + extra_price
+
+    bd = await get_price_breakdown(gb, duration, users)
+    price = bd["total_price"]
     await state.clear()
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {duration} روز\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
-        f"📊 حجم: {format_size_gb(gb)}\n"
-        f"💰 قیمت: {format_price(price)}\n\n"
+        f"⏱ مدت: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
     await message.answer(
@@ -256,20 +312,25 @@ async def buy_select_volume(callback: types.CallbackQuery) -> None:
     duration = int(parts[2])
     users = int(parts[3])
     gb = int(parts[4])
-    base_price = VOLUME_TIERS.get(gb, 0)
 
-    if base_price == 0:
-        base_price = calculate_custom_price(gb)
+    bd = await get_price_breakdown(gb, duration, users)
+    price = bd["total_price"]
 
-    extra_price = (users - 1) * 50_000
-    price = base_price + extra_price
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {duration} روز\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
-        f"📊 حجم: {format_size_gb(gb)}\n"
-        f"💰 قیمت: {format_price(price)}\n\n"
+        f"⏱ مدت: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
     await callback.message.edit_text(  # type: ignore[union-attr]
@@ -305,14 +366,25 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
         )
         return
 
+    bd = await get_price_breakdown(gb, duration, users)
     after_balance = balance - price
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
     text = (
         f"💰 <b>پرداخت از کیف پول</b>\n\n"
         f"📦 سفارش:\n"
-        f"⏱ مدت: {duration} روز\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
-        f"📊 حجم: {format_size_gb(gb)}\n"
-        f"💰 مبلغ: {format_price(price)}\n\n"
+        f"⏱ مدت: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"💰 مبلغ کل: {format_price(price)}\n\n"
         f"👛 موجودی فعلی: {format_price(balance)}\n"
         f"👛 موجودی پس از خرید: {format_price(after_balance)}\n\n"
         f"آیا تأیید می‌کنید؟"
@@ -422,14 +494,24 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     invoice = await create_invoice(tg_id, price, duration, gb, users_count=users)
     invoice_id = invoice["id"]
 
+    bd = await get_price_breakdown(gb, duration, users)
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
     text = (
         f"💳 <b>پرداخت کارت به کارت</b>\n\n"
         f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n\n"
         f"📦 سفارش:\n"
-        f"⏱ مدت: {duration} روز\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
-        f"📊 حجم: {format_size_gb(gb)}\n"
-        f"💰 مبلغ: {format_price(price)}\n\n"
+        f"⏱ مدت: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"💰 مبلغ کل: {format_price(price)}\n\n"
         f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
         f"👤 به نام: {CARD_HOLDER}\n\n"
         f"⏱ <b>مهلت پرداخت: {INVOICE_EXPIRY_MINUTES} دقیقه</b>\n\n"

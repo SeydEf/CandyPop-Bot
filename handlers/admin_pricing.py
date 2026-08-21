@@ -1,0 +1,463 @@
+"""
+Admin Pricing Control Panel handler.
+
+Allows the bot admin to dynamically configure:
+  - Base per-GB rate
+  - Per-user surcharges
+  - Duration surcharges (30, 60, 90 days)
+  - Tiered volume discount thresholds and per-GB rates
+"""
+
+from __future__ import annotations
+
+import logging
+
+from aiogram import F, Router, types
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from config import ADMIN_CHAT_ID
+from services.pricing import (
+    get_pricing_config,
+    reset_pricing_config_to_defaults,
+    update_base_gb_rate,
+    update_duration_surcharge,
+    update_user_surcharge,
+    update_volume_tiers,
+)
+from utils.formatting import format_price, to_persian_digits
+
+logger = logging.getLogger(__name__)
+router = Router(name="admin_pricing")
+
+
+class AdminPricingStates(StatesGroup):
+    waiting_base_rate = State()
+    waiting_user_surcharge = State()
+    waiting_dur_60 = State()
+    waiting_dur_90 = State()
+    waiting_tiers_text = State()
+
+
+def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+
+
+async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
+    """Build pricing control panel text and keyboard."""
+    config = await get_pricing_config()
+
+    base_rate = config["base_gb_rate"]
+    user_surcharge = config["user_surcharge"]
+    dur_surcharges: dict[int, int] = config["duration_surcharges"]
+    volume_tiers: list[tuple[int, int]] = config["volume_tiers"]
+    fallback_rate: int = config["fallback_gb_rate"]
+
+    tiers_text = ""
+    for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
+        tiers_text += (
+            f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
+        )
+    last_max = volume_tiers[-1][0] if volume_tiers else 100
+    tiers_text += f"  • بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} / GB\n"
+
+    dur_text = (
+        f"  • ۳۰ روز: +{format_price(dur_surcharges.get(30, 0))}\n"
+        f"  • ۶۰ روز: +{format_price(dur_surcharges.get(60, 0))}\n"
+        f"  • ۹۰ روز: +{format_price(dur_surcharges.get(90, 0))}\n"
+    )
+
+    text = (
+        f"⚙️ <b>مدیریت و تنظیمات قیمت‌گذاری (Pricing Control)</b>\n\n"
+        f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n\n"
+        f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
+        f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
+        f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💵 تغییر نرخ پایه هر گیگ",
+                    callback_data="admin_price_base",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👤 تغییر هزینه کاربر اضافه",
+                    callback_data="admin_price_user",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏱ تغییر حق‌الزحمه مدت زمان",
+                    callback_data="admin_price_dur_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📊 تغییر پله‌های تخفیف حجم",
+                    callback_data="admin_price_tiers",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی به پیش‌فرض سیستم",
+                    callback_data="admin_price_reset",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ بستن پنل",
+                    callback_data="admin_price_close",
+                ),
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+# ──────────────────────────── Panel Entry Points ────────────────────────────
+
+
+@router.message(Command("pricing", "pricing_settings"))
+async def admin_pricing_cmd(message: types.Message, state: FSMContext) -> None:
+    """Open pricing control panel via admin command."""
+    if not _is_admin(message):
+        return
+    await state.clear()
+    text, keyboard = await _build_pricing_panel()
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_price_main")
+async def admin_pricing_main(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Refresh and show main pricing control panel."""
+    if not _is_admin(callback):
+        return
+    await state.clear()
+    text, keyboard = await _build_pricing_panel()
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_price_close")
+async def admin_pricing_close(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Close pricing control panel."""
+    await state.clear()
+    await callback.message.delete()  # type: ignore[union-attr]
+
+
+# ──────────────────────────── Base GB Rate ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_price_base")
+async def admin_price_base_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for new base GB rate."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_base_rate)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "💵 <b>نرخ پایه جدید هر گیگ (به تومان) را وارد کنید:</b>\n"
+        "مثال: <code>5000</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_base_rate, F.text)
+async def admin_price_base_save(message: types.Message, state: FSMContext) -> None:
+    """Save new base GB rate."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        val = int(message.text.strip())
+        if val <= 0:
+            raise ValueError
+        await update_base_gb_rate(val)
+        await state.clear()
+        text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ نرخ پایه به <b>{format_price(val)}</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر به تومان وارد کنید. مثال: <code>5000</code>",
+            parse_mode="HTML",
+        )
+
+
+# ──────────────────────────── Per-User Surcharge ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_price_user")
+async def admin_price_user_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for new per-user surcharge."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_user_surcharge)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "👤 <b>هزینه اضافه به ازای هر کاربر اضافه (به تومان) را وارد کنید:</b>\n"
+        "مثال: <code>50000</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_user_surcharge, F.text)
+async def admin_price_user_save(message: types.Message, state: FSMContext) -> None:
+    """Save new per-user surcharge."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        val = int(message.text.strip())
+        if val < 0:
+            raise ValueError
+        await update_user_surcharge(val)
+        await state.clear()
+        text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ هزینه کاربر اضافه به <b>+{format_price(val)}</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید. مثال: <code>50000</code>",
+            parse_mode="HTML",
+        )
+
+
+# ──────────────────────────── Duration Surcharges ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_price_dur_menu")
+async def admin_price_dur_menu(callback: types.CallbackQuery) -> None:
+    """Show duration surcharge selection menu."""
+    if not _is_admin(callback):
+        return
+    config = await get_pricing_config()
+    durs = config["duration_surcharges"]
+
+    text = (
+        "⏱ <b>تنظیم حق‌الزحمه مدت زمان اشتراک</b>\n\n"
+        f"• ۶۰ روزه: +{format_price(durs.get(60, 0))}\n"
+        f"• ۹۰ روزه: +{format_price(durs.get(90, 0))}\n\n"
+        "مدت مورد نظر را جهت ویرایش انتخاب کنید:"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"۶۰ روزه (+{format_price(durs.get(60, 0))})",
+                    callback_data="admin_price_dur_60",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"۹۰ روزه (+{format_price(durs.get(90, 0))})",
+                    callback_data="admin_price_dur_90",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_price_dur_60")
+async def admin_price_dur_60_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for 60-day duration surcharge."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_dur_60)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "⏱ <b>مبلغ اضافه برای اشتراک ۶۰ روزه (به تومان) را وارد کنید:</b>\n"
+        "مثال: <code>50000</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_dur_60, F.text)
+async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> None:
+    """Save 60-day duration surcharge."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        val = int(message.text.strip())
+        if val < 0:
+            raise ValueError
+        await update_duration_surcharge(60, val)
+        await state.clear()
+        text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ مبلغ اضافه اشتراک ۶۰ روزه به <b>+{format_price(val)}</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_price_dur_90")
+async def admin_price_dur_90_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for 90-day duration surcharge."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_dur_90)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "⏱ <b>مبلغ اضافه برای اشتراک ۹۰ روزه (به تومان) را وارد کنید:</b>\n"
+        "مثال: <code>100000</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_dur_90, F.text)
+async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> None:
+    """Save 90-day duration surcharge."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        val = int(message.text.strip())
+        if val < 0:
+            raise ValueError
+        await update_duration_surcharge(90, val)
+        await state.clear()
+        text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ مبلغ اضافه اشتراک ۹۰ روزه به <b>+{format_price(val)}</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+
+
+# ──────────────────────────── Volume Discount Tiers ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_price_tiers")
+async def admin_price_tiers_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for custom volume discount tiers format."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_tiers_text)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "📊 <b>تنظیم پله‌های تخفیف حجم</b>\n\n"
+        "لطفاً پله‌های تخفیف را سطر به سطر به فرمت <code>سقف_حجم:نرخ_هرگیگ</code> وارد کنید.\n"
+        "سطر آخر را با <code>default:نرخ_بالای_آخرین_پله</code> وارد نمایید.\n\n"
+        "<b>مثال:</b>\n"
+        "<code>20:5000\n"
+        "50:4500\n"
+        "100:4000\n"
+        "default:3500</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_tiers_text, F.text)
+async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> None:
+    """Parse and save volume discount tiers."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    lines = [line.strip() for line in message.text.strip().split("\n") if line.strip()]
+    parsed_tiers: list[tuple[int, int]] = []
+    fallback_rate = 3500
+
+    try:
+        for line in lines:
+            if ":" not in line:
+                continue
+            k, v = line.split(":", 1)
+            k = k.strip().lower()
+            v_int = int(v.strip())
+
+            if k == "default":
+                fallback_rate = v_int
+            else:
+                gb_int = int(k)
+                parsed_tiers.append((gb_int, v_int))
+
+        if not parsed_tiers:
+            raise ValueError("No valid tiers parsed")
+
+        parsed_tiers.sort(key=lambda x: x[0])
+        await update_volume_tiers(parsed_tiers, fallback_rate)
+        await state.clear()
+        text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ پله‌های تخفیف حجم با موفقیت به روزرسانی شدند!\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+    except Exception:
+        await message.answer(
+            "❌ فرمت وارد شده نامعتبر است.\n"
+            "لطفاً مطابق مثال ارسال کنید:\n"
+            "<code>20:5000\n50:4500\n100:4000\ndefault:3500</code>",
+            parse_mode="HTML",
+        )
+
+
+# ──────────────────────────── Reset to Defaults ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_price_reset")
+async def admin_price_reset(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Reset pricing config to default values."""
+    if not _is_admin(callback):
+        return
+    await reset_pricing_config_to_defaults()
+    await state.clear()
+    text, keyboard = await _build_pricing_panel()
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"✅ تمامی تنظیمات قیمت‌گذاری به پیش‌فرض سیستم بازنشانی شدند.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()

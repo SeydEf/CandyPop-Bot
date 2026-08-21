@@ -16,7 +16,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from config import BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
-from handlers import admin, buy, start, subscriptions, test_sub
+from handlers import admin, admin_pricing, buy, start, subscriptions, test_sub
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.xui_api import close_client
 
@@ -73,6 +73,7 @@ async def main() -> None:
         subscriptions.router,
         test_sub.router,
         admin.router,
+        admin_pricing.router,
     )
 
     logger.info("Starting CandyPop Bot...")
