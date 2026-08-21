@@ -72,16 +72,33 @@ async def test_subscription(message: types.Message) -> None:
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
-        await message.answer(
+        text = (
             f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
             f"📦 نام سرویس: {email}\n"
             f"⏱ مدت: {test_duration} روز\n"
             f"👤 تعداد کاربر: {to_persian_digits(1)} کاربر\n"
             f"📊 حجم: {format_size_gb(test_gb)}\n\n"
-            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>",
-            reply_markup=sub_config_links_keyboard(email),
-            parse_mode="HTML",
+            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
         )
+
+        if sub_id:
+            from aiogram.types import BufferedInputFile
+            from utils.helpers import generate_qr
+
+            qr_buf = generate_qr(sub_link)
+            photo = BufferedInputFile(qr_buf.getvalue(), filename="qrcode.png")
+            await message.answer_photo(
+                photo=photo,
+                caption=text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(
+                text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
 
     except Exception as e:
         logger.exception("Failed to create test subscription for user %d", tg_id)

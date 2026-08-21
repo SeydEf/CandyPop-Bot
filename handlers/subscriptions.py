@@ -775,11 +775,27 @@ async def renew_wallet_confirm(
             f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>"
         )
 
-        await callback.message.edit_text(
-            success_text,
-            reply_markup=sub_config_links_keyboard(email),
-            parse_mode="HTML",
-        )
+        if sub_id:
+            from aiogram.types import BufferedInputFile
+
+            qr_buf = generate_qr(sub_link)
+            photo = BufferedInputFile(qr_buf.getvalue(), filename="qrcode.png")
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer_photo(
+                photo=photo,
+                caption=success_text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
+        else:
+            await callback.message.edit_text(
+                success_text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
 
     except Exception as e:
         logger.exception("Failed to renew client %s for user %d", email, tg_id)

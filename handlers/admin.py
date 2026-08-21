@@ -128,12 +128,26 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             f"📊 حجم: {format_size_gb(gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
         )
-        await bot.send_message(
-            chat_id=tg_id,
-            text=user_text,
-            reply_markup=sub_config_links_keyboard(email),
-            parse_mode="HTML",
-        )
+        if sub_id:
+            from aiogram.types import BufferedInputFile
+            from utils.helpers import generate_qr
+
+            qr_buf = generate_qr(sub_link)
+            photo = BufferedInputFile(qr_buf.getvalue(), filename="qrcode.png")
+            await bot.send_photo(
+                chat_id=tg_id,
+                photo=photo,
+                caption=user_text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
+        else:
+            await bot.send_message(
+                chat_id=tg_id,
+                text=user_text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
 
         admin_text = callback.message.text or callback.message.caption or ""
         admin_text += f"\n\n✅ تأیید شد — سرویس ساخته شد: {email}"
