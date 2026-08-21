@@ -16,7 +16,16 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from config import BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
-from handlers import admin, admin_pricing, buy, start, subscriptions, test_sub, wallet
+from handlers import (
+    admin,
+    admin_pricing,
+    buy,
+    profile,
+    start,
+    subscriptions,
+    test_sub,
+    wallet,
+)
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.xui_api import close_client
 
@@ -69,6 +78,7 @@ async def main() -> None:
     # Register routers (order matters — first match wins)
     dp.include_routers(
         start.router,
+        profile.router,
         buy.router,
         subscriptions.router,
         wallet.router,

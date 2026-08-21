@@ -455,6 +455,16 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
         await callback.answer("❌ موجودی کیف پول شما کافی نیست.", show_alert=True)
         return
 
+    # Record invoice in DB with status='approved' for transaction history
+    invoice = await create_invoice(
+        tg_id=tg_id,
+        amount=price,
+        duration_days=duration,
+        data_gb=gb,
+        users_count=users,
+    )
+    await update_invoice_status(invoice["id"], "approved")
+
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⏳ در حال ساخت اشتراک...",
         parse_mode="HTML",

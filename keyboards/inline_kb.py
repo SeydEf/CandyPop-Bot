@@ -520,3 +520,60 @@ def deposit_amount_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+# ──────────────────────────── Profile ────────────────────────────
+
+
+def profile_dashboard_keyboard() -> InlineKeyboardMarkup:
+    """Inline buttons for profile dashboard: Top Up Wallet & Order History."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💳 افزایش موجودی", callback_data="profile_topup"
+                ),
+                InlineKeyboardButton(
+                    text="🧾 تاریخچه سفارشات", callback_data="profile_orders_0"
+                ),
+            ],
+        ]
+    )
+
+
+def orders_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Paginated order history keyboard."""
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if total_pages > 1:
+        prev_btn = (
+            InlineKeyboardButton(
+                text="◀️ قبلی", callback_data=f"profile_orders_{page - 1}"
+            )
+            if page > 0
+            else InlineKeyboardButton(text=" ⬛️ ", callback_data="buy_noop")
+        )
+
+        page_indicator = InlineKeyboardButton(
+            text=f"صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}",
+            callback_data="buy_noop",
+        )
+
+        next_btn = (
+            InlineKeyboardButton(
+                text="بعدی ▶️", callback_data=f"profile_orders_{page + 1}"
+            )
+            if page < total_pages - 1
+            else InlineKeyboardButton(text=" ⬛️ ", callback_data="buy_noop")
+        )
+
+        rows.append([prev_btn, page_indicator, next_btn])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پروفایل", callback_data="profile_main"
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)

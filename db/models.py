@@ -273,6 +273,43 @@ async def get_pending_invoices_by_user(tg_id: int) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+async def get_user_invoices_paginated(
+    tg_id: int, offset: int = 0, limit: int = 5
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch paginated invoices for a user along with total count."""
+    await ensure_user(tg_id)
+    db = await get_db()
+    # First, expire any old pending invoices to ensure status is accurate
+    await expire_old_invoices()
+
+    count_rows = await db.execute_fetchall(
+        "SELECT COUNT(*) as cnt FROM invoices WHERE tg_id = ?", (tg_id,)
+    )
+    total_count = count_rows[0]["cnt"] if count_rows else 0
+
+    rows = await db.execute_fetchall(
+        "SELECT * FROM invoices WHERE tg_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (tg_id, limit, offset),
+    )
+    return [dict(r) for r in rows], total_count
+
+
+async def get_user_purchase_summary(tg_id: int) -> dict[str, Any]:
+    """Get purchase history summary (approved count and total spent)."""
+    await ensure_user(tg_id)
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total_spent FROM invoices WHERE tg_id = ? AND status = 'approved'",
+        (tg_id,),
+    )
+    if rows:
+        return {
+            "approved_count": rows[0]["cnt"],
+            "total_spent": rows[0]["total_spent"],
+        }
+    return {"approved_count": 0, "total_spent": 0}
+
+
 async def expire_old_invoices() -> int:
     """Mark all expired pending invoices. Returns count of expired."""
     db = await get_db()

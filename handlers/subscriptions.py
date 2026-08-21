@@ -17,7 +17,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import CARD_HOLDER, CARD_NUMBER, INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
-from db.models import create_invoice, debit_wallet, get_balance
+from db.models import (
+    create_invoice,
+    debit_wallet,
+    get_balance,
+    update_invoice_status,
+)
 from keyboards.inline_kb import (
     card_payment_keyboard,
     confirm_delete_keyboard,
@@ -805,6 +810,17 @@ async def renew_wallet_confirm(
     except ValueError:
         await callback.answer("❌ موجودی کیف پول شما کافی نیست.", show_alert=True)
         return
+
+    # Record invoice in DB with status='approved' for transaction history
+    invoice = await create_invoice(
+        tg_id=tg_id,
+        amount=price,
+        duration_days=duration,
+        data_gb=gb,
+        users_count=users,
+        target_email=email,
+    )
+    await update_invoice_status(invoice["id"], "approved")
 
     await callback.message.edit_text(  # type: ignore[union-attr]
         "⏳ در حال تمدید اشتراک...",
