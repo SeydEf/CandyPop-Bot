@@ -1,7 +1,3 @@
-"""
-Data-access helpers for all tables (raw SQL, no ORM).
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -10,9 +6,6 @@ from uuid import uuid4
 
 from db.database import get_db
 from config import INVOICE_EXPIRY_MINUTES
-
-
-# ──────────────────────────── Users ────────────────────────────
 
 
 async def get_user(tg_id: int) -> dict[str, Any] | None:
@@ -28,7 +21,6 @@ async def ensure_user(
     username: str | None = None,
     full_name: str | None = None,
 ) -> None:
-    """Ensure user and wallet exist in DB to prevent FOREIGN KEY constraint errors."""
     db = await get_db()
     await db.execute(
         """INSERT INTO users (tg_id, username, full_name)
@@ -38,7 +30,6 @@ async def ensure_user(
                full_name = COALESCE(EXCLUDED.full_name, users.full_name)""",
         (tg_id, username, full_name),
     )
-    # Create wallet automatically
     await db.execute(
         "INSERT OR IGNORE INTO wallets (tg_id, balance) VALUES (?, 0)",
         (tg_id,),
@@ -75,11 +66,6 @@ async def set_test_used(tg_id: int) -> None:
 
 
 async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
-    """Check if a user can claim a test subscription.
-
-    Returns:
-        (can_claim: bool, remaining_days: int, remaining_hours: int)
-    """
     from services.test_sub_config import get_test_sub_config
 
     await ensure_user(tg_id)
@@ -121,7 +107,6 @@ async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
         except Exception:
             return False, cooldown_days, 0
 
-    # If test_used is 1 but last_test_at is NULL (legacy user), enforce cooldown or allow based on reset
     return False, cooldown_days, 0
 
 
@@ -131,14 +116,10 @@ async def is_test_used(tg_id: int) -> bool:
 
 
 async def reset_all_test_subs() -> int:
-    """Reset test subscription usage for all users."""
     db = await get_db()
     cursor = await db.execute("UPDATE users SET test_used = 0, last_test_at = NULL")
     await db.commit()
     return cursor.rowcount
-
-
-# ──────────────────────────── Wallets ────────────────────────────
 
 
 async def get_balance(tg_id: int) -> int:
@@ -153,7 +134,6 @@ async def get_balance(tg_id: int) -> int:
 
 
 async def credit_wallet(tg_id: int, amount: int) -> int:
-    """Add funds. Returns new balance."""
     await ensure_user(tg_id)
     db = await get_db()
     await db.execute(
@@ -165,7 +145,6 @@ async def credit_wallet(tg_id: int, amount: int) -> int:
 
 
 async def debit_wallet(tg_id: int, amount: int) -> int:
-    """Subtract funds. Returns new balance. Raises ValueError if insufficient."""
     await ensure_user(tg_id)
     balance = await get_balance(tg_id)
     if balance < amount:
@@ -177,9 +156,6 @@ async def debit_wallet(tg_id: int, amount: int) -> int:
     )
     await db.commit()
     return await get_balance(tg_id)
-
-
-# ──────────────────────────── Invoices ────────────────────────────
 
 
 async def create_invoice(
@@ -282,10 +258,8 @@ async def get_pending_invoices_by_user(tg_id: int) -> list[dict[str, Any]]:
 async def get_user_invoices_paginated(
     tg_id: int, offset: int = 0, limit: int = 5
 ) -> tuple[list[dict[str, Any]], int]:
-    """Fetch paginated invoices for a user along with total count."""
     await ensure_user(tg_id)
     db = await get_db()
-    # First, expire any old pending invoices to ensure status is accurate
     await expire_old_invoices()
 
     count_rows = await db.execute_fetchall(
@@ -301,7 +275,6 @@ async def get_user_invoices_paginated(
 
 
 async def get_user_purchase_summary(tg_id: int) -> dict[str, Any]:
-    """Get purchase history summary (approved count and total spent)."""
     await ensure_user(tg_id)
     db = await get_db()
     rows = await db.execute_fetchall(
@@ -317,7 +290,6 @@ async def get_user_purchase_summary(tg_id: int) -> dict[str, Any]:
 
 
 async def expire_old_invoices() -> int:
-    """Mark all expired pending invoices. Returns count of expired."""
     db = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
@@ -326,9 +298,6 @@ async def expire_old_invoices() -> int:
     )
     await db.commit()
     return cursor.rowcount
-
-
-# ──────────────────────────── Referrals ────────────────────────────
 
 
 async def create_referral(referrer_tg_id: int, referred_tg_id: int) -> None:
@@ -340,11 +309,7 @@ async def create_referral(referrer_tg_id: int, referred_tg_id: int) -> None:
     await db.commit()
 
 
-# ──────────────────────────── Settings ────────────────────────────
-
-
 async def get_setting(key: str, default: str | None = None) -> str | None:
-    """Get a setting value by key."""
     db = await get_db()
     rows = await db.execute_fetchall("SELECT value FROM settings WHERE key = ?", (key,))
     if rows:
@@ -353,7 +318,6 @@ async def get_setting(key: str, default: str | None = None) -> str | None:
 
 
 async def set_setting(key: str, value: str) -> None:
-    """Set or update a setting value."""
     db = await get_db()
     await db.execute(
         "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",

@@ -1,9 +1,3 @@
-"""
-CandyPop VPN Bot — Entry Point
-
-Initializes the bot, registers handlers & middleware, and starts polling.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -30,7 +24,6 @@ from handlers import (
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.xui_api import close_client
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -40,21 +33,18 @@ logger = logging.getLogger(__name__)
 
 
 async def on_startup(bot: Bot) -> None:
-    """Called when the bot starts up."""
     await init_db()
     me = await bot.get_me()
     logger.info("Bot started: @%s (%s)", me.username, me.full_name)
 
 
 async def on_shutdown(bot: Bot) -> None:
-    """Called when the bot shuts down."""
     await close_db()
     await close_client()
     logger.info("Bot shut down gracefully.")
 
 
 async def main() -> None:
-    """Main entry point."""
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN is not set! Check your .env file.")
         return
@@ -68,15 +58,12 @@ async def main() -> None:
     )
     dp = Dispatcher()
 
-    # Register startup/shutdown hooks
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    # Register channel-check middleware on all updates
     dp.message.outer_middleware(ChannelCheckMiddleware())
     dp.callback_query.outer_middleware(ChannelCheckMiddleware())
 
-    # Register routers (order matters — first match wins)
     dp.include_routers(
         start.router,
         profile.router,

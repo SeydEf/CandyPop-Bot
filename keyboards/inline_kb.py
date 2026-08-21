@@ -1,7 +1,3 @@
-"""
-All inline keyboards used throughout the bot.
-"""
-
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -10,11 +6,7 @@ from config import DURATION_OPTIONS, VOLUME_TIERS
 from utils.formatting import format_price, to_persian_digits
 
 
-# ──────────────────────────── Buy Flow ────────────────────────────
-
-
 def duration_keyboard() -> InlineKeyboardMarkup:
-    """Step 1: Duration selection (30/60/90 days)."""
     buttons = []
     for days in DURATION_OPTIONS:
         label = f"{days} روز"
@@ -30,7 +22,6 @@ def duration_keyboard() -> InlineKeyboardMarkup:
 
 
 def users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    """Step 2: User count selection (1 to 10)."""
     dec_users = max(1, users - 1)
     inc_users = min(10, users + 1)
     return InlineKeyboardMarkup(
@@ -64,7 +55,6 @@ def users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
 
 
 async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    """Step 3: Data volume selection with dynamic pricing."""
     from services.pricing import calculate_total_price
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -82,7 +72,6 @@ async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
             rows.append(row)
             row = []
 
-    # Custom volume option
     rows.append(
         [
             InlineKeyboardButton(
@@ -91,7 +80,6 @@ async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
             )
         ]
     )
-    # Back button
     rows.append(
         [
             InlineKeyboardButton(
@@ -106,7 +94,6 @@ async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
 def payment_method_keyboard(
     duration: int, users: int, gb: int, price: int
 ) -> InlineKeyboardMarkup:
-    """Step 4: Payment method selection."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -135,7 +122,6 @@ def payment_method_keyboard(
 def wallet_confirm_keyboard(
     duration: int, users: int, gb: int, price: int
 ) -> InlineKeyboardMarkup:
-    """Wallet payment confirmation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -154,7 +140,6 @@ def wallet_confirm_keyboard(
 def card_payment_keyboard(
     invoice_id: str, card_number: str, amount: int
 ) -> InlineKeyboardMarkup:
-    """Card-to-card payment interface with copy buttons."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -182,11 +167,7 @@ def card_payment_keyboard(
     )
 
 
-# ──────────────────────────── Admin Payment Review ────────────────────────────
-
-
 def admin_payment_review_keyboard(invoice_id: str) -> InlineKeyboardMarkup:
-    """Admin buttons to approve or reject a payment."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -203,13 +184,9 @@ def admin_payment_review_keyboard(invoice_id: str) -> InlineKeyboardMarkup:
     )
 
 
-# ──────────────────────────── My Subscriptions ────────────────────────────
-
-
 def subscriptions_list_keyboard(
     subs: list[dict],
 ) -> InlineKeyboardMarkup:
-    """List of subscriptions as inline buttons."""
     rows: list[list[InlineKeyboardButton]] = []
     for sub in subs:
         email = sub["email"]
@@ -226,7 +203,6 @@ def subscriptions_list_keyboard(
 
 
 def subscription_manage_keyboard(email: str) -> InlineKeyboardMarkup:
-    """Management actions for a single subscription."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -272,7 +248,6 @@ def subscription_manage_keyboard(email: str) -> InlineKeyboardMarkup:
 
 
 def renew_options_keyboard() -> InlineKeyboardMarkup:
-    """Options for subscription renewal: keep current plan vs change plan."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -298,7 +273,6 @@ def renew_options_keyboard() -> InlineKeyboardMarkup:
 
 
 def renew_duration_keyboard() -> InlineKeyboardMarkup:
-    """Duration selection for plan change during renewal."""
     buttons = []
     for days in DURATION_OPTIONS:
         label = f"{days} روز"
@@ -321,7 +295,6 @@ def renew_duration_keyboard() -> InlineKeyboardMarkup:
 
 
 def renew_users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    """User count selection for renewal."""
     dec_users = max(1, users - 1)
     inc_users = min(10, users + 1)
     return InlineKeyboardMarkup(
@@ -357,7 +330,6 @@ def renew_users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
 
 
 async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    """Data volume selection for renewal with dynamic pricing."""
     from services.pricing import calculate_total_price
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -375,7 +347,6 @@ async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMark
             rows.append(row)
             row = []
 
-    # Custom volume option
     rows.append(
         [
             InlineKeyboardButton(
@@ -384,7 +355,6 @@ async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMark
             )
         ]
     )
-    # Back button
     rows.append(
         [
             InlineKeyboardButton(
@@ -398,7 +368,6 @@ async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMark
 
 
 def renew_payment_method_keyboard() -> InlineKeyboardMarkup:
-    """Payment method selection for renewal."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -427,7 +396,6 @@ def renew_payment_method_keyboard() -> InlineKeyboardMarkup:
 
 
 def renew_wallet_confirm_keyboard() -> InlineKeyboardMarkup:
-    """Wallet payment confirmation for renewal."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -446,7 +414,6 @@ def renew_wallet_confirm_keyboard() -> InlineKeyboardMarkup:
 
 
 def confirm_delete_keyboard(email: str) -> InlineKeyboardMarkup:
-    """Confirm subscription deletion."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -464,7 +431,6 @@ def confirm_delete_keyboard(email: str) -> InlineKeyboardMarkup:
 
 
 def confirm_regen_keyboard(email: str) -> InlineKeyboardMarkup:
-    """Confirm subscription link regeneration."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -482,7 +448,6 @@ def confirm_regen_keyboard(email: str) -> InlineKeyboardMarkup:
 
 
 def sub_config_links_keyboard(email: str) -> InlineKeyboardMarkup:
-    """Glass button to fetch config links for a subscription."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -496,7 +461,6 @@ def sub_config_links_keyboard(email: str) -> InlineKeyboardMarkup:
 
 
 def deposit_amount_keyboard() -> InlineKeyboardMarkup:
-    """Preset deposit amount selection keyboard."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -522,11 +486,7 @@ def deposit_amount_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-# ──────────────────────────── Profile ────────────────────────────
-
-
 def profile_dashboard_keyboard() -> InlineKeyboardMarkup:
-    """Inline buttons for profile dashboard: Top Up Wallet & Order History."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -542,7 +502,6 @@ def profile_dashboard_keyboard() -> InlineKeyboardMarkup:
 
 
 def orders_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMarkup:
-    """Paginated order history keyboard."""
     rows: list[list[InlineKeyboardButton]] = []
 
     if total_pages > 1:

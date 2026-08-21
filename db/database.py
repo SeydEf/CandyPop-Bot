@@ -1,7 +1,3 @@
-"""
-Async SQLite database setup using aiosqlite.
-"""
-
 import os
 import aiosqlite
 
@@ -11,7 +7,6 @@ _db: aiosqlite.Connection | None = None
 
 
 async def get_db() -> aiosqlite.Connection:
-    """Return the singleton database connection, creating it if needed."""
     global _db
     if _db is None:
         db_dir = os.path.dirname(DB_PATH)
@@ -25,7 +20,6 @@ async def get_db() -> aiosqlite.Connection:
 
 
 async def init_db() -> None:
-    """Create all tables if they do not exist."""
     db = await get_db()
 
     await db.executescript("""
@@ -78,7 +72,6 @@ async def init_db() -> None:
 
 
 async def close_db() -> None:
-    """Close the database connection."""
     global _db
     if _db is not None:
         await _db.close()

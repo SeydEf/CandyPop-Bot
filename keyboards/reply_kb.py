@@ -1,10 +1,5 @@
-"""
-Main menu reply keyboard.
-"""
-
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
-# Button labels (Persian)
 BTN_TEST = "🎁 اشتراک تست"
 BTN_BUY = "🛒 خرید اشتراک"
 BTN_MY_SUBS = "📋 اشتراک‌های من"
@@ -18,7 +13,6 @@ BTN_INVITE = "👥 دعوت از دوستان"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Build the main menu reply keyboard (3 columns layout)."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [

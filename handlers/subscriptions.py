@@ -1,11 +1,3 @@
-"""
-My Subscriptions handler.
-
-Lists user's active subscriptions by querying X-UI panel in real-time
-using the user's Telegram ID, and provides management actions
-(rename, regenerate link, delete, QR, links).
-"""
-
 from __future__ import annotations
 
 import logging
@@ -57,16 +49,7 @@ class SubStates(StatesGroup):
     waiting_rename = State()
 
 
-# ──────────────────────────── Helpers ────────────────────────────
-
-
 async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
-    """Fetch subscriptions from X-UI panel by Telegram user ID.
-
-    Returns a list of dicts with keys the rest of the handler expects:
-        email, service_name (=email/remark), sub_id, totalGB, expiryTime,
-        usedTraffic, enable
-    """
     raw = await xui_api.get_clients_by_tg_id(tg_id)
     subs: list[dict] = []
     for entry in raw:
@@ -74,7 +57,7 @@ async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
         subs.append(
             {
                 "email": client.get("email", ""),
-                "service_name": client.get("email", ""),  # remark = email
+                "service_name": client.get("email", ""),
                 "sub_id": client.get("subId", ""),
                 "totalGB": client.get("totalGB", 0),
                 "expiryTime": client.get("expiryTime", 0),
@@ -87,18 +70,13 @@ async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
 
 
 def _build_sub_link(sub_id: str) -> str:
-    """Build subscription URL from subId."""
     if sub_id:
         return f"{SUB_BASE_URL}/{sub_id}"
     return "نامشخص"
 
 
-# ──────────────────────────── List Subscriptions ────────────────────────────
-
-
 @router.message(F.text == BTN_MY_SUBS)
 async def my_subscriptions(message: types.Message) -> None:
-    """Show list of user's subscriptions from X-UI panel."""
     if not message.from_user:
         return
 
@@ -120,18 +98,17 @@ async def my_subscriptions(message: types.Message) -> None:
 
 
 async def _render_subscriptions_list(callback: types.CallbackQuery) -> None:
-    """Render subscription list or empty state."""
     if not callback.from_user:
         return
     subs = await _fetch_subs_from_xui(callback.from_user.id)
     if not subs:
-        await callback.message.edit_text(  # type: ignore[union-attr]
+        await callback.message.edit_text(
             "📭 <b>شما درحال حاضر اشتراک فعالی ندارید.</b>\n\n"
             "برای خرید اشتراک از منوی اصلی گزینه «🛒 خرید اشتراک» را انتخاب کنید.",
             parse_mode="HTML",
         )
     else:
-        await callback.message.edit_text(  # type: ignore[union-attr]
+        await callback.message.edit_text(
             f"📋 <b>اشتراک‌های شما ({to_persian_digits(len(subs))}):</b>\n\n"
             "یکی را انتخاب کنید:",
             reply_markup=subscriptions_list_keyboard(subs),
@@ -141,7 +118,6 @@ async def _render_subscriptions_list(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data == "sub_back_list")
 async def back_to_list(callback: types.CallbackQuery) -> None:
-    """Go back to subscription list."""
     await _render_subscriptions_list(callback)
     await callback.answer()
 
@@ -149,7 +125,6 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
 async def _build_dashboard_info(
     email: str,
 ) -> tuple[str, InlineKeyboardMarkup] | None:
-    """Build dashboard text and management keyboard with live stats from X-UI."""
     client = await xui_api.get_client(email)
     client_full = await xui_api.get_client_full(email)
 
@@ -163,7 +138,6 @@ async def _build_dashboard_info(
     sub_id = client.get("subId", "")
     sub_link = _build_sub_link(sub_id)
 
-    # Format traffic
     if total_bytes > 0:
         usage_text = f"{format_size(used_traffic)} / {format_size(total_bytes)}"
         remaining_text = format_size(remaining)
@@ -192,13 +166,9 @@ async def _build_dashboard_info(
     return text, subscription_manage_keyboard(email)
 
 
-# ──────────────────────────── View Subscription Dashboard ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("sub_view_"))
 async def view_subscription(callback: types.CallbackQuery) -> None:
-    """Show subscription dashboard with live stats from X-UI."""
-    email = callback.data[len("sub_view_") :]  # type: ignore[union-attr]
+    email = callback.data[len("sub_view_") :]
 
     info = await _build_dashboard_info(email)
     if not info:
@@ -206,7 +176,7 @@ async def view_subscription(callback: types.CallbackQuery) -> None:
         return
 
     text, keyboard = info
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=keyboard,
         parse_mode="HTML",
@@ -214,17 +184,13 @@ async def view_subscription(callback: types.CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────── Rename ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("sub_rename_"))
 async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Start rename flow — ask for new name."""
-    email = callback.data[len("sub_rename_") :]  # type: ignore[union-attr]
+    email = callback.data[len("sub_rename_") :]
     await state.set_state(SubStates.waiting_rename)
     await state.update_data(rename_email=email)
 
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         "✏️ <b>نام جدید سرویس را وارد کنید:</b>\n\nبرای انصراف /cancel را بزنید.",
         parse_mode="HTML",
     )
@@ -233,7 +199,6 @@ async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None
 
 @router.message(SubStates.waiting_rename, F.text)
 async def rename_process(message: types.Message, state: FSMContext) -> None:
-    """Process the new service name — updates the email/remark in X-UI."""
     if not message.text:
         return
 
@@ -250,14 +215,12 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
 
     new_name = message.text.strip()[:50]
 
-    # Fetch current client data from X-UI
     client = await xui_api.get_client(old_email)
     if not client:
         await state.clear()
         await message.answer("❌ کلاینت در پنل یافت نشد.")
         return
 
-    # Update email/remark in X-UI (email is the remark/name field)
     update_data = dict(client)
     update_data["email"] = new_name
 
@@ -284,14 +247,10 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
         await message.answer(f"❌ خطا در تغییر نام: {e}")
 
 
-# ──────────────────────────── Regenerate Link ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("sub_regen_"))
 async def regen_confirm(callback: types.CallbackQuery) -> None:
-    """Ask for confirmation before regenerating subscription link."""
-    email = callback.data[len("sub_regen_") :]  # type: ignore[union-attr]
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    email = callback.data[len("sub_regen_") :]
+    await callback.message.edit_text(
         "⚠️ <b>آیا مطمئن هستید؟</b>\n\n"
         "با تغییر لینک اشتراک، لینک‌ قبلی و UUID های قبلی غیرفعال شده "
         "و دسترسی افراد غیرمجاز قطع می‌شود.\n\n"
@@ -304,20 +263,16 @@ async def regen_confirm(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("sub_confirm_regen_"))
 async def regen_execute(callback: types.CallbackQuery) -> None:
-    """Execute the link regeneration — generate new UUID for the client."""
-    email = callback.data[len("sub_confirm_regen_") :]  # type: ignore[union-attr]
+    email = callback.data[len("sub_confirm_regen_") :]
 
-    # Get current client data
     client = await xui_api.get_client(email)
     if not client:
         await callback.answer("❌ کلاینت در پنل یافت نشد.", show_alert=True)
         return
 
-    # Generate new UUID and subId
     new_uuid = str(uuid.uuid4())
     new_sub_id = str(uuid.uuid4())
 
-    # Update client with new credentials
     update_data = dict(client)
     update_data["uuid"] = new_uuid
     update_data["subId"] = new_sub_id
@@ -328,7 +283,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
         info = await _build_dashboard_info(email)
         if info:
             text, keyboard = info
-            await callback.message.edit_text(  # type: ignore[union-attr]
+            await callback.message.edit_text(
                 f"✅ <b>لینک اشتراک با موفقیت تغییر کرد!</b>\n"
                 f"⚠️ لینک قبلی دیگر کار نمی‌کند.\n\n{text}",
                 reply_markup=keyboard,
@@ -336,7 +291,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
             )
         else:
             new_link = _build_sub_link(new_sub_id)
-            await callback.message.edit_text(  # type: ignore[union-attr]
+            await callback.message.edit_text(
                 f"✅ <b>لینک اشتراک با موفقیت تغییر کرد!</b>\n\n"
                 f"🔗 لینک جدید:\n<code>{new_link}</code>\n\n"
                 "⚠️ لینک قبلی دیگر کار نمی‌کند.",
@@ -350,14 +305,10 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────── Delete ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("sub_delete_"))
 async def delete_confirm(callback: types.CallbackQuery) -> None:
-    """Ask for confirmation before deleting subscription."""
-    email = callback.data[len("sub_delete_") :]  # type: ignore[union-attr]
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    email = callback.data[len("sub_delete_") :]
+    await callback.message.edit_text(
         "⚠️ <b>آیا مطمئن هستید که می‌خواهید این سرویس را حذف کنید؟</b>\n\n"
         "این عملیات قابل بازگشت نیست!",
         reply_markup=confirm_delete_keyboard(email),
@@ -368,8 +319,7 @@ async def delete_confirm(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("sub_confirm_del_"))
 async def delete_execute(callback: types.CallbackQuery) -> None:
-    """Execute the subscription deletion and return to list."""
-    email = callback.data[len("sub_confirm_del_") :]  # type: ignore[union-attr]
+    email = callback.data[len("sub_confirm_del_") :]
 
     try:
         await xui_api.delete_client(email)
@@ -382,13 +332,9 @@ async def delete_execute(callback: types.CallbackQuery) -> None:
     await _render_subscriptions_list(callback)
 
 
-# ──────────────────────────── QR Code & Links ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("sub_qr_"))
 async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
-    """Generate and send QR code for subscription link."""
-    email = callback.data[len("sub_qr_") :]  # type: ignore[union-attr]
+    email = callback.data[len("sub_qr_") :]
     client = await xui_api.get_client(email)
 
     sub_id = client.get("subId", "") if client else ""
@@ -400,7 +346,7 @@ async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
     qr_image = generate_qr(sub_link)
 
     await bot.send_photo(
-        chat_id=callback.message.chat.id,  # type: ignore[union-attr]
+        chat_id=callback.message.chat.id,
         photo=types.BufferedInputFile(qr_image.read(), filename="qrcode.png"),
         caption=f"📱 QR Code اشتراک\n\n🔗 <code>{sub_link}</code>",
         parse_mode="HTML",
@@ -409,7 +355,6 @@ async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
 
 
 def _extract_link_name(link: str, index: int) -> str:
-    """Extract link remark name from URL fragment (#name), or fallback to index."""
     if "#" in link:
         from urllib.parse import unquote
 
@@ -421,8 +366,7 @@ def _extract_link_name(link: str, index: int) -> str:
 
 @router.callback_query(F.data.startswith("sub_links_"))
 async def show_links(callback: types.CallbackQuery) -> None:
-    """Show individual config links for the subscription."""
-    email = callback.data[len("sub_links_") :]  # type: ignore[union-attr]
+    email = callback.data[len("sub_links_") :]
 
     links = await xui_api.get_client_links(email)
 
@@ -435,20 +379,15 @@ async def show_links(callback: types.CallbackQuery) -> None:
         name = _extract_link_name(link, i)
         text += f"📌 <b>{name}:</b>\n<code>{link}</code>\n\n"
 
-    # Send as a new message since links can be very long
-    await callback.message.answer(  # type: ignore[union-attr]
+    await callback.message.answer(
         text,
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-# ──────────────────────────── Renew Subscription ────────────────────────────
-
-
 @router.callback_query(F.data == "sub_view_current")
 async def sub_view_current(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Return to dashboard of the subscription stored in FSM state."""
     data = await state.get_data()
     email = data.get("renew_email")
     if not email:
@@ -463,7 +402,7 @@ async def sub_view_current(callback: types.CallbackQuery, state: FSMContext) -> 
         return
 
     text, keyboard = info
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=keyboard,
         parse_mode="HTML",
@@ -474,9 +413,8 @@ async def sub_view_current(callback: types.CallbackQuery, state: FSMContext) -> 
 @router.callback_query(F.data == "sub_renew_current")
 @router.callback_query(F.data.startswith("sub_renew_"))
 async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Show renewal options for a subscription."""
     if callback.data.startswith("sub_renew_") and callback.data != "sub_renew_current":
-        email = callback.data[len("sub_renew_") :]  # type: ignore[union-attr]
+        email = callback.data[len("sub_renew_") :]
         await state.update_data(renew_email=email)
     else:
         data = await state.get_data()
@@ -501,7 +439,7 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
         f"👤 تعداد کاربر فعلی: {to_persian_digits(current_users)} کاربر\n\n"
         f"لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
     )
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=renew_options_keyboard(),
         parse_mode="HTML",
@@ -511,7 +449,6 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data == "renew_same")
 async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Option 1: Renew with exact same plan (30 days, current GB, current users)."""
     data = await state.get_data()
     email = data.get("renew_email")
     if not email:
@@ -552,7 +489,7 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
         f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=renew_payment_method_keyboard(),
         parse_mode="HTML",
@@ -562,14 +499,13 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data == "renew_change")
 async def renew_change_plan(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Option 2: Change plan and renew — Step 1: Duration selection."""
     data = await state.get_data()
     email = data.get("renew_email", "")
 
     from handlers.buy import _get_duration_step_text
 
     text = await _get_duration_step_text()
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         f"🔄 <b>تغییر پلن و تمدید سرویس {email}</b>\n\n{text}",
         reply_markup=renew_duration_keyboard(),
         parse_mode="HTML",
@@ -581,8 +517,7 @@ async def renew_change_plan(callback: types.CallbackQuery, state: FSMContext) ->
 async def renew_select_duration(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Duration selected for renewal — show user count step."""
-    duration = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
+    duration = int(callback.data.split("_")[-1])
     await state.update_data(duration=duration)
 
     data = await state.get_data()
@@ -591,7 +526,7 @@ async def renew_select_duration(
     from handlers.buy import _get_users_step_text
 
     text = await _get_users_step_text()
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس {email}</b>\n\n{text}",
         reply_markup=renew_users_keyboard(duration, users=1),
         parse_mode="HTML",
@@ -601,12 +536,11 @@ async def renew_select_duration(
 
 @router.callback_query(F.data.startswith("renew_users_step_"))
 async def renew_users_step(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Update user count stepper during renewal."""
-    users = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
+    users = int(callback.data.split("_")[-1])
     data = await state.get_data()
     duration = data.get("duration", 30)
 
-    await callback.message.edit_reply_markup(  # type: ignore[union-attr]
+    await callback.message.edit_reply_markup(
         reply_markup=renew_users_keyboard(duration, users)
     )
     await callback.answer()
@@ -614,8 +548,7 @@ async def renew_users_step(callback: types.CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data.startswith("renew_users_confirm_"))
 async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """User count selected for renewal — show volume step."""
-    users = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
+    users = int(callback.data.split("_")[-1])
     await state.update_data(users=users)
 
     data = await state.get_data()
@@ -625,7 +558,7 @@ async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) 
     from handlers.buy import _get_volume_step_text
 
     text = await _get_volume_step_text(duration, users)
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس {email}</b>\n\n{text}",
         reply_markup=await renew_volume_keyboard(duration, users),
         parse_mode="HTML",
@@ -635,7 +568,6 @@ async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) 
 
 @router.callback_query(F.data.startswith("renew_back_users_"))
 async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Go back to user count selection during renewal."""
     data = await state.get_data()
     email = data.get("renew_email", "")
     duration = data.get("duration", 30)
@@ -644,7 +576,7 @@ async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) 
     from handlers.buy import _get_users_step_text
 
     text = await _get_users_step_text()
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس {email}</b>\n\n{text}",
         reply_markup=renew_users_keyboard(duration, users),
         parse_mode="HTML",
@@ -656,7 +588,6 @@ async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) 
 async def renew_back_to_volume(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Go back to volume selection during renewal."""
     data = await state.get_data()
     email = data.get("renew_email", "")
     duration = data.get("duration", 30)
@@ -665,7 +596,7 @@ async def renew_back_to_volume(
     from handlers.buy import _get_volume_step_text
 
     text = await _get_volume_step_text(duration, users)
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس {email}</b>\n\n{text}",
         reply_markup=await renew_volume_keyboard(duration, users),
         parse_mode="HTML",
@@ -675,14 +606,13 @@ async def renew_back_to_volume(
 
 @router.callback_query(F.data == "renew_vol_custom")
 async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Prompt for custom GB volume during renewal."""
     data = await state.get_data()
     email = data.get("renew_email", "")
 
     from handlers.buy import BuyStates
 
     await state.set_state(BuyStates.waiting_custom_gb)
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         f"📝 <b>لطفاً حجم جدید مورد نظر برای تمدید سرویس {email} را به گیگابایت وارد کنید:</b>\n"
         "مثال: <code>25</code>\n\n"
         "برای انصراف /cancel را بزنید.",
@@ -693,8 +623,7 @@ async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) 
 
 @router.callback_query(F.data.startswith("renew_vol_"))
 async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Volume selected for renewal — show payment options."""
-    gb = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
+    gb = int(callback.data.split("_")[-1])
     data = await state.get_data()
     email = data.get("renew_email", "")
     duration = data.get("duration", 30)
@@ -723,7 +652,7 @@ async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) 
         f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=renew_payment_method_keyboard(),
         parse_mode="HTML",
@@ -731,14 +660,10 @@ async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) 
     await callback.answer()
 
 
-# ──────────────────────────── Wallet Renewal Payment ────────────────────────────
-
-
 @router.callback_query(F.data == "renew_pay_wallet")
 async def renew_wallet_payment(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Show wallet balance and renewal confirmation."""
     if not callback.from_user:
         return
     data = await state.get_data()
@@ -782,7 +707,7 @@ async def renew_wallet_payment(
         f"👛 موجودی پس از خرید: {format_price(after_balance)}\n\n"
         f"آیا تأیید می‌کنید؟"
     )
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=renew_wallet_confirm_keyboard(),
         parse_mode="HTML",
@@ -794,7 +719,6 @@ async def renew_wallet_payment(
 async def renew_wallet_confirm(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Confirm wallet renewal — debit and renew client in X-UI."""
     if not callback.from_user:
         return
     data = await state.get_data()
@@ -811,7 +735,6 @@ async def renew_wallet_confirm(
         await callback.answer("❌ موجودی کیف پول شما کافی نیست.", show_alert=True)
         return
 
-    # Record invoice in DB with status='approved' for transaction history
     invoice = await create_invoice(
         tg_id=tg_id,
         amount=price,
@@ -823,7 +746,7 @@ async def renew_wallet_confirm(
     )
     await update_invoice_status(invoice["id"], "approved")
 
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         "⏳ در حال تمدید اشتراک...",
         parse_mode="HTML",
     )
@@ -852,7 +775,7 @@ async def renew_wallet_confirm(
             f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>"
         )
 
-        await callback.message.edit_text(  # type: ignore[union-attr]
+        await callback.message.edit_text(
             success_text,
             reply_markup=sub_config_links_keyboard(email),
             parse_mode="HTML",
@@ -863,7 +786,7 @@ async def renew_wallet_confirm(
         from db.models import credit_wallet
 
         await credit_wallet(tg_id, price)
-        await callback.message.edit_text(  # type: ignore[union-attr]
+        await callback.message.edit_text(
             f"❌ خطا در تمدید اشتراک. مبلغ به کیف پول شما بازگشت داده شد.\nخطا: {e}",
             parse_mode="HTML",
         )
@@ -871,12 +794,8 @@ async def renew_wallet_confirm(
     await callback.answer()
 
 
-# ──────────────────────────── Card Renewal Payment ────────────────────────────
-
-
 @router.callback_query(F.data == "renew_pay_card")
 async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Generate invoice for card-to-card subscription renewal."""
     if not callback.from_user:
         return
     data = await state.get_data()
@@ -923,7 +842,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"پس از واریز، دکمه «✅ پرداخت کردم» را بزنید."
     )
 
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=card_payment_keyboard(invoice_id, CARD_NUMBER, price),
         parse_mode="HTML",

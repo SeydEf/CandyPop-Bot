@@ -1,10 +1,3 @@
-"""
-Admin-side handlers.
-
-Handles payment approval/rejection from the admin.
-Only the ADMIN_CHAT_ID can trigger these callbacks.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -33,12 +26,8 @@ def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
     return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
 
 
-# ──────────────────────────── Reset All Test Subs (Admin Command) ────────────────────────────
-
-
 @router.message(Command("reset_test", "reset_tests"))
 async def admin_reset_tests(message: types.Message) -> None:
-    """Admin command to reset test subscriptions for all users."""
     if not _is_admin(message):
         return
 
@@ -50,17 +39,13 @@ async def admin_reset_tests(message: types.Message) -> None:
     )
 
 
-# ──────────────────────────── Approve Payment ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
-    """Admin approves a payment — create client and deliver config."""
     if not _is_admin(callback):
         await callback.answer("❌ شما دسترسی ندارید.", show_alert=True)
         return
 
-    invoice_id = callback.data[len("admin_approve_") :]  # type: ignore[union-attr]
+    invoice_id = callback.data[len("admin_approve_") :]
     invoice = await get_invoice(invoice_id)
 
     if not invoice:
@@ -76,18 +61,15 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     gb = invoice["data_gb"]
     invoice["amount"]
 
-    # Update invoice status
     await update_invoice_status(invoice_id, "approved")
 
-    # Update admin message
-    await callback.message.edit_reply_markup(reply_markup=None)  # type: ignore[union-attr]
+    await callback.message.edit_reply_markup(reply_markup=None)
 
     try:
         users_count = invoice.get("users_count", 1)
         target_email = invoice.get("target_email")
 
         if target_email == "TOPUP" or (duration == 0 and gb == 0):
-            # Top-up wallet deposit
             from db.models import credit_wallet
 
             amount = invoice["amount"]
@@ -107,7 +89,6 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             return
 
         if target_email:
-            # Renew existing client
             email = target_email
             await xui_api.renew_client(
                 email=email,
@@ -117,7 +98,6 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             )
             action_msg = "اشتراک تمدید گردید"
         else:
-            # Create new client
             user = await get_user(tg_id)
             username = user.get("username") if user else None
             email = generate_email(tg_id, username)
@@ -134,13 +114,11 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             )
             action_msg = "اشتراک فعال گردید"
 
-        # Get subId
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
-        # Notify user
         user_text = (
             f"✅ <b>پرداخت شما تأیید شد و {action_msg}!</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
@@ -157,17 +135,16 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             parse_mode="HTML",
         )
 
-        # Update admin message
-        admin_text = callback.message.text or callback.message.caption or ""  # type: ignore[union-attr]
+        admin_text = callback.message.text or callback.message.caption or ""
         admin_text += f"\n\n✅ تأیید شد — سرویس ساخته شد: {email}"
         try:
-            if callback.message.photo:  # type: ignore[union-attr]
-                await callback.message.edit_caption(  # type: ignore[union-attr]
+            if callback.message.photo:
+                await callback.message.edit_caption(
                     caption=admin_text,
                     parse_mode="HTML",
                 )
             else:
-                await callback.message.edit_text(  # type: ignore[union-attr]
+                await callback.message.edit_text(
                     text=admin_text,
                     parse_mode="HTML",
                 )
@@ -178,24 +155,20 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         logger.exception(
             "Failed to create client after approval for invoice %s", invoice_id
         )
-        await update_invoice_status(invoice_id, "paid")  # Revert status
+        await update_invoice_status(invoice_id, "paid")
         await callback.answer(f"❌ خطا در ساخت اشتراک: {e}", show_alert=True)
         return
 
     await callback.answer("✅ تأیید شد", show_alert=False)
 
 
-# ──────────────────────────── Reject Payment ────────────────────────────
-
-
 @router.callback_query(F.data.startswith("admin_reject_"))
 async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
-    """Admin rejects a payment — notify user."""
     if not _is_admin(callback):
         await callback.answer("❌ شما دسترسی ندارید.", show_alert=True)
         return
 
-    invoice_id = callback.data[len("admin_reject_") :]  # type: ignore[union-attr]
+    invoice_id = callback.data[len("admin_reject_") :]
     invoice = await get_invoice(invoice_id)
 
     if not invoice:
@@ -208,30 +181,26 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
 
     tg_id = invoice["tg_id"]
 
-    # Update invoice status
     await update_invoice_status(invoice_id, "rejected")
 
-    # Remove buttons from admin message
-    await callback.message.edit_reply_markup(reply_markup=None)  # type: ignore[union-attr]
+    await callback.message.edit_reply_markup(reply_markup=None)
 
-    # Update admin message
-    admin_text = callback.message.text or callback.message.caption or ""  # type: ignore[union-attr]
+    admin_text = callback.message.text or callback.message.caption or ""
     admin_text += "\n\n❌ رد شد"
     try:
-        if callback.message.photo:  # type: ignore[union-attr]
-            await callback.message.edit_caption(  # type: ignore[union-attr]
+        if callback.message.photo:
+            await callback.message.edit_caption(
                 caption=admin_text,
                 parse_mode="HTML",
             )
         else:
-            await callback.message.edit_text(  # type: ignore[union-attr]
+            await callback.message.edit_text(
                 text=admin_text,
                 parse_mode="HTML",
             )
     except Exception:
         pass
 
-    # Notify user
     await bot.send_message(
         chat_id=tg_id,
         text=(

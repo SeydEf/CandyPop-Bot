@@ -1,9 +1,3 @@
-"""
-Test Subscription handler.
-
-Allows each user to claim one free test subscription (limited data & duration).
-"""
-
 from __future__ import annotations
 
 import logging
@@ -29,7 +23,6 @@ router = Router(name="test_sub")
 
 @router.message(F.text == BTN_TEST)
 async def test_subscription(message: types.Message) -> None:
-    """Handle test subscription request."""
     if not message.from_user:
         return
 
@@ -39,7 +32,6 @@ async def test_subscription(message: types.Message) -> None:
     test_duration = test_config["duration_days"]
     cooldown_days = test_config["cooldown_days"]
 
-    # Check cooldown / test usage
     can_claim, rem_days, rem_hours = await can_get_test_sub(tg_id)
     if not can_claim:
         time_parts = []
@@ -65,7 +57,6 @@ async def test_subscription(message: types.Message) -> None:
         total_bytes = gb_to_bytes(test_gb)
         expiry_ms = int((time.time() + test_duration * 86400) * 1000)
 
-        # Create client in X-UI
         await xui_api.add_client(
             email=email,
             total_gb=total_bytes,
@@ -74,11 +65,9 @@ async def test_subscription(message: types.Message) -> None:
             inbound_ids=INBOUND_IDS,
         )
 
-        # Get subId
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
 
-        # Mark test as used
         await set_test_used(tg_id)
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"

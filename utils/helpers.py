@@ -1,19 +1,14 @@
-"""
-Miscellaneous helpers: QR code generation, email generation, pricing calculation.
-"""
-
 from __future__ import annotations
 
 import io
 import uuid
 
-import qrcode  # type: ignore[import-untyped]
+import qrcode
 
 from config import CUSTOM_PRICE_TIERS, CUSTOM_PRICE_DEFAULT_PER_GB
 
 
 def generate_qr(data: str) -> io.BytesIO:
-    """Generate a QR code PNG image and return as BytesIO."""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -30,14 +25,8 @@ def generate_qr(data: str) -> io.BytesIO:
 
 
 def generate_email(tg_id: int, username: str | None = None, test: bool = False) -> str:
-    """Generate a unique email/remark identifier for an X-UI client.
-
-    Format: <username>_<tg_id>_<short_uuid>
-    Falls back to 'user' if username is None.
-    """
     short = uuid.uuid4().hex[:6]
     name = username or "user"
-    # Sanitise: only keep alphanumeric and underscores
     name = "".join(c if c.isalnum() or c == "_" else "" for c in name)
     if test:
         return f"{name}_{tg_id}_{short}_test"
@@ -46,10 +35,6 @@ def generate_email(tg_id: int, username: str | None = None, test: bool = False) 
 
 
 def calculate_custom_price(gb: int) -> int:
-    """Calculate the total price for a custom GB volume using tiered pricing.
-
-    Returns total price in Tomans.
-    """
     if gb <= 0:
         return 0
 
@@ -66,7 +51,6 @@ def calculate_custom_price(gb: int) -> int:
             remaining_gb -= tier_gb
         prev_limit = max_gb
 
-    # Any remaining GB beyond the last tier
     if remaining_gb > 0:
         total_price += remaining_gb * CUSTOM_PRICE_DEFAULT_PER_GB
 
@@ -74,5 +58,4 @@ def calculate_custom_price(gb: int) -> int:
 
 
 def gb_to_bytes(gb: int | float) -> int:
-    """Convert gigabytes to bytes as an explicit integer."""
     return int(round(gb * 1024 * 1024 * 1024))

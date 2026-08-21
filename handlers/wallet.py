@@ -1,15 +1,3 @@
-"""
-Wallet Deposit / Top-up handler ("افزایش موجودی 💳").
-
-Workflow:
-1. User clicks "افزایش موجودی 💳" from main menu.
-2. Bot prompts user for deposit amount (with preset buttons or custom text input).
-3. Creates a top-up invoice (target_email="TOPUP", duration_days=0, data_gb=0).
-4. Displays Card-to-Card payment details with card_payment_keyboard.
-5. User uploads receipt or clicks "✅ پرداخت کردم".
-6. Admin approves invoice in channel, user's wallet is credited, and user is notified.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -34,7 +22,6 @@ class WalletStates(StatesGroup):
 
 @router.message(F.text == BTN_INCREASE_WALLET)
 async def wallet_increase_start(message: types.Message, state: FSMContext) -> None:
-    """Start wallet deposit flow."""
     await state.set_state(WalletStates.waiting_deposit_amount)
     text = (
         "💳 <b>افزایش موجودی کیف پول</b>\n\n"
@@ -52,10 +39,9 @@ async def wallet_increase_start(message: types.Message, state: FSMContext) -> No
 async def wallet_deposit_preset(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Handle preset deposit amount button selection."""
     if not callback.from_user:
         return
-    amount = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
+    amount = int(callback.data.split("_")[-1])
     tg_id = callback.from_user.id
 
     await state.clear()
@@ -80,7 +66,7 @@ async def wallet_deposit_preset(
         f"پس از واریز، عکس رسید پرداخت را ارسال کنید یا دکمه «✅ پرداخت کردم» را بزنید."
     )
 
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=card_payment_keyboard(invoice_id, CARD_NUMBER, amount),
         parse_mode="HTML",
@@ -92,9 +78,8 @@ async def wallet_deposit_preset(
 async def wallet_deposit_cancel(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Cancel wallet deposit flow."""
     await state.clear()
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         "❌ افزایش موجودی لغو شد.",
         parse_mode="HTML",
     )
@@ -105,7 +90,6 @@ async def wallet_deposit_cancel(
 async def wallet_deposit_custom_input(
     message: types.Message, state: FSMContext
 ) -> None:
-    """Process custom deposit amount text input."""
     if not message.text or not message.from_user:
         return
 

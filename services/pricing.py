@@ -1,11 +1,3 @@
-"""
-Dynamic pricing calculation service and cache.
-
-Supports dynamic configuration stored in SQLite (settings table)
-for base per-GB rates, duration surcharges, per-user surcharges,
-and volume discount tiers.
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,7 +8,6 @@ from db.models import get_setting, set_setting
 
 logger = logging.getLogger(__name__)
 
-# --- Default Fallback Pricing Config ---
 DEFAULT_BASE_GB_RATE = 5_000
 DEFAULT_USER_SURCHARGE = 50_000
 DEFAULT_DURATION_SURCHARGES: dict[int, int] = {
@@ -31,12 +22,10 @@ DEFAULT_VOLUME_TIERS: list[tuple[int, int]] = [
 ]
 DEFAULT_FALLBACK_GB_RATE = 3_500
 
-
 _pricing_cache: dict[str, Any] | None = None
 
 
 async def get_pricing_config() -> dict[str, Any]:
-    """Get active pricing configuration (cached in memory)."""
     global _pricing_cache
     if _pricing_cache is not None:
         return _pricing_cache
@@ -45,7 +34,6 @@ async def get_pricing_config() -> dict[str, Any]:
 
 
 async def load_pricing_config() -> dict[str, Any]:
-    """Load pricing configuration from SQLite database."""
     global _pricing_cache
 
     base_rate_str = await get_setting("pricing_base_gb_rate")
@@ -94,13 +82,11 @@ async def load_pricing_config() -> dict[str, Any]:
 
 
 def invalidate_pricing_cache() -> None:
-    """Clear pricing cache on configuration updates."""
     global _pricing_cache
     _pricing_cache = None
 
 
 async def update_base_gb_rate(rate: int) -> None:
-    """Update base per-GB rate and scale all volume discount tiers proportionally."""
     config = await get_pricing_config()
     old_base = config.get("base_gb_rate", DEFAULT_BASE_GB_RATE)
     if old_base <= 0:
@@ -153,13 +139,11 @@ async def update_base_gb_rate(rate: int) -> None:
 
 
 async def update_user_surcharge(surcharge: int) -> None:
-    """Update per-user surcharge."""
     await set_setting("pricing_user_surcharge", str(surcharge))
     invalidate_pricing_cache()
 
 
 async def update_duration_surcharge(duration_days: int, surcharge: int) -> None:
-    """Update surcharge for a specific duration (e.g., 30, 60, 90 days)."""
     config = await get_pricing_config()
     durations = dict(config["duration_surcharges"])
     durations[duration_days] = surcharge
@@ -168,20 +152,17 @@ async def update_duration_surcharge(duration_days: int, surcharge: int) -> None:
 
 
 async def update_volume_tiers(tiers: list[tuple[int, int]], fallback_rate: int) -> None:
-    """Update volume discount tiers and fallback rate."""
     data = {
         "tiers": [[gb, rate] for gb, rate in tiers],
         "fallback_rate": fallback_rate,
     }
     await set_setting("pricing_volume_tiers", json.dumps(data))
-    # Keep base rate synchronized with the first tier's rate
     if tiers:
         await set_setting("pricing_base_gb_rate", str(tiers[0][1]))
     invalidate_pricing_cache()
 
 
 async def reset_pricing_config_to_defaults() -> None:
-    """Reset all pricing configurations to system defaults."""
     await set_setting("pricing_base_gb_rate", str(DEFAULT_BASE_GB_RATE))
     await set_setting("pricing_user_surcharge", str(DEFAULT_USER_SURCHARGE))
     await set_setting(
@@ -195,11 +176,7 @@ async def reset_pricing_config_to_defaults() -> None:
     invalidate_pricing_cache()
 
 
-# ──────────────────────────── Pricing Calculations ────────────────────────────
-
-
 async def calculate_data_price(gb: int) -> int:
-    """Calculate data price for a given GB volume using flat tier pricing."""
     if gb <= 0:
         return 0
 
@@ -219,10 +196,6 @@ async def calculate_data_price(gb: int) -> int:
 
 
 async def calculate_total_price(gb: int, duration_days: int, users_count: int) -> int:
-    """Calculate total subscription price.
-
-    Total = DataPrice(GB) + DurationSurcharge(Days) + (Users - 1) * UserSurcharge
-    """
     config = await get_pricing_config()
 
     data_price = await calculate_data_price(gb)
@@ -240,7 +213,6 @@ async def calculate_total_price(gb: int, duration_days: int, users_count: int) -
 async def get_price_breakdown(
     gb: int, duration_days: int, users_count: int
 ) -> dict[str, Any]:
-    """Get itemized price breakdown for subscription checkout."""
     config = await get_pricing_config()
 
     data_price = await calculate_data_price(gb)

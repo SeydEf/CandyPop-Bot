@@ -1,18 +1,3 @@
-"""
-Profile handler ("👤 پروفایل").
-
-Displays account information:
-  - User Full Name
-  - Telegram Numeric ID (code format)
-  - Current Wallet Balance
-  - Active Subscriptions Count (from X-UI)
-  - Purchase History Summary (Total Successful Purchases & Total Spent Amount)
-
-Inline Actions:
-  - "💳 افزایش موجودی" (Top Up Wallet): Opens deposit options / workflow
-  - "🧾 تاریخچه سفارشات" (Order History): Displays paginated list of transaction logs (5 per page)
-"""
-
 from __future__ import annotations
 
 import logging
@@ -49,7 +34,6 @@ PAGE_SIZE = 5
 
 
 async def _build_profile_text(tg_id: int, user_info: dict[str, Any] | None) -> str:
-    """Build the main profile dashboard text."""
     name = user_info.get("full_name") if user_info else None
     if not name and user_info:
         name = user_info.get("username", "کاربر")
@@ -77,7 +61,6 @@ async def _build_profile_text(tg_id: int, user_info: dict[str, Any] | None) -> s
 
 @router.message(F.text == BTN_PROFILE)
 async def profile_dashboard(message: types.Message) -> None:
-    """Show profile dashboard."""
     if not message.from_user:
         return
     tg_id = message.from_user.id
@@ -92,13 +75,12 @@ async def profile_dashboard(message: types.Message) -> None:
 
 @router.callback_query(F.data == "profile_main")
 async def profile_main_callback(callback: types.CallbackQuery) -> None:
-    """Return to main profile dashboard via inline button."""
     if not callback.from_user:
         return
     tg_id = callback.from_user.id
     user_info = await get_user(tg_id)
     text = await _build_profile_text(tg_id, user_info)
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=profile_dashboard_keyboard(),
         parse_mode="HTML",
@@ -110,7 +92,6 @@ async def profile_main_callback(callback: types.CallbackQuery) -> None:
 async def profile_topup_callback(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    """Trigger Top Up Wallet flow from profile."""
     from handlers.wallet import WalletStates
 
     await state.set_state(WalletStates.waiting_deposit_amount)
@@ -119,7 +100,7 @@ async def profile_topup_callback(
         "لطفاً یکی از مبالغ پیشنهادی زیر را انتخاب کنید یا مبلغ دلخواه (به تومان) را ارسال نمایید:\n"
         "مثال: <code>100000</code>\n\n"
     )
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=deposit_amount_keyboard(),
         parse_mode="HTML",
@@ -128,7 +109,6 @@ async def profile_topup_callback(
 
 
 def _format_status_badge(status: str) -> str:
-    """Return status emoji and Persian tag."""
     if status == "approved":
         return "✅ موفق"
     elif status == "pending":
@@ -141,7 +121,6 @@ def _format_status_badge(status: str) -> str:
 
 
 def _format_invoice_details(inv: dict[str, Any]) -> str:
-    """Format single invoice details line for order history list."""
     inv_id = inv["id"]
     status_str = _format_status_badge(inv.get("status", ""))
     amount = inv.get("amount", 0)
@@ -178,11 +157,10 @@ def _format_invoice_details(inv: dict[str, Any]) -> str:
 
 @router.callback_query(F.data.startswith("profile_orders_"))
 async def profile_orders_callback(callback: types.CallbackQuery) -> None:
-    """Show paginated transaction logs / order history."""
     if not callback.from_user:
         return
     tg_id = callback.from_user.id
-    page = int(callback.data[len("profile_orders_") :])  # type: ignore[union-attr]
+    page = int(callback.data[len("profile_orders_") :])
 
     offset = page * PAGE_SIZE
     invoices, total_count = await get_user_invoices_paginated(
@@ -191,7 +169,7 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
 
     if total_count == 0:
         text = "🧾 <b>تاریخچه سفارشات</b>\n\n📭 شما هنوز هیچ تراکنشی ثبت نکرده‌اید."
-        await callback.message.edit_text(  # type: ignore[union-attr]
+        await callback.message.edit_text(
             text,
             reply_markup=orders_pagination_keyboard(0, 0),
             parse_mode="HTML",
@@ -206,7 +184,7 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
     for inv in invoices:
         text += _format_invoice_details(inv) + "\n"
 
-    await callback.message.edit_text(  # type: ignore[union-attr]
+    await callback.message.edit_text(
         text,
         reply_markup=orders_pagination_keyboard(page, total_pages),
         parse_mode="HTML",

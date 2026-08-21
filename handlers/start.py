@@ -1,11 +1,3 @@
-"""
-/start command handler.
-
-- Handles deep-link referrals (start=ref_<tg_id>)
-- Creates user + wallet on first visit
-- Sends welcome message with main menu keyboard
-"""
-
 from __future__ import annotations
 
 import logging
@@ -20,7 +12,6 @@ from keyboards.reply_kb import main_menu_keyboard
 logger = logging.getLogger(__name__)
 router = Router(name="start")
 
-
 WELCOME_TEXT = (
     "🍭 <b>به ربات CandyPop خوش آمدید!</b>\n\n"
     "با استفاده از این ربات می‌توانید اشتراک VPN خریداری کنید.\n\n"
@@ -30,7 +21,6 @@ WELCOME_TEXT = (
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message) -> None:
-    """Handle /start with optional referral deep-link."""
     if not message.from_user:
         return
 
@@ -38,7 +28,6 @@ async def cmd_start(message: types.Message) -> None:
     username = message.from_user.username
     full_name = message.from_user.full_name
 
-    # Parse referral from deep link: /start ref_123456
     referrer_id: int | None = None
     if message.text and " " in message.text:
         payload = message.text.split(maxsplit=1)[1]
@@ -49,15 +38,13 @@ async def cmd_start(message: types.Message) -> None:
                 clean_payload = persian_to_english_digits(payload[4:])
                 referrer_id = int(clean_payload)
                 if referrer_id == tg_id:
-                    referrer_id = None  # No self-referral
+                    referrer_id = None
             except ValueError:
                 referrer_id = None
 
-    # Check if user already exists
     existing = await get_user(tg_id)
     if existing is None:
         await create_user(tg_id, username, full_name, referrer_id)
-        # Track referral
         if referrer_id is not None:
             referrer = await get_user(referrer_id)
             if referrer is not None:
@@ -71,10 +58,6 @@ async def send_welcome(
     message: types.Message | Any,
     data: dict | None = None,
 ) -> None:
-    """Send the welcome message with main menu keyboard.
-
-    Can be called from the channel-check middleware after membership verification.
-    """
     if isinstance(message, types.Message) and message.chat:
         await message.answer(
             WELCOME_TEXT,
@@ -82,14 +65,13 @@ async def send_welcome(
             parse_mode="HTML",
         )
     elif isinstance(message, types.CallbackQuery):
-        # Called from middleware after channel check
-        if message.message and message.message.chat:  # type: ignore[union-attr]
+        if message.message and message.message.chat:
             from aiogram import Bot
 
             bot: Bot | None = data.get("bot") if data else None
             if bot:
                 await bot.send_message(
-                    chat_id=message.message.chat.id,  # type: ignore[union-attr]
+                    chat_id=message.message.chat.id,
                     text=WELCOME_TEXT,
                     reply_markup=main_menu_keyboard(),
                     parse_mode="HTML",

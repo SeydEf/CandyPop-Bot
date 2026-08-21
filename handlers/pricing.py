@@ -1,10 +1,3 @@
-"""
-Pricing handler ("💰 تعرفه‌ها").
-
-Displays current dynamic pricing rates, duration surcharges,
-per-user fees, and volume discount tiers configured by admin.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -21,7 +14,6 @@ router = Router(name="pricing")
 
 
 async def build_pricing_text() -> str:
-    """Build dynamic pricing announcement text."""
     config = await get_pricing_config()
     tiers = config["volume_tiers"]
     fallback_rate = config["fallback_gb_rate"]
@@ -74,7 +66,6 @@ async def build_pricing_text() -> str:
 
 @router.message(F.text == BTN_PRICING)
 async def show_pricing(message: types.Message) -> None:
-    """Show pricing information."""
     text = await build_pricing_text()
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
