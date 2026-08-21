@@ -12,6 +12,7 @@ import logging
 import uuid
 
 from aiogram import Bot, F, Router, types
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -128,21 +129,15 @@ async def back_to_list(callback: types.CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────── View Subscription Dashboard ────────────────────────────
-
-
-@router.callback_query(F.data.startswith("sub_view_"))
-async def view_subscription(callback: types.CallbackQuery) -> None:
-    """Show subscription dashboard with live stats from X-UI."""
-    email = callback.data[len("sub_view_") :]  # type: ignore[union-attr]
-
-    # Fetch live data from X-UI
+async def _build_dashboard_info(
+    email: str,
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    """Build dashboard text and management keyboard with live stats from X-UI."""
     client = await xui_api.get_client(email)
     client_full = await xui_api.get_client_full(email)
 
     if not client:
-        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
-        return
+        return None
 
     total_bytes = client.get("totalGB", 0)
     expiry_ms = client.get("expiryTime", 0)
@@ -170,9 +165,26 @@ async def view_subscription(callback: types.CallbackQuery) -> None:
         f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
     )
 
+    return text, subscription_manage_keyboard(email)
+
+
+# ──────────────────────────── View Subscription Dashboard ────────────────────────────
+
+
+@router.callback_query(F.data.startswith("sub_view_"))
+async def view_subscription(callback: types.CallbackQuery) -> None:
+    """Show subscription dashboard with live stats from X-UI."""
+    email = callback.data[len("sub_view_") :]  # type: ignore[union-attr]
+
+    info = await _build_dashboard_info(email)
+    if not info:
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        return
+
+    text, keyboard = info
     await callback.message.edit_text(  # type: ignore[union-attr]
         text,
-        reply_markup=subscription_manage_keyboard(email),
+        reply_markup=keyboard,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -228,10 +240,20 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
     try:
         await xui_api.update_client(old_email, update_data)
         await state.clear()
-        await message.answer(
-            f"✅ نام سرویس به <b>{new_name}</b> تغییر کرد.",
-            parse_mode="HTML",
-        )
+
+        info = await _build_dashboard_info(new_name)
+        if info:
+            text, keyboard = info
+            await message.answer(
+                f"✅ <b>نام سرویس با موفقیت به «{new_name}» تغییر کرد!</b>\n\n{text}",
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(
+                f"✅ <b>نام سرویس با موفقیت به «{new_name}» تغییر کرد.</b>",
+                parse_mode="HTML",
+            )
     except Exception as e:
         logger.exception("Failed to rename client %s", old_email)
         await state.clear()
@@ -279,15 +301,24 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
     try:
         await xui_api.update_client(email, update_data)
 
-        new_link = _build_sub_link(new_sub_id)
-
-        await callback.message.edit_text(  # type: ignore[union-attr]
-            f"✅ <b>لینک اشتراک با موفقیت تغییر کرد!</b>\n\n"
-            f"🔗 لینک جدید:\n<code>{new_link}</code>\n\n"
-            "⚠️ لینک قبلی دیگر کار نمی‌کند.",
-            reply_markup=subscription_manage_keyboard(email),
-            parse_mode="HTML",
-        )
+        info = await _build_dashboard_info(email)
+        if info:
+            text, keyboard = info
+            await callback.message.edit_text(  # type: ignore[union-attr]
+                f"✅ <b>لینک اشتراک با موفقیت تغییر کرد!</b>\n"
+                f"⚠️ لینک قبلی دیگر کار نمی‌کند.\n\n{text}",
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        else:
+            new_link = _build_sub_link(new_sub_id)
+            await callback.message.edit_text(  # type: ignore[union-attr]
+                f"✅ <b>لینک اشتراک با موفقیت تغییر کرد!</b>\n\n"
+                f"🔗 لینک جدید:\n<code>{new_link}</code>\n\n"
+                "⚠️ لینک قبلی دیگر کار نمی‌کند.",
+                reply_markup=subscription_manage_keyboard(email),
+                parse_mode="HTML",
+            )
     except Exception as e:
         logger.exception("Failed to regenerate link for %s", email)
         await callback.answer(f"❌ خطا: {e}", show_alert=True)

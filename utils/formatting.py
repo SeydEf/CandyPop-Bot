@@ -23,21 +23,21 @@ def format_size(bytes_val: int) -> str:
     Returns GB if ≥ 1 GB, otherwise MB.
     """
     if bytes_val <= 0:
-        return "0 GB"
+        return "0GB"
     gb = bytes_val / (1024**3)
     if gb >= 1:
         if gb == int(gb):
-            return f"{int(gb)} GB"
-        return f"{gb:.1f} GB"
+            return f"{int(gb)}GB"
+        return f"{gb:.1f}GB"
     mb = bytes_val / (1024**2)
-    return f"{mb:.0f} MB"
+    return f"{mb:.0f}MB"
 
 
 def format_size_gb(gb: int | float) -> str:
     """Format a value already in GB."""
     if gb == int(gb):
-        return f"{int(gb)} GB"
-    return f"{gb:.1f} GB"
+        return f"{int(gb)}GB"
+    return f"{gb:.1f}GB"
 
 
 def format_remaining_days(expiry_ms: int) -> str:
@@ -52,9 +52,3 @@ def format_remaining_days(expiry_ms: int) -> str:
         return "0 روز"
     days = remaining_ms // (1000 * 60 * 60 * 24)
     return f"{days} روز"
-
-
-def format_traffic_usage(up: int, down: int, total: int) -> str:
-    """Format traffic usage as: مصرف شده / کل."""
-    used = up + down
-    return f"{format_size(used)} / {format_size(total)}"

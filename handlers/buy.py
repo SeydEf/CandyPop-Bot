@@ -242,7 +242,9 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
     after_balance = balance - price
     text = (
         f"💰 <b>پرداخت از کیف پول</b>\n\n"
-        f"📦 سفارش: {format_size_gb(gb)} / {duration} روز\n"
+        f"📦 سفارش:\n"
+        f"⏱ مدت: {duration} روز\n"
+        f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 مبلغ: {format_price(price)}\n\n"
         f"👛 موجودی فعلی: {format_price(balance)}\n"
         f"👛 موجودی پس از خرید: {format_price(after_balance)}\n\n"
@@ -354,7 +356,9 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     text = (
         f"💳 <b>پرداخت کارت به کارت</b>\n\n"
         f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n\n"
-        f"📦 سفارش: {format_size_gb(gb)} / {duration} روز\n"
+        f"📦 سفارش:\n"
+        f"⏱ مدت: {duration} روز\n"
+        f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 مبلغ: {format_price(price)}\n\n"
         f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
         f"👤 به نام: {CARD_HOLDER}\n\n"
@@ -484,8 +488,9 @@ async def receive_receipt_photo(
     if message.from_user.username:
         admin_text += f" (@{message.from_user.username})"
     admin_text += (
-        f"\n\n📦 سفارش: {format_size_gb(invoice['data_gb'])} / "
-        f"{invoice['duration_days']} روز\n"
+        f"\n\n📦 سفارش:\n"
+        f"⏱ مدت: {invoice['duration_days']} روز\n"
+        f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
         f"💰 مبلغ: {format_price(invoice['amount'])}\n"
     )
 
@@ -549,8 +554,9 @@ async def receive_receipt_text(
     if message.from_user.username:
         admin_text += f" (@{message.from_user.username})"
     admin_text += (
-        f"\n\n📦 سفارش: {format_size_gb(invoice['data_gb'])} / "
-        f"{invoice['duration_days']} روز\n"
+        f"\n\n📦 سفارش:\n"
+        f"⏱ مدت: {invoice['duration_days']} روز\n"
+        f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
         f"💰 مبلغ: {format_price(invoice['amount'])}\n\n"
         f"📝 متن رسید:\n<code>{receipt_text}</code>"
     )
