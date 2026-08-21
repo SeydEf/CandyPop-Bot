@@ -5,9 +5,10 @@ Main menu reply keyboard.
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 # Button labels (Persian)
+BTN_TEST = "🎁 اشتراک تست"
 BTN_BUY = "🛒 خرید اشتراک"
 BTN_MY_SUBS = "📋 اشتراک‌های من"
-BTN_TEST = "🎁 اشتراک تست"
+BTN_INCREASE_WALLET = "افزایش موجودی 💳"
 BTN_PROFILE = "👤 پروفایل"
 BTN_PRICING = "💰 تعرفه‌ها"
 BTN_GUIDE = "📖 راهنمای اتصال"
@@ -21,12 +22,15 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [
+                KeyboardButton(text=BTN_TEST),
+            ],
+            [
                 KeyboardButton(text=BTN_BUY),
                 KeyboardButton(text=BTN_MY_SUBS),
             ],
             [
-                KeyboardButton(text=BTN_TEST),
                 KeyboardButton(text=BTN_PROFILE),
+                KeyboardButton(text=BTN_INCREASE_WALLET),
             ],
             [
                 KeyboardButton(text=BTN_PRICING),
