@@ -154,11 +154,18 @@ async def _build_dashboard_info(
         usage_text = f"{format_size(used_traffic)} / نامحدود"
         remaining_text = "نامحدود"
 
+    limit_ip = client.get("limitIp", 0)
+    if limit_ip > 0:
+        users_text = f"{to_persian_digits(limit_ip)} کاربر"
+    else:
+        users_text = "نامحدود"
+
     days_text = format_remaining_days(expiry_ms)
 
     text = (
         f"📦 <b>داشبورد اشتراک</b>\n\n"
         f"📛 نام سرویس: {client.get('email', email)}\n"
+        f"👤 تعداد کاربر: {users_text}\n"
         f"📊 مصرف ترافیک: {usage_text}\n"
         f"📉 ترافیک باقیمانده: {remaining_text}\n"
         f"⏱ روزهای باقیمانده: {days_text}\n\n"

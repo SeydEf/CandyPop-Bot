@@ -3,8 +3,9 @@ Buy Subscription handler.
 
 Multi-step purchase flow:
   Step 1 — Duration (30/60/90 days)
-  Step 2 — Data Volume (predefined tiers + custom)
-  Step 3 — Payment Method (wallet / card-to-card)
+  Step 2 — User Count (1 to 10 users stepper)
+  Step 3 — Data Volume (predefined tiers + custom)
+  Step 4 — Payment Method (wallet / card-to-card)
 
 Uses FSM (aiogram states) for the custom-volume text input and receipt upload.
 """
@@ -43,12 +44,13 @@ from keyboards.inline_kb import (
     duration_keyboard,
     payment_method_keyboard,
     sub_config_links_keyboard,
+    users_keyboard,
     volume_keyboard,
     wallet_confirm_keyboard,
 )
 from keyboards.reply_kb import BTN_BUY, main_menu_keyboard
 from services import xui_api
-from utils.formatting import format_price, format_size_gb
+from utils.formatting import format_price, format_size_gb, to_persian_digits
 from utils.helpers import (
     calculate_custom_price,
     gb_to_bytes,
@@ -95,30 +97,83 @@ async def buy_back_to_duration(
     await callback.answer()
 
 
-# ──────────────────────────── Step 2: Volume ────────────────────────────
+# ──────────────────────────── Step 2: User Count ────────────────────────────
 
 
 @router.callback_query(F.data.startswith("buy_dur_"))
 async def buy_select_duration(callback: types.CallbackQuery) -> None:
-    """Duration selected — show volume selection."""
+    """Duration selected — show user count selection."""
     duration = int(callback.data.split("_")[-1])  # type: ignore[union-attr]
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"📊 <b>حجم اشتراک {duration} روزه را انتخاب کنید:</b>",
-        reply_markup=volume_keyboard(duration),
+        "👤 <b>تعداد کاربران را انتخاب کنید:</b>\n\n"
+        "به ازای هر کاربر اضافه، ۵۰,۰۰۰ تومان به مبلغ اشتراک افزوده می‌شود.",
+        reply_markup=users_keyboard(duration, users=1),
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^buy_back_volume_\d+$"))
+@router.callback_query(F.data.regexp(r"^buy_users_step_\d+_\d+$"))
+async def buy_users_step(callback: types.CallbackQuery) -> None:
+    """Update user count stepper."""
+    parts = callback.data.split("_")  # type: ignore[union-attr]
+    duration = int(parts[3])
+    users = int(parts[4])
+    await callback.message.edit_reply_markup(  # type: ignore[union-attr]
+        reply_markup=users_keyboard(duration, users)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "buy_noop")
+async def buy_noop(callback: types.CallbackQuery) -> None:
+    """Dummy callback for counter button."""
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^buy_back_users_\d+_\d+$"))
+async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Go back to user count selection from volume step."""
+    await state.clear()
+    parts = callback.data.split("_")  # type: ignore[union-attr]
+    duration = int(parts[3])
+    users = int(parts[4])
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "👤 <b>تعداد کاربران را انتخاب کنید:</b>\n\n"
+        "به ازای هر کاربر اضافه، ۵۰,۰۰۰ تومان به مبلغ اشتراک افزوده می‌شود.",
+        reply_markup=users_keyboard(duration, users),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+# ──────────────────────────── Step 3: Volume ────────────────────────────
+
+
+@router.callback_query(F.data.regexp(r"^buy_users_confirm_\d+_\d+$"))
+async def buy_users_confirm(callback: types.CallbackQuery) -> None:
+    """User count selected — show volume selection."""
+    parts = callback.data.split("_")  # type: ignore[union-attr]
+    duration = int(parts[3])
+    users = int(parts[4])
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"📊 <b>حجم اشتراک {duration} روزه ({to_persian_digits(users)} کاربره) را انتخاب کنید:</b>",
+        reply_markup=volume_keyboard(duration, users),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^buy_back_volume_\d+_\d+$"))
 async def buy_back_to_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
     """Go back to volume selection from payment step."""
     await state.clear()
     parts = callback.data.split("_")  # type: ignore[union-attr]
-    duration = int(parts[-1])
+    duration = int(parts[3])
+    users = int(parts[4])
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"📊 <b>حجم اشتراک {duration} روزه را انتخاب کنید:</b>",
-        reply_markup=volume_keyboard(duration),
+        f"📊 <b>حجم اشتراک {duration} روزه ({to_persian_digits(users)} کاربره) را انتخاب کنید:</b>",
+        reply_markup=volume_keyboard(duration, users),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -127,13 +182,14 @@ async def buy_back_to_volume(callback: types.CallbackQuery, state: FSMContext) -
 # ──────────────────────────── Custom Volume Input ────────────────────────────
 
 
-@router.callback_query(F.data.regexp(r"^buy_vol_\d+_custom$"))
+@router.callback_query(F.data.regexp(r"^buy_vol_\d+_\d+_custom$"))
 async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
     """Prompt user to enter custom GB amount."""
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[2])
+    users = int(parts[3])
     await state.set_state(BuyStates.waiting_custom_gb)
-    await state.update_data(duration=duration)
+    await state.update_data(duration=duration, users=users)
     await callback.message.edit_text(  # type: ignore[union-attr]
         "📝 <b>لطفاً حجم مورد نظر خود را به گیگابایت وارد کنید:</b>\n"
         "مثال: <code>25</code>\n\n"
@@ -169,47 +225,56 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
 
     data = await state.get_data()
     duration = data["duration"]
-    price = calculate_custom_price(gb)
+    users = data.get("users", 1)
+    base_price = calculate_custom_price(gb)
+    extra_price = (users - 1) * 50_000
+    price = base_price + extra_price
     await state.clear()
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
         f"⏱ مدت: {duration} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
         f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 قیمت: {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
     await message.answer(
         text,
-        reply_markup=payment_method_keyboard(duration, gb, price),
+        reply_markup=payment_method_keyboard(duration, users, gb, price),
         parse_mode="HTML",
     )
 
 
-# ──────────────────────────── Step 3: Volume Selected → Payment ────────────────────────────
+# ──────────────────────────── Step 4: Volume Selected → Payment ────────────────────────────
 
 
-@router.callback_query(F.data.regexp(r"^buy_vol_\d+_\d+$"))
+@router.callback_query(F.data.regexp(r"^buy_vol_\d+_\d+_\d+$"))
 async def buy_select_volume(callback: types.CallbackQuery) -> None:
     """Predefined volume selected — show payment options."""
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[2])
-    gb = int(parts[3])
-    price = VOLUME_TIERS.get(gb, 0)
+    users = int(parts[3])
+    gb = int(parts[4])
+    base_price = VOLUME_TIERS.get(gb, 0)
 
-    if price == 0:
-        price = calculate_custom_price(gb)
+    if base_price == 0:
+        base_price = calculate_custom_price(gb)
+
+    extra_price = (users - 1) * 50_000
+    price = base_price + extra_price
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
         f"⏱ مدت: {duration} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
         f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 قیمت: {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
     await callback.message.edit_text(  # type: ignore[union-attr]
         text,
-        reply_markup=payment_method_keyboard(duration, gb, price),
+        reply_markup=payment_method_keyboard(duration, users, gb, price),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -218,15 +283,16 @@ async def buy_select_volume(callback: types.CallbackQuery) -> None:
 # ──────────────────────────── Wallet Payment ────────────────────────────
 
 
-@router.callback_query(F.data.regexp(r"^buy_pay_wallet_\d+_\d+_\d+$"))
+@router.callback_query(F.data.regexp(r"^buy_pay_wallet_\d+_\d+_\d+_\d+$"))
 async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
     """Show wallet balance and confirmation."""
     if not callback.from_user:
         return
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[3])
-    gb = int(parts[4])
-    price = int(parts[5])
+    users = int(parts[4])
+    gb = int(parts[5])
+    price = int(parts[6])
 
     balance = await get_balance(callback.from_user.id)
 
@@ -244,6 +310,7 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
         f"💰 <b>پرداخت از کیف پول</b>\n\n"
         f"📦 سفارش:\n"
         f"⏱ مدت: {duration} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
         f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 مبلغ: {format_price(price)}\n\n"
         f"👛 موجودی فعلی: {format_price(balance)}\n"
@@ -252,21 +319,22 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
     )
     await callback.message.edit_text(  # type: ignore[union-attr]
         text,
-        reply_markup=wallet_confirm_keyboard(duration, gb, price),
+        reply_markup=wallet_confirm_keyboard(duration, users, gb, price),
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^buy_wallet_confirm_\d+_\d+_\d+$"))
+@router.callback_query(F.data.regexp(r"^buy_wallet_confirm_\d+_\d+_\d+_\d+$"))
 async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
     """Confirm wallet purchase — debit, create client, deliver config."""
     if not callback.from_user:
         return
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[3])
-    gb = int(parts[4])
-    price = int(parts[5])
+    users = int(parts[4])
+    gb = int(parts[5])
+    price = int(parts[6])
     tg_id = callback.from_user.id
 
     # Debit wallet
@@ -294,6 +362,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
             expiry_time=expiry_ms,
             tg_id=tg_id,
             inbound_ids=INBOUND_IDS,
+            limit_ip=users,
         )
 
         # Get the created client to retrieve subId
@@ -307,6 +376,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
             f"✅ <b>اشتراک شما با موفقیت ایجاد شد!</b>\n\n"
             f"📦 نام سرویس: {email}\n"
             f"⏱ مدت: {duration} روز\n"
+            f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
             f"📊 حجم: {format_size_gb(gb)}\n"
             f"💰 روش پرداخت: کیف پول\n"
             f"👛 موجودی جدید: {format_price(new_balance)}\n\n"
@@ -336,28 +406,28 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
 # ──────────────────────────── Card-to-Card Payment ────────────────────────────
 
 
-@router.callback_query(F.data.regexp(r"^buy_pay_card_\d+_\d+_\d+$"))
+@router.callback_query(F.data.regexp(r"^buy_pay_card_\d+_\d+_\d+_\d+$"))
 async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
     """Generate invoice and show card payment details."""
     if not callback.from_user:
         return
     parts = callback.data.split("_")  # type: ignore[union-attr]
     duration = int(parts[3])
-    gb = int(parts[4])
-    price = int(parts[5])
+    users = int(parts[4])
+    gb = int(parts[5])
+    price = int(parts[6])
     tg_id = callback.from_user.id
 
     # Create invoice
-    invoice = await create_invoice(tg_id, price, duration, gb)
+    invoice = await create_invoice(tg_id, price, duration, gb, users_count=users)
     invoice_id = invoice["id"]
-
-    " ".join([CARD_NUMBER[i : i + 4] for i in range(0, len(CARD_NUMBER), 4)])
 
     text = (
         f"💳 <b>پرداخت کارت به کارت</b>\n\n"
         f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n\n"
         f"📦 سفارش:\n"
         f"⏱ مدت: {duration} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
         f"📊 حجم: {format_size_gb(gb)}\n"
         f"💰 مبلغ: {format_price(price)}\n\n"
         f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
@@ -479,6 +549,7 @@ async def receive_receipt_photo(
         reply_markup=main_menu_keyboard(),
     )
 
+    users_count = invoice.get("users_count", 1)
     # Send to admin
     admin_text = (
         f"🔔 <b>درخواست تأیید پرداخت</b>\n\n"
@@ -490,6 +561,7 @@ async def receive_receipt_photo(
     admin_text += (
         f"\n\n📦 سفارش:\n"
         f"⏱ مدت: {invoice['duration_days']} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
         f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
         f"💰 مبلغ: {format_price(invoice['amount'])}\n"
     )
@@ -545,6 +617,7 @@ async def receive_receipt_text(
         reply_markup=main_menu_keyboard(),
     )
 
+    users_count = invoice.get("users_count", 1)
     # Send to admin
     admin_text = (
         f"🔔 <b>درخواست تأیید پرداخت</b>\n\n"
@@ -556,6 +629,7 @@ async def receive_receipt_text(
     admin_text += (
         f"\n\n📦 سفارش:\n"
         f"⏱ مدت: {invoice['duration_days']} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
         f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
         f"💰 مبلغ: {format_price(invoice['amount'])}\n\n"
         f"📝 متن رسید:\n<code>{receipt_text}</code>"

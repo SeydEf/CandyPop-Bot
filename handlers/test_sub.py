@@ -84,8 +84,9 @@ async def test_subscription(message: types.Message) -> None:
         await message.answer(
             f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
             f"📦 نام سرویس: {email}\n"
-            f"📊 حجم: {format_size_gb(TEST_DATA_GB)}\n"
-            f"⏱ مدت: {TEST_DURATION_DAYS} روز\n\n"
+            f"⏱ مدت: {TEST_DURATION_DAYS} روز\n"
+            f"👤 تعداد کاربر: {to_persian_digits(1)} کاربر\n"
+            f"📊 حجم: {format_size_gb(TEST_DATA_GB)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>",
             reply_markup=sub_config_links_keyboard(email),
             parse_mode="HTML",

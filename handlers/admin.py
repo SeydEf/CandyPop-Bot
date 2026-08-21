@@ -92,12 +92,15 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         total_bytes = gb_to_bytes(gb)
         expiry_ms = int((time.time() + duration * 86400) * 1000)
 
+        users_count = invoice.get("users_count", 1)
+
         await xui_api.add_client(
             email=email,
             total_gb=total_bytes,
             expiry_time=expiry_ms,
             tg_id=tg_id,
             inbound_ids=INBOUND_IDS,
+            limit_ip=users_count,
         )
 
         # Get subId
@@ -112,6 +115,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
             f"📦 نام سرویس: {email}\n"
             f"⏱ مدت: {duration} روز\n"
+            f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
             f"📊 حجم: {format_size_gb(gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
         )

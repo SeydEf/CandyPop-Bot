@@ -45,17 +45,18 @@ async def init_db() -> None:
         );
 
         CREATE TABLE IF NOT EXISTS invoices (
-            id            TEXT PRIMARY KEY,
-            tg_id         INTEGER NOT NULL REFERENCES users(tg_id),
-            amount        INTEGER NOT NULL,
-            duration_days INTEGER NOT NULL,
-            data_gb       INTEGER NOT NULL,
-            status        TEXT NOT NULL DEFAULT 'pending',
-            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            expires_at    TEXT NOT NULL,
+            id              TEXT PRIMARY KEY,
+            tg_id           INTEGER NOT NULL REFERENCES users(tg_id),
+            amount          INTEGER NOT NULL,
+            duration_days   INTEGER NOT NULL,
+            data_gb         INTEGER NOT NULL,
+            users_count     INTEGER NOT NULL DEFAULT 1,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at      TEXT NOT NULL,
             receipt_file_id TEXT,
-            receipt_text  TEXT,
-            message_id    INTEGER
+            receipt_text    TEXT,
+            message_id      INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS referrals (

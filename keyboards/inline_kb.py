@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import VOLUME_TIERS, DURATION_OPTIONS
-from utils.formatting import format_price
+from config import DURATION_OPTIONS, VOLUME_TIERS
+from utils.formatting import format_price, to_persian_digits
 
 
 # ──────────────────────────── Buy Flow ────────────────────────────
@@ -29,16 +29,52 @@ def duration_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def volume_keyboard(duration: int) -> InlineKeyboardMarkup:
-    """Step 2: Data volume selection with prices."""
+def users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+    """Step 2: User count selection (1 to 10)."""
+    dec_users = max(1, users - 1)
+    inc_users = min(10, users + 1)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➖", callback_data=f"buy_users_step_{duration}_{dec_users}"
+                ),
+                InlineKeyboardButton(
+                    text=f"👤 {to_persian_digits(users)} کاربر",
+                    callback_data="buy_noop",
+                ),
+                InlineKeyboardButton(
+                    text="➕", callback_data=f"buy_users_step_{duration}_{inc_users}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ ادامه",
+                    callback_data=f"buy_users_confirm_{duration}_{users}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت", callback_data="buy_back_duration"
+                ),
+                InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+            ],
+        ]
+    )
+
+
+def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+    """Step 3: Data volume selection with prices."""
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
+    extra_price = (users - 1) * 50_000
 
-    for i, (gb, price) in enumerate(VOLUME_TIERS.items()):
-        label = f"{gb} GB — {format_price(price)}"
+    for i, (gb, base_price) in enumerate(VOLUME_TIERS.items()):
+        total_price = base_price + extra_price
+        label = f"{gb}GB — {format_price(total_price)}"
         btn = InlineKeyboardButton(
             text=label,
-            callback_data=f"buy_vol_{duration}_{gb}",
+            callback_data=f"buy_vol_{duration}_{users}_{gb}",
         )
         row.append(btn)
         if len(row) == 2 or i == len(VOLUME_TIERS) - 1:
@@ -50,40 +86,44 @@ def volume_keyboard(duration: int) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="📝 حجم دلخواه",
-                callback_data=f"buy_vol_{duration}_custom",
+                callback_data=f"buy_vol_{duration}_{users}_custom",
             )
         ]
     )
     # Back button
     rows.append(
         [
-            InlineKeyboardButton(text="🔙 بازگشت", callback_data="buy_back_duration"),
+            InlineKeyboardButton(
+                text="🔙 بازگشت", callback_data=f"buy_back_users_{duration}_{users}"
+            ),
             InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def payment_method_keyboard(duration: int, gb: int, price: int) -> InlineKeyboardMarkup:
-    """Step 3: Payment method selection."""
+def payment_method_keyboard(
+    duration: int, users: int, gb: int, price: int
+) -> InlineKeyboardMarkup:
+    """Step 4: Payment method selection."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="💰 کیف پول",
-                    callback_data=f"buy_pay_wallet_{duration}_{gb}_{price}",
+                    callback_data=f"buy_pay_wallet_{duration}_{users}_{gb}_{price}",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="💳 کارت به کارت",
-                    callback_data=f"buy_pay_card_{duration}_{gb}_{price}",
+                    callback_data=f"buy_pay_card_{duration}_{users}_{gb}_{price}",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="🔙 بازگشت",
-                    callback_data=f"buy_back_volume_{duration}",
+                    callback_data=f"buy_back_volume_{duration}_{users}",
                 ),
                 InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
             ],
@@ -91,14 +131,16 @@ def payment_method_keyboard(duration: int, gb: int, price: int) -> InlineKeyboar
     )
 
 
-def wallet_confirm_keyboard(duration: int, gb: int, price: int) -> InlineKeyboardMarkup:
+def wallet_confirm_keyboard(
+    duration: int, users: int, gb: int, price: int
+) -> InlineKeyboardMarkup:
     """Wallet payment confirmation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="✅ تأیید و پرداخت",
-                    callback_data=f"buy_wallet_confirm_{duration}_{gb}_{price}",
+                    callback_data=f"buy_wallet_confirm_{duration}_{users}_{gb}_{price}",
                 ),
             ],
             [
