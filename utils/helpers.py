@@ -73,6 +73,6 @@ def calculate_custom_price(gb: int) -> int:
     return total_price
 
 
-def gb_to_bytes(gb: int) -> int:
-    """Convert gigabytes to bytes."""
-    return gb * 1024 * 1024 * 1024
+def gb_to_bytes(gb: int | float) -> int:
+    """Convert gigabytes to bytes as an explicit integer."""
+    return int(round(gb * 1024 * 1024 * 1024))

@@ -93,8 +93,8 @@ async def add_client(
     payload = {
         "client": {
             "email": email,
-            "totalGB": total_gb,
-            "expiryTime": expiry_time,
+            "totalGB": int(round(total_gb)),
+            "expiryTime": int(expiry_time),
             "tgId": tg_id,
             "limitIp": limit_ip,
             "enable": enable,

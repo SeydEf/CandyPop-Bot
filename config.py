@@ -28,7 +28,7 @@ CARD_HOLDER: str = os.getenv("CARD_HOLDER", "")
 SUB_BASE_URL: str = os.getenv("SUB_BASE_URL", "").rstrip("/")
 
 # --- Test Subscription ---
-TEST_DATA_GB: int = 1  # 1 GB
+TEST_DATA_GB: float = 0.5  # 0.5 GB
 TEST_DURATION_DAYS: int = 1  # 1 day
 TEST_COOLDOWN_DAYS: int = int(os.getenv("TEST_COOLDOWN_DAYS", "14"))  # 14 days cooldown
 

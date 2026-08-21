@@ -80,9 +80,12 @@ async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
     Returns:
         (can_claim: bool, remaining_days: int, remaining_hours: int)
     """
-    from config import TEST_COOLDOWN_DAYS
+    from services.test_sub_config import get_test_sub_config
 
     await ensure_user(tg_id)
+    test_config = await get_test_sub_config()
+    cooldown_days = test_config["cooldown_days"]
+
     db = await get_db()
     rows = await db.execute_fetchall(
         "SELECT test_used, last_test_at FROM users WHERE tg_id = ?", (tg_id,)
@@ -106,7 +109,7 @@ async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
             if last_test_at.tzinfo is None:
                 last_test_at = last_test_at.replace(tzinfo=timezone.utc)
             elapsed_seconds = (now - last_test_at).total_seconds()
-            cooldown_seconds = TEST_COOLDOWN_DAYS * 86400
+            cooldown_seconds = cooldown_days * 86400
 
             if elapsed_seconds < cooldown_seconds:
                 remaining_sec = cooldown_seconds - elapsed_seconds
@@ -116,10 +119,10 @@ async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
             else:
                 return True, 0, 0
         except Exception:
-            return False, TEST_COOLDOWN_DAYS, 0
+            return False, cooldown_days, 0
 
     # If test_used is 1 but last_test_at is NULL (legacy user), enforce cooldown or allow based on reset
-    return False, TEST_COOLDOWN_DAYS, 0
+    return False, cooldown_days, 0
 
 
 async def is_test_used(tg_id: int) -> bool:

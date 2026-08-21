@@ -27,8 +27,13 @@ from services.pricing import (
     update_user_surcharge,
     update_volume_tiers,
 )
+from services.test_sub_config import (
+    get_test_sub_config,
+    update_test_sub_config,
+)
 from utils.formatting import (
     format_price,
+    format_size_gb,
     persian_to_english_digits,
     to_persian_digits,
 )
@@ -43,6 +48,9 @@ class AdminPricingStates(StatesGroup):
     waiting_dur_60 = State()
     waiting_dur_90 = State()
     waiting_tiers_text = State()
+    waiting_test_gb = State()
+    waiting_test_dur = State()
+    waiting_test_cooldown = State()
 
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
@@ -71,10 +79,10 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"  • ۳۰ روز: +{format_price(dur_surcharges.get(30, 0))}\n"
         f"  • ۶۰ روز: +{format_price(dur_surcharges.get(60, 0))}\n"
         f"  • ۹۰ روز: +{format_price(dur_surcharges.get(90, 0))}\n"
-    )
+        )
 
     text = (
-        f"⚙️ <b>مدیریت و تنظیمات قیمت‌گذاری</b>\n\n"
+        f"⚙️ <b>مدیریت و تنظیمات</b>\n\n"
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
@@ -85,7 +93,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="💵 تغییر نرخ پایه هر گیگ",
+                    text="💰 تغییر نرخ پایه (هر گیگ)",
                     callback_data="admin_price_base",
                 ),
             ],
@@ -109,7 +117,13 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔄 بازنشانی به پیش‌فرض سیستم",
+                    text="🎁 تنظیمات اشتراک تست",
+                    callback_data="admin_test_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی قیمت‌ها به پیش‌فرض",
                     callback_data="admin_price_reset",
                 ),
             ],
@@ -493,3 +507,174 @@ async def admin_price_reset(callback: types.CallbackQuery, state: FSMContext) ->
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+# ──────────────────────────── Test Subscription Settings ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_test_menu")
+async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Show test subscription configuration menu."""
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    test_config = await get_test_sub_config()
+    gb = test_config["gb"]
+    dur = test_config["duration_days"]
+    cool = test_config["cooldown_days"]
+
+    text = (
+        "🎁 <b>تنظیمات اشتراک تست رایگان</b>\n\n"
+        f"📊 <b>حجم اولیه:</b> {format_size_gb(gb)}\n"
+        f"⏱ <b>مدت زمان اعتبار:</b> {to_persian_digits(dur)} روز\n"
+        f"🔄 <b>فاصله زمانی دریافت مجدد (کول‌داون):</b> {to_persian_digits(cool)} روز\n\n"
+        "گزینه مورد نظر را جهت ویرایش انتخاب کنید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 تغییر حجم تست (GB)", callback_data="admin_test_gb"
+                ),
+                InlineKeyboardButton(
+                    text="⏱ تغییر مدت (روز)", callback_data="admin_test_dur"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 تغییر کول‌داون (روز)", callback_data="admin_test_cooldown"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                ),
+            ],
+        ]
+    )
+
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_test_gb")
+async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Prompt for new test sub GB volume."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_test_gb)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "📊 <b>حجم اشتراک تست را به گیگابایت (اعشاری یا صحیح) وارد کنید:</b>\n"
+        "مثال: <code>0.5</code> یا <code>1</code> یا <code>2</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_test_gb, F.text)
+async def admin_test_gb_save(message: types.Message, state: FSMContext) -> None:
+    """Save new test sub GB volume."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        raw = persian_to_english_digits(message.text.strip())
+        val = float(raw)
+        if val <= 0:
+            raise ValueError
+        await update_test_sub_config(gb=val)
+        await state.clear()
+        await message.answer(
+            f"✅ حجم اشتراک تست به <b>{format_size_gb(val)}</b> تغییر یافت.",
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر وارد کنید. مثال: <code>0.5</code>",
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data == "admin_test_dur")
+async def admin_test_dur_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for new test sub duration."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_test_dur)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "⏱ <b>مدت زمان اعتبار اشتراک تست را به روز وارد کنید:</b>\n"
+        "مثال: <code>1</code> یا <code>2</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_test_dur, F.text)
+async def admin_test_dur_save(message: types.Message, state: FSMContext) -> None:
+    """Save new test sub duration."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        raw = persian_to_english_digits(message.text.strip())
+        val = int(raw)
+        if val <= 0:
+            raise ValueError
+        await update_test_sub_config(duration_days=val)
+        await state.clear()
+        await message.answer(
+            f"✅ مدت زمان اشتراک تست به <b>{to_persian_digits(val)} روز</b> تغییر یافت.",
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_test_cooldown")
+async def admin_test_cooldown_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    """Prompt for new test sub cooldown in days."""
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminPricingStates.waiting_test_cooldown)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "🔄 <b>فاصله زمانی دریافت مجدد (کول‌داون) را به روز وارد کنید:</b>\n"
+        "مثال: <code>14</code> یا <code>7</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminPricingStates.waiting_test_cooldown, F.text)
+async def admin_test_cooldown_save(message: types.Message, state: FSMContext) -> None:
+    """Save new test sub cooldown in days."""
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        raw = persian_to_english_digits(message.text.strip())
+        val = int(raw)
+        if val < 0:
+            raise ValueError
+        await update_test_sub_config(cooldown_days=val)
+        await state.clear()
+        await message.answer(
+            f"✅ کول‌داون اشتراک تست به <b>{to_persian_digits(val)} روز</b> تغییر یافت.",
+            parse_mode="HTML",
+        )
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")

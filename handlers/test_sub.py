@@ -14,14 +14,12 @@ from aiogram import F, Router, types
 from config import (
     INBOUND_IDS,
     SUB_BASE_URL,
-    TEST_COOLDOWN_DAYS,
-    TEST_DATA_GB,
-    TEST_DURATION_DAYS,
 )
 from db.models import can_get_test_sub, set_test_used
 from keyboards.inline_kb import sub_config_links_keyboard
 from keyboards.reply_kb import BTN_TEST
 from services import xui_api
+from services.test_sub_config import get_test_sub_config
 from utils.formatting import format_size_gb, to_persian_digits
 from utils.helpers import gb_to_bytes, generate_email
 
@@ -36,6 +34,10 @@ async def test_subscription(message: types.Message) -> None:
         return
 
     tg_id = message.from_user.id
+    test_config = await get_test_sub_config()
+    test_gb = test_config["gb"]
+    test_duration = test_config["duration_days"]
+    cooldown_days = test_config["cooldown_days"]
 
     # Check cooldown / test usage
     can_claim, rem_days, rem_hours = await can_get_test_sub(tg_id)
@@ -49,7 +51,7 @@ async def test_subscription(message: types.Message) -> None:
 
         await message.answer(
             f"❌ <b>امکان دریافت اشتراک تست وجود ندارد.</b>\n\n"
-            f"هر کاربر هر {to_persian_digits(TEST_COOLDOWN_DAYS)} روز یک‌بار می‌تواند اشتراک تست دریافت کند.\n\n"
+            f"هر کاربر هر {to_persian_digits(cooldown_days)} روز یک‌بار می‌تواند اشتراک تست دریافت کند.\n\n"
             f"⏱ <b>زمان باقیمانده تا دریافت بعدی:</b> {time_text}",
             parse_mode="HTML",
         )
@@ -60,8 +62,8 @@ async def test_subscription(message: types.Message) -> None:
     try:
         username = message.from_user.username
         email = generate_email(tg_id, username, test=True)
-        total_bytes = gb_to_bytes(TEST_DATA_GB)
-        expiry_ms = int((time.time() + TEST_DURATION_DAYS * 86400) * 1000)
+        total_bytes = gb_to_bytes(test_gb)
+        expiry_ms = int((time.time() + test_duration * 86400) * 1000)
 
         # Create client in X-UI
         await xui_api.add_client(
@@ -84,9 +86,9 @@ async def test_subscription(message: types.Message) -> None:
         await message.answer(
             f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
             f"📦 نام سرویس: {email}\n"
-            f"⏱ مدت: {TEST_DURATION_DAYS} روز\n"
+            f"⏱ مدت: {test_duration} روز\n"
             f"👤 تعداد کاربر: {to_persian_digits(1)} کاربر\n"
-            f"📊 حجم: {format_size_gb(TEST_DATA_GB)}\n\n"
+            f"📊 حجم: {format_size_gb(test_gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>",
             reply_markup=sub_config_links_keyboard(email),
             parse_mode="HTML",
