@@ -53,7 +53,12 @@ from services.pricing import (
     get_price_breakdown,
     get_pricing_config,
 )
-from utils.formatting import format_price, format_size_gb, to_persian_digits
+from utils.formatting import (
+    format_price,
+    format_size_gb,
+    persian_to_english_digits,
+    to_persian_digits,
+)
 from utils.helpers import (
     gb_to_bytes,
     generate_email,
@@ -258,7 +263,11 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         return
 
     try:
-        gb = int(message.text.strip())  # type: ignore[union-attr]
+        raw_text = (
+            persian_to_english_digits(message.text.strip()) if message.text else ""
+        )
+        clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
+        gb = int(clean_text)
         if gb < 1:
             raise ValueError
         if gb > 500:

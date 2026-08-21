@@ -44,7 +44,10 @@ async def cmd_start(message: types.Message) -> None:
         payload = message.text.split(maxsplit=1)[1]
         if payload.startswith("ref_"):
             try:
-                referrer_id = int(payload[4:])
+                from utils.formatting import persian_to_english_digits
+
+                clean_payload = persian_to_english_digits(payload[4:])
+                referrer_id = int(clean_payload)
                 if referrer_id == tg_id:
                     referrer_id = None  # No self-referral
             except ValueError:

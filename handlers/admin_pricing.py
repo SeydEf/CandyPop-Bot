@@ -27,7 +27,11 @@ from services.pricing import (
     update_user_surcharge,
     update_volume_tiers,
 )
-from utils.formatting import format_price, to_persian_digits
+from utils.formatting import (
+    format_price,
+    persian_to_english_digits,
+    to_persian_digits,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin_pricing")
@@ -180,7 +184,13 @@ async def admin_price_base_save(message: types.Message, state: FSMContext) -> No
         return
 
     try:
-        val = int(message.text.strip())
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
         if val <= 0:
             raise ValueError
         await update_base_gb_rate(val)
@@ -227,7 +237,13 @@ async def admin_price_user_save(message: types.Message, state: FSMContext) -> No
         return
 
     try:
-        val = int(message.text.strip())
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
         if val < 0:
             raise ValueError
         await update_user_surcharge(val)
@@ -314,7 +330,13 @@ async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> 
         return
 
     try:
-        val = int(message.text.strip())
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
         if val < 0:
             raise ValueError
         await update_duration_surcharge(60, val)
@@ -355,7 +377,13 @@ async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> 
         return
 
     try:
-        val = int(message.text.strip())
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
         if val < 0:
             raise ValueError
         await update_duration_surcharge(90, val)
@@ -404,17 +432,21 @@ async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> N
         await message.answer("❌ عملیات لغو شد.")
         return
 
-    lines = [line.strip() for line in message.text.strip().split("\n") if line.strip()]
+    raw_lines = [
+        line.strip()
+        for line in persian_to_english_digits(message.text.strip()).split("\n")
+        if line.strip()
+    ]
     parsed_tiers: list[tuple[int, int]] = []
     fallback_rate = 3500
 
     try:
-        for line in lines:
+        for line in raw_lines:
             if ":" not in line:
                 continue
             k, v = line.split(":", 1)
             k = k.strip().lower()
-            v_int = int(v.strip())
+            v_int = int(v.strip().replace(",", "").replace("،", "").replace(" ", ""))
 
             if k == "default":
                 fallback_rate = v_int
