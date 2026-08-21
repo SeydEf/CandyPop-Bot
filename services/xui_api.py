@@ -222,13 +222,19 @@ async def renew_client(
 
     res = await update_client(email, client)
 
-    # Try resetting traffic on panel
+    # Reset traffic counters on panel
     try:
-        await _request("POST", f"/panel/api/inbounds/resetClientTraffic/{email}")
+        await reset_client_traffic(email)
     except Exception:
-        pass
+        logger.exception("Failed to reset traffic stats for %s", email)
 
     return res
+
+
+async def reset_client_traffic(email: str) -> dict[str, Any]:
+    """Zero out a single client's up/down traffic counters."""
+    data = await _request("POST", f"/panel/api/clients/resetTraffic/{email}")
+    return data
 
 
 async def get_client_traffic(email: str) -> dict[str, Any] | None:

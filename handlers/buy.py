@@ -277,7 +277,6 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
 
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]
-    await state.clear()
 
     dur_str = (
         f" (+{format_price(bd['duration_surcharge'])})"
@@ -291,6 +290,15 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
     if renew_email:
         from keyboards.inline_kb import renew_payment_method_keyboard
 
+        await state.set_state(None)
+        await state.update_data(
+            renew_email=renew_email,
+            duration=duration,
+            users=users,
+            gb=gb,
+            price=price,
+        )
+
         text = (
             f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
             f"📦 نام سرویس: {renew_email}\n"
@@ -302,12 +310,12 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         )
         await message.answer(
             text,
-            reply_markup=renew_payment_method_keyboard(
-                renew_email, duration, users, gb, price
-            ),
+            reply_markup=renew_payment_method_keyboard(),
             parse_mode="HTML",
         )
         return
+
+    await state.clear()
 
     text = (
         f"📦 <b>خلاصه سفارش</b>\n\n"
