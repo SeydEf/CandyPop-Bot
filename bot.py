@@ -20,6 +20,7 @@ from handlers import (
     admin,
     admin_pricing,
     buy,
+    pricing,
     profile,
     start,
     subscriptions,
@@ -79,6 +80,7 @@ async def main() -> None:
     dp.include_routers(
         start.router,
         profile.router,
+        pricing.router,
         buy.router,
         subscriptions.router,
         wallet.router,
