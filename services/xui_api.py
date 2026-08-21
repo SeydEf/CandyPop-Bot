@@ -195,6 +195,42 @@ async def delete_client(email: str) -> dict[str, Any]:
     return data
 
 
+async def renew_client(
+    email: str,
+    duration_days: int,
+    data_gb: int,
+    users_count: int = 1,
+) -> dict[str, Any]:
+    """Renew an existing client subscription in X-UI by adding duration and updating bandwidth/IP limits."""
+    client = await get_client(email)
+    if not client:
+        raise RuntimeError(f"Client {email} not found")
+
+    import time
+
+    now_ms = int(time.time() * 1000)
+    # Set expiration to selected duration from now
+    new_expiry_ms = now_ms + (duration_days * 86400 * 1000)
+
+    total_bytes = data_gb * 1024 * 1024 * 1024
+
+    # Update client fields
+    client["expiryTime"] = new_expiry_ms
+    client["totalGB"] = total_bytes
+    client["limitIp"] = users_count
+    client["enable"] = True
+
+    res = await update_client(email, client)
+
+    # Try resetting traffic on panel
+    try:
+        await _request("POST", f"/panel/api/inbounds/resetClientTraffic/{email}")
+    except Exception:
+        pass
+
+    return res
+
+
 async def get_client_traffic(email: str) -> dict[str, Any] | None:
     """Get traffic stats for a client."""
     try:

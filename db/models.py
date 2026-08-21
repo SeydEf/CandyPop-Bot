@@ -185,6 +185,7 @@ async def create_invoice(
     duration_days: int,
     data_gb: int,
     users_count: int = 1,
+    target_email: str | None = None,
 ) -> dict[str, Any]:
     await ensure_user(tg_id)
     db = await get_db()
@@ -193,8 +194,8 @@ async def create_invoice(
     expires_at = now + timedelta(minutes=INVOICE_EXPIRY_MINUTES)
 
     await db.execute(
-        """INSERT INTO invoices (id, tg_id, amount, duration_days, data_gb, users_count, status, created_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+        """INSERT INTO invoices (id, tg_id, amount, duration_days, data_gb, users_count, target_email, status, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
         (
             invoice_id,
             tg_id,
@@ -202,6 +203,7 @@ async def create_invoice(
             duration_days,
             data_gb,
             users_count,
+            target_email,
             now.isoformat(),
             expires_at.isoformat(),
         ),
@@ -214,6 +216,7 @@ async def create_invoice(
         "duration_days": duration_days,
         "data_gb": data_gb,
         "users_count": users_count,
+        "target_email": target_email,
         "status": "pending",
         "created_at": now.isoformat(),
         "expires_at": expires_at.isoformat(),

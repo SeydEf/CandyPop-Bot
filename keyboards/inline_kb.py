@@ -231,6 +231,12 @@ def subscription_manage_keyboard(email: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="🔄 تمدید اشتراک",
+                    callback_data=f"sub_renew_{email}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="✏️ تغییر نام",
                     callback_data=f"sub_rename_{email}",
                 ),
@@ -259,6 +265,180 @@ def subscription_manage_keyboard(email: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="🔙 بازگشت به لیست",
                     callback_data="sub_back_list",
+                ),
+            ],
+        ]
+    )
+
+
+def renew_options_keyboard() -> InlineKeyboardMarkup:
+    """Options for subscription renewal: keep current plan vs change plan."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 تمدید پلن فعلی",
+                    callback_data="renew_same",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚙️ تغییر پلن و تمدید",
+                    callback_data="renew_change",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت",
+                    callback_data="sub_view_current",
+                ),
+            ],
+        ]
+    )
+
+
+def renew_duration_keyboard() -> InlineKeyboardMarkup:
+    """Duration selection for plan change during renewal."""
+    buttons = []
+    for days in DURATION_OPTIONS:
+        label = f"{days} روز"
+        buttons.append(
+            InlineKeyboardButton(text=label, callback_data=f"renew_dur_{days}")
+        )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            buttons,
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت", callback_data="sub_renew_current"
+                ),
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="sub_view_current"
+                ),
+            ],
+        ]
+    )
+
+
+def renew_users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+    """User count selection for renewal."""
+    dec_users = max(1, users - 1)
+    inc_users = min(10, users + 1)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➖",
+                    callback_data=f"renew_users_step_{dec_users}",
+                ),
+                InlineKeyboardButton(
+                    text=f"👤 {to_persian_digits(users)} کاربر",
+                    callback_data="buy_noop",
+                ),
+                InlineKeyboardButton(
+                    text="➕",
+                    callback_data=f"renew_users_step_{inc_users}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ ادامه",
+                    callback_data=f"renew_users_confirm_{users}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 بازگشت", callback_data="renew_change"),
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="sub_view_current"
+                ),
+            ],
+        ]
+    )
+
+
+async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+    """Data volume selection for renewal with dynamic pricing."""
+    from services.pricing import calculate_total_price
+
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+
+    for i, (gb, _) in enumerate(VOLUME_TIERS.items()):
+        total_price = await calculate_total_price(gb, duration, users)
+        label = f"{gb}GB — {format_price(total_price)}"
+        btn = InlineKeyboardButton(
+            text=label,
+            callback_data=f"renew_vol_{gb}",
+        )
+        row.append(btn)
+        if len(row) == 2 or i == len(VOLUME_TIERS) - 1:
+            rows.append(row)
+            row = []
+
+    # Custom volume option
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📝 حجم دلخواه",
+                callback_data="renew_vol_custom",
+            )
+        ]
+    )
+    # Back button
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت",
+                callback_data=f"renew_back_users_{users}",
+            ),
+            InlineKeyboardButton(text="❌ انصراف", callback_data="sub_view_current"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def renew_payment_method_keyboard() -> InlineKeyboardMarkup:
+    """Payment method selection for renewal."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💰 کیف پول",
+                    callback_data="renew_pay_wallet",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💳 کارت به کارت",
+                    callback_data="renew_pay_card",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت",
+                    callback_data="renew_back_volume",
+                ),
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="sub_view_current"
+                ),
+            ],
+        ]
+    )
+
+
+def renew_wallet_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Wallet payment confirmation for renewal."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ تأیید و پرداخت",
+                    callback_data="renew_wallet_confirm",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="sub_view_current"
                 ),
             ],
         ]

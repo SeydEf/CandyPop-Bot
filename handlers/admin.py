@@ -83,25 +83,36 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)  # type: ignore[union-attr]
 
     try:
-        # Get the user's username from DB for email generation
-        user = await get_user(tg_id)
-        username = user.get("username") if user else None
-
-        # Create client in X-UI
-        email = generate_email(tg_id, username)
-        total_bytes = gb_to_bytes(gb)
-        expiry_ms = int((time.time() + duration * 86400) * 1000)
-
         users_count = invoice.get("users_count", 1)
+        target_email = invoice.get("target_email")
 
-        await xui_api.add_client(
-            email=email,
-            total_gb=total_bytes,
-            expiry_time=expiry_ms,
-            tg_id=tg_id,
-            inbound_ids=INBOUND_IDS,
-            limit_ip=users_count,
-        )
+        if target_email:
+            # Renew existing client
+            email = target_email
+            await xui_api.renew_client(
+                email=email,
+                duration_days=duration,
+                data_gb=gb,
+                users_count=users_count,
+            )
+            action_msg = "اشتراک تمدید گردید"
+        else:
+            # Create new client
+            user = await get_user(tg_id)
+            username = user.get("username") if user else None
+            email = generate_email(tg_id, username)
+            total_bytes = gb_to_bytes(gb)
+            expiry_ms = int((time.time() + duration * 86400) * 1000)
+
+            await xui_api.add_client(
+                email=email,
+                total_gb=total_bytes,
+                expiry_time=expiry_ms,
+                tg_id=tg_id,
+                inbound_ids=INBOUND_IDS,
+                limit_ip=users_count,
+            )
+            action_msg = "اشتراک فعال گردید"
 
         # Get subId
         client = await xui_api.get_client(email)
@@ -111,7 +122,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
 
         # Notify user
         user_text = (
-            f"✅ <b>پرداخت شما تأیید شد و اشتراک فعال گردید!</b>\n\n"
+            f"✅ <b>پرداخت شما تأیید شد و {action_msg}!</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
             f"📦 نام سرویس: {email}\n"
             f"⏱ مدت: {duration} روز\n"

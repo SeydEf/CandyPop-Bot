@@ -56,7 +56,8 @@ async def init_db() -> None:
             expires_at      TEXT NOT NULL,
             receipt_file_id TEXT,
             receipt_text    TEXT,
-            message_id      INTEGER
+            message_id      INTEGER,
+            target_email    TEXT
         );
 
         CREATE TABLE IF NOT EXISTS referrals (
@@ -72,6 +73,12 @@ async def init_db() -> None:
             value TEXT NOT NULL
         );
     """)
+
+    # Column migrations
+    try:
+        await db.execute("ALTER TABLE invoices ADD COLUMN target_email TEXT")
+    except Exception:
+        pass
     await db.commit()
 
 

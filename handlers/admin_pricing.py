@@ -70,7 +70,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     )
 
     text = (
-        f"⚙️ <b>مدیریت و تنظیمات قیمت‌گذاری (Pricing Control)</b>\n\n"
+        f"⚙️ <b>مدیریت و تنظیمات قیمت‌گذاری</b>\n\n"
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
