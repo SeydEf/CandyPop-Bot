@@ -19,6 +19,7 @@ from config import (
     TEST_DURATION_DAYS,
 )
 from db.models import can_get_test_sub, set_test_used
+from keyboards.inline_kb import sub_config_links_keyboard
 from keyboards.reply_kb import BTN_TEST
 from services import xui_api
 from utils.formatting import format_size_gb, to_persian_digits
@@ -80,21 +81,13 @@ async def test_subscription(message: types.Message) -> None:
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
-        # Get config links
-        config_links = await xui_api.get_client_links(email)
-        links_text = ""
-        if config_links:
-            links_text = "\n\n🔗 <b>لینک‌های کانفیگ:</b>\n"
-            for link in config_links:
-                links_text += f"<code>{link}</code>\n\n"
-
         await message.answer(
             f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
             f"📦 نام سرویس: {email}\n"
             f"📊 حجم: {format_size_gb(TEST_DATA_GB)}\n"
             f"⏱ مدت: {TEST_DURATION_DAYS} روز\n\n"
-            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
-            f"{links_text}",
+            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>",
+            reply_markup=sub_config_links_keyboard(email),
             parse_mode="HTML",
         )
 

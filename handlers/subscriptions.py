@@ -351,7 +351,15 @@ async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
     await callback.answer()
 
 
-# ──────────────────────────── Individual Config Links ────────────────────────────
+def _extract_link_name(link: str, index: int) -> str:
+    """Extract link remark name from URL fragment (#name), or fallback to index."""
+    if "#" in link:
+        from urllib.parse import unquote
+
+        name = unquote(link.split("#", 1)[1]).strip()
+        if name:
+            return name
+    return f"کانفیگ {to_persian_digits(index)}"
 
 
 @router.callback_query(F.data.startswith("sub_links_"))
@@ -367,7 +375,8 @@ async def show_links(callback: types.CallbackQuery) -> None:
 
     text = "🔗 <b>لینک‌های کانفیگ:</b>\n\n"
     for i, link in enumerate(links, 1):
-        text += f"<b>{to_persian_digits(i)}.</b>\n<code>{link}</code>\n\n"
+        name = _extract_link_name(link, i)
+        text += f"📌 <b>{name}:</b>\n<code>{link}</code>\n\n"
 
     # Send as a new message since links can be very long
     await callback.message.answer(  # type: ignore[union-attr]

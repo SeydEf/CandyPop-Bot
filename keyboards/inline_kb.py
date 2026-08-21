@@ -256,3 +256,17 @@ def confirm_regen_keyboard(email: str) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def sub_config_links_keyboard(email: str) -> InlineKeyboardMarkup:
+    """Glass button to fetch config links for a subscription."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔗 دریافت کانفیگ‌ها",
+                    callback_data=f"sub_links_{email}",
+                )
+            ]
+        ]
+    )

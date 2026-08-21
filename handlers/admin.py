@@ -20,6 +20,7 @@ from db.models import (
     reset_all_test_subs,
     update_invoice_status,
 )
+from keyboards.inline_kb import sub_config_links_keyboard
 from services import xui_api
 from utils.formatting import format_size_gb, to_persian_digits
 from utils.helpers import gb_to_bytes, generate_email
@@ -105,14 +106,6 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
 
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
-        # Get config links
-        config_links = await xui_api.get_client_links(email)
-        links_text = ""
-        if config_links:
-            links_text = "\n\n🔗 <b>لینک‌های کانفیگ:</b>\n"
-            for link in config_links:
-                links_text += f"<code>{link}</code>\n\n"
-
         # Notify user
         user_text = (
             f"✅ <b>پرداخت شما تأیید شد و اشتراک فعال گردید!</b>\n\n"
@@ -121,11 +114,11 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             f"⏱ مدت: {duration} روز\n"
             f"📊 حجم: {format_size_gb(gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
-            f"{links_text}"
         )
         await bot.send_message(
             chat_id=tg_id,
             text=user_text,
+            reply_markup=sub_config_links_keyboard(email),
             parse_mode="HTML",
         )
 

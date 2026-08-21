@@ -42,6 +42,7 @@ from keyboards.inline_kb import (
     card_payment_keyboard,
     duration_keyboard,
     payment_method_keyboard,
+    sub_config_links_keyboard,
     volume_keyboard,
     wallet_confirm_keyboard,
 )
@@ -300,14 +301,6 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
         # Build subscription link
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
-        # Get individual config links
-        config_links = await xui_api.get_client_links(email)
-        links_text = ""
-        if config_links:
-            links_text = "\n\n🔗 <b>لینک‌های کانفیگ:</b>\n"
-            for i, link in enumerate(config_links, 1):
-                links_text += f"<code>{link}</code>\n\n"
-
         success_text = (
             f"✅ <b>اشتراک شما با موفقیت ایجاد شد!</b>\n\n"
             f"📦 نام سرویس: {email}\n"
@@ -316,11 +309,11 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
             f"💰 روش پرداخت: کیف پول\n"
             f"👛 موجودی جدید: {format_price(new_balance)}\n\n"
             f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>"
-            f"{links_text}"
         )
 
         await callback.message.edit_text(  # type: ignore[union-attr]
             success_text,
+            reply_markup=sub_config_links_keyboard(email),
             parse_mode="HTML",
         )
 
