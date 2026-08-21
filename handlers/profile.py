@@ -36,6 +36,7 @@ from keyboards.inline_kb import (
 from keyboards.reply_kb import BTN_PROFILE
 from services import xui_api
 from utils.formatting import (
+    format_datetime,
     format_price,
     format_size_gb,
     to_persian_digits,
@@ -148,18 +149,30 @@ def _format_invoice_details(inv: dict[str, Any]) -> str:
     gb = inv.get("data_gb", 0)
     users = inv.get("users_count", 1)
     target_email = inv.get("target_email")
+    payment_method = inv.get("payment_method", "card")
+    created_at = inv.get("created_at", "")
+
+    pm_str = "موجودی کیف پول 👛" if payment_method == "wallet" else "کارت به کارت 💳"
+    date_str = format_datetime(created_at)
 
     if target_email == "TOPUP" or (dur == 0 and gb == 0):
         item_type = "💳 شارژ کیف پول"
     elif target_email:
         item_type = f"🔄 تمدید سرویس ({target_email})"
     else:
-        item_type = f"📦 خرید اشتراک ({dur} روز — {format_size_gb(gb)} — {to_persian_digits(users)} کاربر)"
+        item_type = (
+            f"📦 خرید اشتراک:\n"
+            f"   ⏱️ دوره: {dur} روز\n"
+            f"   📊 حجم: {format_size_gb(gb)}\n"
+            f"   👤 تعداد کاربران: {to_persian_digits(users)} کاربر"
+        )
 
     return (
         f"▫️ <b>فاکتور <code>{inv_id}</code></b> — {status_str}\n"
         f"   {item_type}\n"
         f"   💰 مبلغ: {format_price(amount)}\n"
+        f"   💳 روش پرداخت: <b>{pm_str}</b>\n"
+        f"   📅 تاریخ و زمان: <code>{date_str}</code>\n"
     )
 
 

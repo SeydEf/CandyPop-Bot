@@ -462,6 +462,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
         duration_days=duration,
         data_gb=gb,
         users_count=users,
+        payment_method="wallet",
     )
     await update_invoice_status(invoice["id"], "approved")
 

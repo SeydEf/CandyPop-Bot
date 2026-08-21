@@ -1,5 +1,6 @@
 aiogram
 aiosqlite
+jdatetime
 httpx
 httpx[socks]
 python-dotenv

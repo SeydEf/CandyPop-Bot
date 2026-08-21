@@ -79,6 +79,14 @@ async def init_db() -> None:
         await db.execute("ALTER TABLE invoices ADD COLUMN target_email TEXT")
     except Exception:
         pass
+
+    try:
+        await db.execute(
+            "ALTER TABLE invoices ADD COLUMN payment_method TEXT DEFAULT 'card'"
+        )
+    except Exception:
+        pass
+
     await db.commit()
 
 

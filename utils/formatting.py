@@ -58,3 +58,37 @@ def format_remaining_days(expiry_ms: int) -> str:
         return "0 روز"
     days = remaining_ms // (1000 * 60 * 60 * 24)
     return f"{days} روز"
+
+
+def format_datetime(iso_str: str) -> str:
+    """Format ISO timestamp into Shamsi (Jalali) date and time with Persian digits using jdatetime.
+
+    Example output: '۱۴۰۵/۰۵/۳۰ — ۲۱:۴۵'
+    """
+    from datetime import datetime, timedelta, timezone
+
+    if not iso_str:
+        return "نامشخص"
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        tz_iran = timezone(timedelta(hours=3, minutes=30))
+
+        if dt.tzinfo is None:
+            # Naive datetime → assume UTC, then convert to Iran time
+            dt = dt.replace(tzinfo=timezone.utc).astimezone(tz_iran)
+        else:
+            # Aware datetime → just convert to Iran time
+            dt = dt.astimezone(tz_iran)
+
+        try:
+            import jdatetime
+
+            jdt = jdatetime.datetime.fromgregorian(datetime=dt)
+            formatted_str = jdt.strftime("%Y/%m/%d — %H:%M")
+        except ImportError:
+            formatted_str = dt.strftime("%Y/%m/%d — %H:%M")
+
+        return to_persian_digits(formatted_str)
+    except Exception:
+        clean_str = str(iso_str)[:16].replace("-", "/")
+        return to_persian_digits(clean_str)

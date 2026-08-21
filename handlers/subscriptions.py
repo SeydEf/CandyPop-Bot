@@ -819,6 +819,7 @@ async def renew_wallet_confirm(
         data_gb=gb,
         users_count=users,
         target_email=email,
+        payment_method="wallet",
     )
     await update_invoice_status(invoice["id"], "approved")
 
