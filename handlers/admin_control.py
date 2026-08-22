@@ -50,6 +50,8 @@ class AdminControlStates(StatesGroup):
     waiting_disc_edit_percent = State()
     waiting_disc_edit_max_uses = State()
 
+    waiting_ref_percent = State()
+
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
     return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
@@ -58,6 +60,9 @@ def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     config = await get_pricing_config()
     test_config = await get_test_sub_config()
+    from db.models import get_referral_config
+
+    ref_config = await get_referral_config()
 
     base_rate = config["base_gb_rate"]
     user_surcharge = config["user_surcharge"]
@@ -68,6 +73,9 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     test_gb = test_config["gb"]
     test_dur = test_config["duration_days"]
     test_cool = test_config["cooldown_days"]
+
+    ref_status = "🟢 فعال" if ref_config["enabled"] else "🔴 غیرفعال"
+    ref_percent = to_persian_digits(ref_config["percent"])
 
     tiers_text = ""
     for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
@@ -89,13 +97,16 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"  • کول‌داون: {to_persian_digits(test_cool)} روز\n"
     )
 
+    ref_text = f"  • وضعیت: {ref_status}\n  • پورسانت پاداش: {ref_percent}٪\n"
+
     text = (
         f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
         f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
-        f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}"
+        f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
+        f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -134,6 +145,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="🏷️ مدیریت کدهای تخفیف",
                     callback_data="admin_discounts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 تنظیمات سیستم زیرمجموعه‌گیری",
+                    callback_data="admin_ref_menu",
                 ),
             ],
             [
@@ -1170,6 +1187,122 @@ async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) ->
     max_str = "بی‌نهایت" if uses_value == -1 else f"{to_persian_digits(uses_value)}"
     await message.answer(
         f"✅ سقف استفاده از کد <code>{code}</code> به <b>{max_str}</b> تغییر یافت.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_ref_menu")
+async def admin_ref_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.models import get_referral_config
+
+    config = await get_referral_config()
+    status_str = "🟢 فعال" if config["enabled"] else "🔴 غیرفعال"
+    toggle_text = "🔴 غیرفعال‌سازی سیستم" if config["enabled"] else "🟢 فعال‌سازی سیستم"
+    percent_str = to_persian_digits(config["percent"])
+
+    text = (
+        f"👥 <b>تنظیمات سیستم زیرمجموعه‌گیری (دعوت از دوستان)</b>\n\n"
+        f"🔘 <b>وضعیت فعلی سیستم:</b> {status_str}\n"
+        f"📊 <b>درصد پورسانت فعلی:</b> <b>{percent_str}٪</b>\n\n"
+        f"جهت تغییر هر یک از موارد، گزینه مربوطه را انتخاب کنید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_text, callback_data="admin_ref_toggle"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📊 تغییر درصد پورسانت",
+                    callback_data="admin_ref_edit_percent",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                ),
+            ],
+        ]
+    )
+
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ref_toggle")
+async def admin_ref_toggle(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import get_referral_config, set_referral_config
+
+    config = await get_referral_config()
+    new_status = not config["enabled"]
+    await set_referral_config(enabled=new_status)
+
+    msg = "فعال" if new_status else "غیرفعال"
+    await callback.answer(f"✅ سیستم زیرمجموعه‌گیری {msg} گردید.")
+
+    await admin_ref_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_ref_edit_percent")
+async def admin_ref_edit_percent_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_ref_percent)
+    await callback.message.edit_text(
+        "📊 <b>درصد جدید پورسانت دعوت (۱ تا ۱۰۰) را وارد کنید:</b>\n"
+        "مثال: <code>15</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_ref_percent, F.text)
+async def admin_ref_edit_percent_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 1 or val > 100:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+        return
+
+    from db.models import set_referral_config
+
+    await set_referral_config(percent=val)
+    await state.clear()
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ درصد پورسانت زیرمجموعه‌گیری به <b>{to_persian_digits(val)}٪</b> تغییر یافت.\n\n{panel_text}",
         reply_markup=keyboard,
         parse_mode="HTML",
     )

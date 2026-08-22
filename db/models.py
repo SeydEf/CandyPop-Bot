@@ -309,7 +309,7 @@ async def expire_old_invoices() -> int:
 async def create_referral(referrer_tg_id: int, referred_tg_id: int) -> None:
     db = await get_db()
     await db.execute(
-        "INSERT INTO referrals (referrer_tg_id, referred_tg_id) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO referrals (referrer_tg_id, referred_tg_id) VALUES (?, ?)",
         (referrer_tg_id, referred_tg_id),
     )
     await db.commit()
@@ -330,3 +330,75 @@ async def set_setting(key: str, value: str) -> None:
         (key, value),
     )
     await db.commit()
+
+
+async def get_referral_config() -> dict[str, Any]:
+    enabled_val = await get_setting("referral_enabled", "1")
+    percent_val = await get_setting("referral_commission_percent", "10")
+    return {
+        "enabled": enabled_val == "1",
+        "percent": int(percent_val) if percent_val and percent_val.isdigit() else 10,
+    }
+
+
+async def set_referral_config(
+    enabled: bool | None = None, percent: int | None = None
+) -> None:
+    if enabled is not None:
+        await set_setting("referral_enabled", "1" if enabled else "0")
+    if percent is not None:
+        await set_setting("referral_commission_percent", str(percent))
+
+
+async def get_referral_stats(tg_id: int) -> dict[str, Any]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT COUNT(*) as count FROM users WHERE referrer_id = ?", (tg_id,)
+    )
+    row = await cursor.fetchone()
+    invited_count = row["count"] if row else 0
+
+    return {
+        "invited_count": invited_count,
+    }
+
+
+async def process_referral_commission(
+    buyer_tg_id: int, amount: int, bot: Any | None = None
+) -> int:
+    config = await get_referral_config()
+    if not config["enabled"] or amount <= 0:
+        return 0
+
+    buyer = await get_user(buyer_tg_id)
+    if not buyer:
+        return 0
+
+    referrer_id = buyer.get("referrer_id")
+    if not referrer_id or referrer_id == buyer_tg_id:
+        return 0
+
+    percent = config["percent"]
+    commission = int(round(amount * percent / 100))
+    if commission <= 0:
+        return 0
+
+    new_balance = await credit_wallet(referrer_id, commission)
+
+    if bot:
+        try:
+            from utils.formatting import format_price, to_persian_digits
+
+            notify_text = (
+                f"🎉 <b>یِس! پول پورسانت واریز شد!</b>\n\n"
+                f"💸 <b>مبلغ پاداش ({to_persian_digits(percent)}٪):</b> +{format_price(commission)}\n"
+                f"💰 <b>موجودی جدید کیف پول:</b> {format_price(new_balance)}\n\n"
+                f"🔥 <i>دوستت ازت خرید کرد و تو پول گرفتی! همینجوری ادامه بده!</i>"
+            )
+            await bot.send_message(
+                chat_id=referrer_id, text=notify_text, parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    return commission

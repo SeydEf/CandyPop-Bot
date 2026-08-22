@@ -55,9 +55,11 @@ async def cmd_start(message: types.Message) -> None:
                 referrer_id = None
 
     existing = await get_user(tg_id)
-    if existing is None:
+    if existing is None or (
+        referrer_id is not None and not existing.get("referrer_id")
+    ):
         await create_user(tg_id, username, full_name, referrer_id)
-        if referrer_id is not None:
+        if referrer_id is not None and referrer_id != tg_id:
             referrer = await get_user(referrer_id)
             if referrer is not None:
                 await create_referral(referrer_id, tg_id)

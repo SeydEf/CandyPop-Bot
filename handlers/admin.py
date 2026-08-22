@@ -59,7 +59,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     tg_id = invoice["tg_id"]
     duration = invoice["duration_days"]
     gb = invoice["data_gb"]
-    invoice["amount"]
+    amount = invoice["amount"]
 
     await update_invoice_status(invoice_id, "approved")
 
@@ -92,6 +92,10 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             from db.discounts import increment_discount_usage
 
             await increment_discount_usage(invoice["discount_code"])
+
+        from db.models import process_referral_commission
+
+        await process_referral_commission(tg_id, amount, bot)
 
         if target_email:
             email = target_email

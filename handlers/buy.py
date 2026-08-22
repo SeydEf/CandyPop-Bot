@@ -428,6 +428,10 @@ async def buy_wallet_confirm(
 
         await increment_discount_usage(discount_code)
 
+    from db.models import process_referral_commission
+
+    await process_referral_commission(tg_id, price, bot)
+
     await callback.message.edit_text(
         "🚀 <b>در حال ایجاد کانفیگ اختصاصی شما... لطفاً چند ثانیه صبر کنید.</b>",
         parse_mode="HTML",
