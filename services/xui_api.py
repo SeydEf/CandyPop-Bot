@@ -62,6 +62,7 @@ async def add_client(
     inbound_ids: list[int],
     enable: bool = True,
     limit_ip: int = 0,
+    group: str = "",
 ) -> dict[str, Any]:
     payload = {
         "client": {
@@ -75,6 +76,7 @@ async def add_client(
             "reset": 0,
             "comment": "",
             "security": "auto",
+            "group": group,
         },
         "inboundIds": inbound_ids,
     }
@@ -205,6 +207,33 @@ async def set_inbound_enable(inbound_id: int, enable: bool) -> dict[str, Any]:
     data = await _request(
         "POST", f"/panel/api/inbounds/setEnable/{inbound_id}", json_data=payload
     )
+    return data
+
+
+async def list_client_groups() -> list[dict[str, Any]]:
+    try:
+        data = await _request("GET", "/panel/api/clients/groups")
+        return data.get("obj", [])
+    except Exception as e:
+        logger.error("Failed to list client groups: %s", e)
+        return []
+
+
+async def create_client_group(name: str) -> dict[str, Any]:
+    payload = {"name": name}
+    data = await _request("POST", "/panel/api/clients/groups/create", json_data=payload)
+    return data
+
+
+async def rename_client_group(old_name: str, new_name: str) -> dict[str, Any]:
+    payload = {"oldName": old_name, "newName": new_name}
+    data = await _request("POST", "/panel/api/clients/groups/rename", json_data=payload)
+    return data
+
+
+async def delete_client_group(name: str) -> dict[str, Any]:
+    payload = {"name": name}
+    data = await _request("POST", "/panel/api/clients/groups/delete", json_data=payload)
     return data
 
 

@@ -113,9 +113,10 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             total_bytes = gb_to_bytes(gb)
             expiry_ms = int((time.time() + duration * 86400) * 1000)
 
-            from db.models import get_active_inbound_ids
+            from db.models import get_active_client_group, get_active_inbound_ids
 
             active_inbound_ids = await get_active_inbound_ids()
+            active_group = await get_active_client_group()
 
             await xui_api.add_client(
                 email=email,
@@ -124,6 +125,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
                 tg_id=tg_id,
                 inbound_ids=active_inbound_ids,
                 limit_ip=users_count,
+                group=active_group,
             )
             action_msg = "اشتراک فعال گردید"
 

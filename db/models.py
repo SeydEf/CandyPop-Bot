@@ -433,3 +433,11 @@ async def toggle_assigned_inbound_id(inbound_id: int) -> list[int]:
     new_list = sorted(current_ids)
     await set_active_inbound_ids(new_list)
     return new_list
+
+
+async def get_active_client_group() -> str:
+    return await get_setting("active_client_group", "") or ""
+
+
+async def set_active_client_group(group_name: str) -> None:
+    await set_setting("active_client_group", group_name)

@@ -50,7 +50,12 @@ class AdminControlStates(StatesGroup):
     waiting_disc_edit_percent = State()
     waiting_disc_edit_max_uses = State()
 
+    # Referral System States
     waiting_ref_percent = State()
+
+    # Client Groups States
+    waiting_group_create_name = State()
+    waiting_group_rename_name = State()
 
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
@@ -157,6 +162,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="📡 مدیریت اینباندها (Inbounds)",
                     callback_data="admin_inbounds_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 مدیریت گروه‌های مشتری (Groups)",
+                    callback_data="admin_groups_menu",
                 ),
             ],
             [
@@ -1459,3 +1470,254 @@ async def admin_inbound_toggle_assign(
     await callback.answer(f"✅ اینباند #{inbound_id} {status_str}.", show_alert=True)
 
     await admin_inbounds_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_groups_menu")
+async def admin_groups_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.models import get_active_client_group
+    from services import xui_api
+
+    groups = await xui_api.list_client_groups()
+    active_group = await get_active_client_group()
+
+    group_lines = []
+    keyboard_rows = [
+        [
+            InlineKeyboardButton(
+                text="➕ ایجاد گروه جدید", callback_data="admin_group_create"
+            )
+        ]
+    ]
+
+    active_info = (
+        f"⭐️ <b>گروه فعال برای خریدهای جدید:</b> <code>{active_group}</code>"
+        if active_group
+        else "⚪️ <b>گروه فعال برای خریدهای جدید:</b> هیچ گروهی انتخاب نشده است (بدون گروه)"
+    )
+
+    if groups:
+        for grp in groups:
+            g_name = grp.get("name", "")
+            if not g_name:
+                continue
+            m_count = grp.get("memberCount", 0)
+            is_active = g_name == active_group
+            star = " ⭐️ (گروه فعال)" if is_active else ""
+
+            group_lines.append(
+                f"• <b>{g_name}</b> ({to_persian_digits(m_count)} عضو){star}"
+            )
+
+            row = []
+            if not is_active:
+                row.append(
+                    InlineKeyboardButton(
+                        text="⭐️ انتخاب برای خرید",
+                        callback_data=f"admin_group_select_{g_name}",
+                    )
+                )
+            else:
+                row.append(
+                    InlineKeyboardButton(
+                        text="❌ لغو انتخاب",
+                        callback_data="admin_group_deselect",
+                    )
+                )
+
+            row.append(
+                InlineKeyboardButton(
+                    text="✏️ ویرایش نام",
+                    callback_data=f"admin_group_rename_{g_name}",
+                )
+            )
+            row.append(
+                InlineKeyboardButton(
+                    text="🗑 حذف",
+                    callback_data=f"admin_group_delete_{g_name}",
+                )
+            )
+            keyboard_rows.append(row)
+    else:
+        group_lines.append("<i>هیچ گروهی روی پنل تعریف نشده است.</i>")
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+            )
+        ]
+    )
+
+    text = (
+        "👥 <b>مدیریت گروه‌های مشتری (Client Groups)</b>\n\n"
+        "در این بخش می‌توانید گروه‌های مشتریان را تعریف و مدیریت کنید. "
+        "همچنین می‌توانید <b>تنها یک گروه</b> را به عنوان گروه فعال انتخاب کنید تا کلیه خریدهای جدید مشتریان به طور خودکار عضو آن گروه شوند.\n\n"
+        f"{active_info}\n\n"
+        "<b>لیست گروه‌ها:</b>\n" + "\n".join(group_lines)
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_group_create")
+async def admin_group_create_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_group_create_name)
+    await callback.message.edit_text(
+        "👥 <b>نام گروه جدید را وارد کنید:</b>\n"
+        "مثال: <code>VIP</code> یا <code>Customers</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_group_create_name, F.text)
+async def admin_group_create_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    g_name = message.text.strip()
+    from services import xui_api
+
+    try:
+        await xui_api.create_client_group(g_name)
+        await state.clear()
+        panel_text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ گروه جدید <b>{g_name}</b> با موفقیت ایجاد گردید.\n\n{panel_text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error("Failed to create group %s: %s", g_name, e)
+        await message.answer(f"❌ خطا در ساخت گروه: {e}")
+
+
+@router.callback_query(F.data.startswith("admin_group_select_"))
+async def admin_group_select(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+
+    g_name = callback.data[len("admin_group_select_") :]
+    from db.models import set_active_client_group
+
+    await set_active_client_group(g_name)
+    await callback.answer(
+        f"✅ گروه «{g_name}» به عنوان گروه فعال خریدهای جدید انتخاب شد.",
+        show_alert=True,
+    )
+    await admin_groups_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_group_deselect")
+async def admin_group_deselect(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import set_active_client_group
+
+    await set_active_client_group("")
+    await callback.answer(
+        "✅ اختصاص گروه برای خریدهای جدید لغو گردید.", show_alert=True
+    )
+    await admin_groups_menu(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_group_rename_"))
+async def admin_group_rename_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    old_name = callback.data[len("admin_group_rename_") :]
+    await state.update_data(old_group_name=old_name)
+    await state.set_state(AdminControlStates.waiting_group_rename_name)
+    await callback.message.edit_text(
+        f"✏️ <b>نام جدید برای گروه «{old_name}» را وارد کنید:</b>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_group_rename_name, F.text)
+async def admin_group_rename_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    new_name = message.text.strip()
+    data = await state.get_data()
+    old_name = data.get("old_group_name")
+
+    if not old_name:
+        await state.clear()
+        return
+
+    from db.models import get_active_client_group, set_active_client_group
+    from services import xui_api
+
+    try:
+        await xui_api.rename_client_group(old_name, new_name)
+        active_group = await get_active_client_group()
+        if active_group == old_name:
+            await set_active_client_group(new_name)
+
+        await state.clear()
+        panel_text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ نام گروه <b>{old_name}</b> به <b>{new_name}</b> تغییر یافت.\n\n{panel_text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error("Failed to rename group %s: %s", old_name, e)
+        await message.answer(f"❌ خطا در ویرایش نام گروه: {e}")
+
+
+@router.callback_query(F.data.startswith("admin_group_delete_"))
+async def admin_group_delete(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+
+    g_name = callback.data[len("admin_group_delete_") :]
+    from db.models import get_active_client_group, set_active_client_group
+    from services import xui_api
+
+    try:
+        await xui_api.delete_client_group(g_name)
+        active_group = await get_active_client_group()
+        if active_group == g_name:
+            await set_active_client_group("")
+
+        await callback.answer(f"✅ گروه «{g_name}» حذف گردید.", show_alert=True)
+    except Exception as e:
+        logger.error("Failed to delete group %s: %s", g_name, e)
+        await callback.answer(f"❌ خطا در حذف گروه: {e}", show_alert=True)
+
+    await admin_groups_menu(callback, state)
