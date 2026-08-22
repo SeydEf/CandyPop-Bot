@@ -12,11 +12,23 @@ from keyboards.reply_kb import main_menu_keyboard
 logger = logging.getLogger(__name__)
 router = Router(name="start")
 
-WELCOME_TEXT = (
-    "🍭 <b>به ربات CandyPop خوش آمدید!</b>\n\n"
-    "با استفاده از این ربات می‌توانید اشتراک VPN خریداری کنید.\n\n"
-    "از منوی زیر گزینه مورد نظر خود را انتخاب کنید 👇"
-)
+
+def get_welcome_text(user_name: str | None = None) -> str:
+    name_str = f" <b>{user_name}</b>" if user_name else ""
+    return (
+        f"🍭 <b>سلام{name_str}، به ربات هوشمند CandyPop خوش آمدید!</b>\n\n"
+        f"🚀 <b>تجربه‌ای متفاوت از اینترنت آزاد، امن و پرسرعت</b>\n\n"
+        f"⚡️ <b>امکانات و ویژگی‌های سرویس‌های ما:</b>\n"
+        f"▫️ <b>سرعت و پایداری فوق‌العاده:</b> متصل به بهترین و پرسرعت‌ترین سرورهای اختصاصی\n"
+        f"▫️ <b>تحویل و تمدید آنی:</b> دریافت و تمدید لحظه‌ای سرویس بلافاصله پس از پرداخت\n"
+        f"▫️ <b>سازگاری کامل:</b> پشتیبانی از تمامی سیستم‌عامل‌ها (Android, iOS, Windows, macOS)\n"
+        f"▫️ <b>لینک هوشمند و ساب‌اسکریپشن:</b> بروزرسانی خودکار کانفیگ‌ها بدون نیاز به تنظیمات دستی\n"
+        f"▫️ <b>مدیریت کامل اشتراک‌ها:</b> امکان مشاهده حجم باقیمانده، روزهای مانده، تغییر نام و تمدید آسان\n\n"
+        f"👇 <b>برای شروع، گزینه مورد نظر خود را از منوی زیر انتخاب کنید:</b>"
+    )
+
+
+WELCOME_TEXT = get_welcome_text()
 
 
 @router.message(CommandStart())
@@ -58,9 +70,17 @@ async def send_welcome(
     message: types.Message | Any,
     data: dict | None = None,
 ) -> None:
+    user_name: str | None = None
+    if isinstance(message, types.Message) and message.from_user:
+        user_name = message.from_user.full_name or message.from_user.first_name
+    elif isinstance(message, types.CallbackQuery) and message.from_user:
+        user_name = message.from_user.full_name or message.from_user.first_name
+
+    text = get_welcome_text(user_name)
+
     if isinstance(message, types.Message) and message.chat:
         await message.answer(
-            WELCOME_TEXT,
+            text,
             reply_markup=main_menu_keyboard(),
             parse_mode="HTML",
         )
@@ -72,7 +92,7 @@ async def send_welcome(
             if bot:
                 await bot.send_message(
                     chat_id=message.message.chat.id,
-                    text=WELCOME_TEXT,
+                    text=text,
                     reply_markup=main_menu_keyboard(),
                     parse_mode="HTML",
                 )

@@ -69,10 +69,11 @@ async def _get_duration_step_text() -> str:
     dur60 = durs.get(60, 0)
     dur90 = durs.get(90, 0)
     return (
-        "⏱ <b>مدت زمان اشتراک را انتخاب کنید:</b>\n\n"
-        "• ۳۰ روزه: (بدون هزینه اضافه)\n"
-        f"• ۶۰ روزه: +{format_price(dur60)}\n"
-        f"• ۹۰ روزه: +{format_price(dur90)}"
+        "⚡️ <b>گام ۱: انتخاب مدت زمان اشتراک</b>\n\n"
+        "مدت اعتبار سرویس پرسرعتت رو انتخاب کن:\n\n"
+        "🔹 <b>۱ ماهه (۳۰ روز):</b> بدون هزینه اضافه\n"
+        f"🔹 <b>۲ ماهه (۶۰ روز):</b> +{format_price(dur60)}\n"
+        f"🔹 <b>۳ ماهه (۹۰ روز):</b> +{format_price(dur90)}"
     )
 
 
@@ -105,8 +106,9 @@ async def _get_users_step_text() -> str:
     config = await get_pricing_config()
     user_surcharge = config["user_surcharge"]
     return (
-        "👤 <b>تعداد کاربران همزمان را انتخاب کنید:</b>\n\n"
-        f"💡 به ازای هر کاربر اضافه، <b>+{format_price(user_surcharge)}</b> به مبلغ اشتراک افزوده می‌شود."
+        "� <b>گام ۲: انتخاب تعداد کاربر همزمان</b>\n\n"
+        "چند نفر قراره به صورت همزمان از این سرویس استفاده کنن؟\n\n"
+        f"💡 به ازای هر کاربر اضافه، فقط <b>+{format_price(user_surcharge)}</b> به اشتراک افزوده می‌شه."
     )
 
 
@@ -160,15 +162,15 @@ async def _get_volume_step_text(duration: int, users: int) -> str:
 
     tiers_info = ""
     for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
-        tiers_info += (
-            f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
-        )
+        tiers_info += f"  ▫️ تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
     last_max = volume_tiers[-1][0] if volume_tiers else 100
-    tiers_info += f"  • بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} / GB\n"
+    tiers_info += f"  ▫️ بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} به ازای هر گیگ\n"
 
     return (
-        f"📊 <b>حجم اشتراک {duration} روزه ({to_persian_digits(users)} کاربره) را انتخاب کنید:</b>\n\n"
-        f"💡 <b>تعرفه‌ها و پله‌های تخفیف حجم:</b>\n{tiers_info}"
+        f"🚀 <b>گام ۳: انتخاب حجم اشتراک</b>\n\n"
+        f"📌 سرویس انتخابی: <b>{duration} روزه</b> | <b>{to_persian_digits(users)} کاربره</b>\n\n"
+        f"🎁 <b>تعرفه‌ها و تخفیف‌های پلکانی:</b>\n{tiers_info}\n"
+        f"حجم مورد نظرت رو از دکمه‌های زیر انتخاب کن یا حجم دلخواهت رو بنویس 👇"
     )
 
 
@@ -209,9 +211,10 @@ async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) ->
     await state.set_state(BuyStates.waiting_custom_gb)
     await state.update_data(duration=duration, users=users)
     await callback.message.edit_text(
-        "📝 <b>لطفاً حجم مورد نظر خود را به گیگابایت وارد کنید:</b>\n"
-        "مثال: <code>25</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "✍️ <b>حجم دلخواهت رو وارد کن:</b>\n\n"
+        "میزان حجم رو به گیگابایت بصورت عددی ارسال کن.\n"
+        "🔸 مثال: <code>25</code>\n\n"
+        "<i>برای انصراف /cancel رو بفرست.</i>",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -222,7 +225,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
     if message.text and message.text.strip() == "/cancel":
         await state.clear()
         await message.answer(
-            "❌ عملیات خرید لغو شد.",
+            "🚫 فرایند خرید لغو شد.",
             reply_markup=main_menu_keyboard(),
         )
         return
@@ -236,11 +239,12 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         if gb < 1:
             raise ValueError
         if gb > 500:
-            await message.answer("❌ حداکثر حجم قابل سفارش ۵۰۰ گیگابایت است.")
+            await message.answer("⚠️ حداکثر حجم قابل سفارش ۵۰۰ گیگابایت هست.")
             return
     except (ValueError, TypeError):
         await message.answer(
-            "❌ لطفاً یک عدد صحیح وارد کنید. مثال: <code>25</code>", parse_mode="HTML"
+            "⚠️ لطفاً فقط یک عدد انگلیسی یا فارسی معتبر وارد کنید.\n🔸 مثال: <code>25</code>",
+            parse_mode="HTML",
         )
         return
 
@@ -261,6 +265,15 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    text = (
+        f"<b>پیش‌فاکتور سفارش شما</b>\n\n"
+        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💎 <b>مبلغ نهایی و قابل پرداخت:</b> {format_price(price)}\n\n"
+        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+    )
+
     if renew_email:
         from keyboards.inline_kb import renew_payment_method_keyboard
 
@@ -273,15 +286,6 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             price=price,
         )
 
-        text = (
-            f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
-            f"📦 نام سرویس: {renew_email}\n"
-            f"⏱ مدت: {duration} روز{dur_str}\n"
-            f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-            f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-            f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-            f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
-        )
         await message.answer(
             text,
             reply_markup=renew_payment_method_keyboard(),
@@ -290,15 +294,6 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         return
 
     await state.clear()
-
-    text = (
-        f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
-    )
     await message.answer(
         text,
         reply_markup=payment_method_keyboard(duration, users, gb, price),
@@ -326,12 +321,12 @@ async def buy_select_volume(callback: types.CallbackQuery) -> None:
     )
 
     text = (
-        f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+        f"<b>پیش‌فاکتور سفارش شما</b>\n\n"
+        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💎 <b>مبلغ نهایی و قابل پرداخت:</b> {format_price(price)}\n\n"
+        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
     await callback.message.edit_text(
         text,
@@ -355,9 +350,9 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
 
     if balance < price:
         await callback.answer(
-            f"❌ موجودی کیف پول شما کافی نیست.\n"
-            f"موجودی: {format_price(balance)}\n"
-            f"مبلغ مورد نیاز: {format_price(price)}",
+            f"❌ موجودی کیف پول شما برای این سفارش کافی نیست!\n\n"
+            f"💰 موجودی فعلی: {format_price(balance)}\n"
+            f"💵 مبلغ مورد نیاز: {format_price(price)}",
             show_alert=True,
         )
         return
@@ -375,15 +370,15 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
     )
 
     text = (
-        f"💰 <b>پرداخت از کیف پول</b>\n\n"
-        f"📦 سفارش:\n"
-        f"⏱ مدت: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
-        f"💰 مبلغ کل: {format_price(price)}\n\n"
-        f"👛 موجودی فعلی: {format_price(balance)}\n"
-        f"👛 موجودی پس از خرید: {format_price(after_balance)}\n\n"
-        f"آیا تأیید می‌کنید؟"
+        f"👛 <b>پرداخت آنی از کیف پول</b>\n\n"
+        f"🛍 <b>جزئیات سفارش:</b>\n"
+        f"⏱ مدت زمان: {duration} روز{dur_str}\n"
+        f"👥 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم ترافیک: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"💎 مبلغ کل: <b>{format_price(price)}</b>\n\n"
+        f"💳 موجودی فعلی حساب: {format_price(balance)}\n"
+        f"📉 موجودی پس از پرداخت: {format_price(after_balance)}\n\n"
+        f"آیا برای ثبت و دریافت کانفیگ مطمئن هستید؟"
     )
     await callback.message.edit_text(
         text,
@@ -434,7 +429,7 @@ async def buy_wallet_confirm(
         await increment_discount_usage(discount_code)
 
     await callback.message.edit_text(
-        "⏳ در حال ساخت اشتراک...",
+        "🚀 <b>در حال ایجاد کانفیگ اختصاصی شما... لطفاً چند ثانیه صبر کنید.</b>",
         parse_mode="HTML",
     )
 
@@ -459,14 +454,15 @@ async def buy_wallet_confirm(
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
         success_text = (
-            f"✅ <b>اشتراک شما با موفقیت ایجاد شد!</b>\n\n"
-            f"📦 نام سرویس: {email}\n"
-            f"⏱ مدت: {duration} روز\n"
-            f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر\n"
-            f"📊 حجم: {format_size_gb(gb)}\n"
-            f"💰 روش پرداخت: کیف پول\n"
-            f"👛 موجودی جدید: {format_price(new_balance)}\n\n"
-            f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>"
+            f"🎉 <b>تبریک! اشتراک شما با موفقیت فعال شد</b>\n\n"
+            f"🔹 <b>شناسه سرویس:</b> <code>{email}</code>\n"
+            f"⏱ <b>مدت اعتبار:</b> {duration} روز\n"
+            f"👥 <b>تعداد کاربر همزمان:</b> {to_persian_digits(users)} کاربر\n"
+            f"📊 <b>حجم اشتراک:</b> {format_size_gb(gb)}\n"
+            f"💳 <b>روش پرداخت:</b> کیف پول حساب\n"
+            f"👛 <b>موجودی باقیمانده:</b> {format_price(new_balance)}\n\n"
+            f"🔗 <b>لینک اتصال ساب‌اسکریپشن:</b>\n<code>{sub_link}</code>\n\n"
+            f"💡 <i>کافیه لینک بالا یا بارکد رو توی برنامه مورد نظرتون کپی و وارد کنید.</i>"
         )
 
         await state.clear()
@@ -499,7 +495,7 @@ async def buy_wallet_confirm(
 
         await credit_wallet(tg_id, price)
         await callback.message.edit_text(
-            f"❌ خطا در ساخت اشتراک. مبلغ به کیف پول شما بازگشت داده شد.\nخطا: {e}",
+            f"⚠️ <b>خطا در راه‌اندازی اشتراک:</b> مبلغ پرداختی فوراً به کیف پول شما برگشت داده شد.\nعلت خطا: {e}",
             parse_mode="HTML",
         )
 
@@ -524,7 +520,9 @@ async def buy_discount_apply_prompt(
         original_price=price,
     )
     await callback.message.edit_text(
-        "🏷️ <b>لطفاً کد تخفیف خود را وارد کنید:</b>\n\nبرای انصراف /cancel را بزنید.",
+        "🏷️ <b>کد تخفیف دارید؟</b>\n\n"
+        "کد تخفیف خود را ارسال کنید تا روی مبلغ سفارش اعمال شود:\n\n"
+        "<i>جهت انصراف /cancel را ارسال کنید.</i>",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -555,12 +553,12 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
             else ""
         )
         text = (
-            f"📦 <b>خلاصه سفارش</b>\n\n"
-            f"⏱ مدت: {duration} روز{dur_str}\n"
-            f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-            f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-            f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-            f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+            f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
+            f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+            f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+            f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+            f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+            f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
         )
         await message.answer(
             text,
@@ -574,8 +572,8 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
 
     if not is_valid or not dc:
         await message.answer(
-            f"❌ <b>{err_msg}</b>\n\n"
-            "لطفاً کد تخفیف را مجدداً وارد کنید یا /cancel را ارسال کنید.",
+            f"⚠️ <b>{err_msg}</b>\n\n"
+            "لطفاً کد تخفیف را مجدداً و با دقت وارد کنید، یا در صورت تمایل دستور /cancel را ارسال نمایید.",
             parse_mode="HTML",
         )
         return
@@ -602,15 +600,15 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
     )
 
     text = (
-        f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
-        f"💰 مبلغ اولیه: {format_price(original_price)}\n"
-        f"🏷️ کد تخفیف: <code>{clean_code}</code> ({to_persian_digits(percent)}٪ تخفیف)\n"
-        f"📉 میزان تخفیف: -{format_price(discount_amount)}\n\n"
-        f"💰 <b>مبلغ نهایی قابل پرداخت:</b> {format_price(final_price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+        f"🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n\n"
+        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💵 مبلغ اولیه: <s>{format_price(original_price)}</s>\n"
+        f"🏷️ کد تخفیف: <code>{clean_code}</code> (<b>{to_persian_digits(percent)}٪ تخفیف</b>)\n"
+        f"🎁 سود شما از این خرید: -{format_price(discount_amount)}\n\n"
+        f"💎 <b>مبلغ نهایی و قابل پرداخت:</b> {format_price(final_price)}\n\n"
+        f"💳 روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
     await message.answer(
         text,
@@ -643,19 +641,19 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
     )
 
     text = (
-        f"📦 <b>خلاصه سفارش</b>\n\n"
-        f"⏱ مدت: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+        f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
+        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
     await callback.message.edit_text(
         text,
         reply_markup=payment_method_keyboard(duration, users, gb, original_price),
         parse_mode="HTML",
     )
-    await callback.answer("✅ کد تخفیف حذف گردید.")
+    await callback.answer("✅ کد تخفیف با موفقیت حذف شد.")
 
 
 @router.callback_query(F.data.regexp(r"^buy_pay_card_\d+_\d+_\d+_\d+$"))
@@ -696,17 +694,17 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     )
 
     text = (
-        f"💳 <b>پرداخت کارت به کارت</b>\n\n"
-        f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n\n"
-        f"📦 سفارش:\n"
-        f"⏱ مدت: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
-        f"💰 مبلغ کل: {format_price(price)}\n\n"
-        f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
-        f"👤 به نام: {CARD_HOLDER}\n\n"
-        f"⏱ <b>مهلت پرداخت: {INVOICE_EXPIRY_MINUTES} دقیقه</b>\n\n"
-        f"پس از واریز، دکمه «✅ پرداخت کردم» را بزنید."
+        f"💳 <b>اطلاعات پرداخت کارت به کارت</b>\n\n"
+        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n\n"
+        f"📋 <b>جزئیات سفارش شما:</b>\n"
+        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> {format_price(price)}\n\n"
+        f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{CARD_NUMBER}</code>\n"
+        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"⏳ <b>مهلت پرداخت: {to_persian_digits(INVOICE_EXPIRY_MINUTES)} دقیقه</b>\n\n"
+        f"✨ <i>نکته: پس از انتقال وجه، حتماً روی دکمه «✅ پرداخت کردم» کلیک کنید و رسید خود را ارسال نمایید تا اشتراک فوراً بررسی و فعال گردد.</i>"
     )
 
     await callback.message.edit_text(
@@ -733,8 +731,8 @@ async def _expire_invoice_after(
         try:
             if callback.message:
                 await callback.message.edit_text(
-                    f"⏰ <b>فاکتور {invoice_id} منقضی شد.</b>\n\n"
-                    "مهلت پرداخت به پایان رسیده است. لطفاً دوباره اقدام کنید.",
+                    f"⌛️ <b>فاکتور شماره {invoice_id} منقضی گردید.</b>\n\n"
+                    "مهلت زمان پرداخت به پایان رسیده است. در صورت تمایل می‌توانید سفارش جدیدی ثبت بفرمایید.",
                     parse_mode="HTML",
                 )
         except Exception:
@@ -743,7 +741,7 @@ async def _expire_invoice_after(
 
 @router.callback_query(F.data.regexp(r"^copy_card_"))
 async def copy_card_number(callback: types.CallbackQuery) -> None:
-    await callback.answer(f"شماره کارت: {CARD_NUMBER}", show_alert=True)
+    await callback.answer(f"شماره کارت کپی شد: {CARD_NUMBER}", show_alert=True)
 
 
 @router.callback_query(F.data.regexp(r"^copy_amount_"))
@@ -751,9 +749,11 @@ async def copy_amount(callback: types.CallbackQuery) -> None:
     invoice_id = callback.data.split("_")[-1]
     invoice = await get_invoice(invoice_id)
     if invoice:
-        await callback.answer(f"مبلغ: {invoice['amount']} تومان", show_alert=True)
+        await callback.answer(
+            f"مبلغ قابل پرداخت: {format_price(invoice['amount'])}", show_alert=True
+        )
     else:
-        await callback.answer("فاکتور یافت نشد.", show_alert=True)
+        await callback.answer("⚠️ فاکتور مورد نظر یافت نشد.", show_alert=True)
 
 
 @router.callback_query(F.data.regexp(r"^paid_"))
@@ -762,20 +762,22 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
     invoice = await get_invoice(invoice_id)
 
     if not invoice:
-        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        await callback.answer("❌ متأسفانه فاکتور پیدا نشد.", show_alert=True)
         return
 
     if invoice["status"] != "pending":
-        await callback.answer("❌ این فاکتور دیگر فعال نیست.", show_alert=True)
+        await callback.answer(
+            "⚠️ این فاکتور قبلاً پردازش شده یا منقضی گردیده است.", show_alert=True
+        )
         return
 
     await state.set_state(BuyStates.waiting_receipt)
     await state.update_data(invoice_id=invoice_id)
 
     await callback.message.edit_text(
-        "📸 <b>لطفاً رسید پرداخت خود را ارسال کنید.</b>\n\n"
-        "می‌توانید عکس رسید یا متن شماره پیگیری را بفرستید.\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "📸 <b>ارسال رسید یا شماره پیگیری واریز</b>\n\n"
+        "لطفاً تصویر رسید پرداخت بانکی یا شماره پیگیری تراکنش خود را در همین بخش ارسال کنید.\n\n"
+        "💡 <i>در صورت انصراف، می‌توانید دستور /cancel را بفرستید.</i>",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -796,7 +798,9 @@ async def receive_receipt_photo(
 
     invoice = await get_invoice(invoice_id)
     if not invoice or invoice["status"] != "pending":
-        await message.answer("❌ فاکتور منقضی شده یا قبلاً پردازش شده است.")
+        await message.answer(
+            "⚠️ این فاکتور منقضی شده یا قبلاً مورد پردازش قرار گرفته است."
+        )
         await state.clear()
         return
 
@@ -806,16 +810,16 @@ async def receive_receipt_photo(
     await state.clear()
 
     await message.answer(
-        "✅ <b>رسید شما دریافت شد.</b>\n\n"
-        "پرداخت شما در حال بررسی توسط ادمین است. "
-        "پس از تأیید، اشتراک شما فعال خواهد شد.",
+        "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+        "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+        "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀",
         parse_mode="HTML",
         reply_markup=main_menu_keyboard(),
     )
 
     users_count = invoice.get("users_count", 1)
     admin_text = (
-        f"🔔 <b>درخواست تأیید پرداخت</b>\n\n"
+        f"🔔 <b>درخواست تأیید پرداخت (کارت به کارت)</b>\n\n"
         f"🆔 فاکتور: <code>{invoice_id}</code>\n"
         f"👤 کاربر: <code>{message.from_user.id}</code>"
     )
@@ -849,7 +853,7 @@ async def receive_receipt_text(
     if message.text.strip() == "/cancel":
         await state.clear()
         await message.answer(
-            "❌ عملیات لغو شد.",
+            "❌ فرآیند ارسال رسید لغو شد.",
             reply_markup=main_menu_keyboard(),
         )
         return
@@ -862,7 +866,9 @@ async def receive_receipt_text(
 
     invoice = await get_invoice(invoice_id)
     if not invoice or invoice["status"] != "pending":
-        await message.answer("❌ فاکتور منقضی شده یا قبلاً پردازش شده است.")
+        await message.answer(
+            "⚠️ این فاکتور منقضی شده یا قبلاً مورد پردازش قرار گرفته است."
+        )
         await state.clear()
         return
 
@@ -872,16 +878,16 @@ async def receive_receipt_text(
     await state.clear()
 
     await message.answer(
-        "✅ <b>رسید شما دریافت شد.</b>\n\n"
-        "پرداخت شما در حال بررسی توسط ادمین است. "
-        "پس از تأیید، اشتراک شما فعال خواهد شد.",
+        "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+        "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+        "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀",
         parse_mode="HTML",
         reply_markup=main_menu_keyboard(),
     )
 
     users_count = invoice.get("users_count", 1)
     admin_text = (
-        f"🔔 <b>درخواست تأیید پرداخت</b>\n\n"
+        f"🔔 <b>درخواست تأیید پرداخت (متنی)</b>\n\n"
         f"🆔 فاکتور: <code>{invoice_id}</code>\n"
         f"👤 کاربر: <code>{message.from_user.id}</code>"
     )
@@ -909,7 +915,7 @@ async def receive_receipt_text(
 async def buy_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text(
-        "❌ عملیات خرید لغو شد.",
+        "❌ فرآیند خرید لغو گردید. در هر زمان می‌توانید مجدداً اقدام فرمایید.",
         parse_mode="HTML",
     )
     await callback.answer()

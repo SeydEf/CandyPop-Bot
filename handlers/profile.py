@@ -38,7 +38,7 @@ async def _build_profile_text(tg_id: int, user_info: dict[str, Any] | None) -> s
     if not name and user_info:
         name = user_info.get("username", "کاربر")
     if not name:
-        name = "کاربر"
+        name = "کاربر گرامی"
 
     balance = await get_balance(tg_id)
     subs = await xui_api.get_clients_by_tg_id(tg_id)
@@ -49,12 +49,15 @@ async def _build_profile_text(tg_id: int, user_info: dict[str, Any] | None) -> s
     total_spent = summary["total_spent"]
 
     text = (
-        f"👤 <b>پروفایل کاربری</b>\n\n"
-        f"📛 <b>نام:</b> {name}\n"
-        f"🆔 <b>شناسه عددی تلگرام:</b> <code>{tg_id}</code>\n"
-        f"👛 <b>موجودی کیف پول:</b> {format_price(balance)}\n"
-        f"📦 <b>اشتراک‌های فعال:</b> {to_persian_digits(active_subs_count)} اشتراک\n"
-        f"🛒 <b>خلاصه‌ی خریدها:</b> {to_persian_digits(approved_count)} خرید موفق ({format_price(total_spent)})"
+        f"✨ <b>حساب کاربری شما</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>نام کاربر:</b> {name}\n"
+        f"🆔 <b>شناسه عددی (User ID):</b> <code>{tg_id}</code>\n"
+        f"👛 <b>موجودی کیف پول:</b> <b>{format_price(balance)}</b>\n"
+        f"⚡️ <b>تعداد سرویس‌های فعال:</b> {to_persian_digits(active_subs_count)} سرویس\n"
+        f"🛍 <b>سوابق خرید:</b> {to_persian_digits(approved_count)} تراکنش موفق ({format_price(total_spent)})\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <i>با استفاده از منوی زیر می‌توانید موجودی خود را افزایش داده یا سوابق سفارشات خود را بررسی کنید.</i>"
     )
     return text
 
@@ -96,9 +99,10 @@ async def profile_topup_callback(
 
     await state.set_state(WalletStates.waiting_deposit_amount)
     text = (
-        "💳 <b>افزایش موجودی کیف پول</b>\n\n"
-        "لطفاً یکی از مبالغ پیشنهادی زیر را انتخاب کنید یا مبلغ دلخواه (به تومان) را ارسال نمایید:\n"
-        "مثال: <code>100000</code>\n\n"
+        "💳 <b>شارژ و افزایش موجودی کیف پول</b>\n\n"
+        "با شارژ کیف پول، می‌توانید در هر زمان سرویس‌های خود را <b>به‌صورت آنی و بدون معطلی</b> خریداری یا تمدید کنید!\n\n"
+        "🔹 یکی از مبالغ آماده زیر را انتخاب کنید یا مبلغ دلخواه خود (به تومان) را بنویسید و ارسال کنید:\n"
+        "💡 <i>مثال: <code>100000</code></i>"
     )
     await callback.message.edit_text(
         text,
@@ -110,9 +114,9 @@ async def profile_topup_callback(
 
 def _format_status_badge(status: str) -> str:
     if status == "approved":
-        return "✅ موفق"
+        return "✅ موفق و تایید شده"
     elif status == "pending":
-        return "⏳ در انتظار پرداخت"
+        return "⏳ در انتظار بررسی و تایید"
     elif status == "expired":
         return "⚠️ منقضی شده"
     elif status == "rejected":
@@ -131,27 +135,31 @@ def _format_invoice_details(inv: dict[str, Any]) -> str:
     payment_method = inv.get("payment_method", "card")
     created_at = inv.get("created_at", "")
 
-    pm_str = "موجودی کیف پول 👛" if payment_method == "wallet" else "کارت به کارت 💳"
+    pm_str = "کیف پول 👛" if payment_method == "wallet" else "کارت به کارت 💳"
     date_str = format_datetime(created_at)
 
     if target_email == "TOPUP" or (dur == 0 and gb == 0):
-        item_type = "💳 شارژ کیف پول"
+        item_type = "💰 <b>شارژ مستقیم کیف پول</b>"
     elif target_email:
-        item_type = f"🔄 تمدید سرویس ({target_email})"
+        item_type = (
+            f"🔄 <b>تمدید اشتراک</b>\n"
+            f"   🏷 سرویس: <code>{target_email}</code>\n"
+            f"   ⏱ مدت: {dur} روز | 👥 کاربر: {to_persian_digits(users)} | 📊 حجم: {format_size_gb(gb)}"
+        )
     else:
         item_type = (
-            f"📦 خرید اشتراک:\n"
-            f"   ⏱️ دوره: {dur} روز\n"
-            f"   📊 حجم: {format_size_gb(gb)}\n"
-            f"   👤 تعداد کاربران: {to_persian_digits(users)} کاربر"
+            f"🚀 <b>خرید اشتراک جدید</b>\n"
+            f"   ⏱ مدت اعتبار: {dur} روز\n"
+            f"   📊 حجم اختصاصی: {format_size_gb(gb)}\n"
+            f"   👥 ظرفیت همزمان: {to_persian_digits(users)} کاربر"
         )
 
     return (
-        f"▫️ <b>فاکتور <code>{inv_id}</code></b> — {status_str}\n"
+        f"🧾 <b>فاکتور:</b> <code>{inv_id}</code> | {status_str}\n"
         f"   {item_type}\n"
-        f"   💰 مبلغ: {format_price(amount)}\n"
-        f"   💳 روش پرداخت: <b>{pm_str}</b>\n"
-        f"   📅 تاریخ و زمان: <code>{date_str}</code>\n"
+        f"   💎 مبلغ: <b>{format_price(amount)}</b>\n"
+        f"   💳 پرداخت: <b>{pm_str}</b>\n"
+        f"   📅 زمان ثبت: <code>{date_str}</code>\n"
     )
 
 
@@ -168,7 +176,10 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
     )
 
     if total_count == 0:
-        text = "🧾 <b>تاریخچه سفارشات</b>\n\n📭 شما هنوز هیچ تراکنشی ثبت نکرده‌اید."
+        text = (
+            "🧾 <b>تاریخچه سفارشات و فاکتورها</b>\n\n"
+            "📭 <i>شما تا این لحظه هیچ سفارش یا تراکنشی در سیستم ثبت نکرده‌اید.</i>"
+        )
         await callback.message.edit_text(
             text,
             reply_markup=orders_pagination_keyboard(0, 0),
@@ -180,7 +191,10 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
     total_pages = math.ceil(total_count / PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))
 
-    text = f"🧾 <b>تاریخچه سفارشات (کل: {to_persian_digits(total_count)}):</b>\n\n"
+    text = (
+        f"🧾 <b>تاریخچه سفارشات شما</b> (مجموع: {to_persian_digits(total_count)} فاکتور):\n"
+        f"📄 <i>صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}</i>\n\n"
+    )
     for inv in invoices:
         text += _format_invoice_details(inv) + "\n"
 

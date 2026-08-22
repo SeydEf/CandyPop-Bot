@@ -25,8 +25,9 @@ async def wallet_increase_start(message: types.Message, state: FSMContext) -> No
     await state.set_state(WalletStates.waiting_deposit_amount)
     text = (
         "💳 <b>افزایش موجودی کیف پول</b>\n\n"
-        "لطفاً یکی از مبالغ پیشنهادی زیر را انتخاب کنید یا مبلغ دلخواه (به تومان) را ارسال نمایید:\n"
-        "مثال: <code>100000</code>\n\n"
+        "با داشتن موجودی در کیف پول، می‌توانید تمام سفارش‌ها و تمدیدهای خود را <b>به‌صورت آنی و خودکار</b> تحویل بگیرید.\n\n"
+        "🔹 لطفاً یکی از مبالغ آماده زیر را انتخاب کنید یا مبلغ دلخواه خود (به تومان) را ارسال نمایید:\n"
+        "💡 <i>مثال: <code>100000</code></i>"
     )
     await message.answer(
         text,
@@ -57,13 +58,14 @@ async def wallet_deposit_preset(
     invoice_id = invoice["id"]
 
     text = (
-        f"💳 <b>پرداخت کارت به کارت جهت افزایش موجودی</b>\n\n"
-        f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n"
-        f"💰 مبلغ واریزی: <b>{format_price(amount)}</b>\n\n"
-        f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
-        f"👤 به نام: {CARD_HOLDER}\n\n"
-        f"⏱ <b>مهلت پرداخت: {INVOICE_EXPIRY_MINUTES} دقیقه</b>\n\n"
-        f"پس از واریز، عکس رسید پرداخت را ارسال کنید یا دکمه «✅ پرداخت کردم» را بزنید."
+        f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
+        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(amount)}</b>\n\n"
+        f"💳 <b>شماره کارت مقصد:</b>\n"
+        f"<code>{CARD_NUMBER}</code>\n"
+        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
+        f"📌 <i>لطفاً پس از واریز مبلغ، روی دکمه «✅ پرداخت کردم» کلیک نموده و تصویر فیش واریزی را ارسال فرمایید تا حسابتان شارژ شود.</i>"
     )
 
     await callback.message.edit_text(
@@ -80,7 +82,7 @@ async def wallet_deposit_cancel(
 ) -> None:
     await state.clear()
     await callback.message.edit_text(
-        "❌ افزایش موجودی لغو شد.",
+        "❌ <b>فرآیند افزایش موجودی کیف پول لغو شد.</b>",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -95,7 +97,11 @@ async def wallet_deposit_custom_input(
 
     if message.text.strip() == "/cancel":
         await state.clear()
-        await message.answer("❌ عملیات لغو شد.", reply_markup=main_menu_keyboard())
+        await message.answer(
+            "❌ <b>فرآیند افزایش موجودی لغو گردید.</b>",
+            reply_markup=main_menu_keyboard(),
+            parse_mode="HTML",
+        )
         return
 
     raw_text = persian_to_english_digits(message.text.strip())
@@ -104,14 +110,22 @@ async def wallet_deposit_custom_input(
     try:
         amount = int(clean_text)
         if amount < 50000:
-            await message.answer("❌ حداقل مبلغ برای افزایش موجودی ۵۰,۰۰۰ تومان است.")
+            await message.answer(
+                "❌ <b>حداقل مبلغ برای افزایش موجودی ۵۰,۰۰۰ تومان می‌باشد.</b>",
+                parse_mode="HTML",
+            )
             return
         if amount > 50000000:
-            await message.answer("❌ حداکثر مبلغ در هر بار ۵۰,۰۰۰,۰۰۰ تومان است.")
+            await message.answer(
+                "❌ <b>حداکثر مبلغ برای هر بار واریز ۵۰,۰۰۰,۰۰۰ تومان می‌باشد.</b>",
+                parse_mode="HTML",
+            )
             return
     except ValueError:
         await message.answer(
-            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید. مثال: <code>100000</code>",
+            "❌ <b>مبلغ وارد شده معتبر نیست!</b>\n\n"
+            "لطفاً مبلغ مورد نظر را فقط به صورت عدد (به تومان) ارسال نمایید.\n"
+            "💡 <i>مثال: <code>150000</code></i>",
             parse_mode="HTML",
         )
         return
@@ -130,13 +144,14 @@ async def wallet_deposit_custom_input(
     invoice_id = invoice["id"]
 
     text = (
-        f"💳 <b>پرداخت کارت به کارت جهت افزایش موجودی</b>\n\n"
-        f"🆔 شماره فاکتور: <code>{invoice_id}</code>\n"
-        f"💰 مبلغ واریزی: <b>{format_price(amount)}</b>\n\n"
-        f"💳 شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
-        f"👤 به نام: {CARD_HOLDER}\n\n"
-        f"⏱ <b>مهلت پرداخت: {INVOICE_EXPIRY_MINUTES} دقیقه</b>\n\n"
-        f"پس از واریز، عکس رسید پرداخت را ارسال کنید یا دکمه «✅ پرداخت کردم» را بزنید."
+        f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
+        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(amount)}</b>\n\n"
+        f"💳 <b>شماره کارت مقصد:</b>\n"
+        f"<code>{CARD_NUMBER}</code>\n"
+        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
+        f"📌 <i>لطفاً پس از واریز مبلغ، روی دکمه «✅ پرداخت کردم» کلیک نموده و تصویر فیش واریزی را ارسال فرمایید تا حسابتان شارژ شود.</i>"
     )
 
     await message.answer(

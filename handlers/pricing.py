@@ -23,42 +23,38 @@ async def build_pricing_text() -> str:
     sorted_tiers = sorted(tiers, key=lambda x: x[0])
     for i, (max_gb, rate) in enumerate(sorted_tiers):
         if i == 0:
-            tiers_text += (
-                f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
-            )
+            tiers_text += f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
         else:
             prev_gb = sorted_tiers[i - 1][0]
-            tiers_text += f"  • از {to_persian_digits(prev_gb)} تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
+            tiers_text += f"  • از {to_persian_digits(prev_gb)} تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
 
     if sorted_tiers:
         last_gb = sorted_tiers[-1][0]
-        tiers_text += f"  • بالای {to_persian_digits(last_gb)} گیگ: {format_price(fallback_rate)} / GB\n"
+        tiers_text += f"  • بالای {to_persian_digits(last_gb)} گیگ: {format_price(fallback_rate)} به ازای هر گیگ\n"
     else:
-        tiers_text += f"  • تمامی حجم‌ها: {format_price(fallback_rate)} / GB\n"
+        tiers_text += f"  • تمامی حجم‌ها: {format_price(fallback_rate)} به ازای هر گیگ\n"
 
     dur_60 = durations.get(60, 50000)
     dur_90 = durations.get(90, 100000)
 
     dur_text = (
-        f"  • ۱ ماهه (۳۰ روز): پایه (بدون اضافه دریافت)\n"
-        f"  • ۲ ماهه (۶۰ روز): +{format_price(dur_60)}\n"
-        f"  • ۳ ماهه (۹۰ روز): +{format_price(dur_90)}\n"
+        f" • ۱ ماهه (۳۰ روز): قیمت پایه، بدون هزینه اضافه\n"
+        f" • ۲ ماهه (۶۰ روز): فقط +{format_price(dur_60)} برای ۳۰ روز بیشتر\n"
+        f" • ۳ ماهه (۹۰ روز): فقط +{format_price(dur_90)} برای ۶۰ روز بیشتر\n"
     )
-
     user_text = (
-        f"  • کاربر اول: رایگان (شامل پلن)\n"
-        f"  • هر کاربر اضافه: +{format_price(user_surcharge)}\n"
+        f" • کاربر اول: رایگان، همراه با پلن\n"
+        f" • هر کاربر اضافه: فقط +{format_price(user_surcharge)}\n"
     )
-
     text = (
-        "💰 <b>تعرفه‌ها و نرخ خدمات CandyPop</b>\n\n"
-        "📊 <b>پله‌های تخفیف حجم:</b>\n"
+        "💰 <b>تعرفه خدمات CandyPop</b>\n\n"
+        "📊 <b>هرچه حجم بیشتر، قیمت هر گیگ کمتر!</b>\n"
         f"{tiers_text}\n"
-        "⏱ <b>حق‌الزحمه مدت زمان:</b>\n"
+        "⏱ <b>مدت اشتراک را انتخاب کنید</b>\n"
         f"{dur_text}\n"
-        "👥 <b>محدودیت کاربر همزمان:</b>\n"
+        "👥 <b>تعداد کاربران همزمان</b>\n"
         f"{user_text}\n"
-        "💡 <i>قیمت نهایی در هنگام سفارش بر اساس گزینه‌های انتخابی شما محاسبه می‌گردد.</i>"
+        "💡 <i>قیمت نهایی بر اساس حجم، مدت اشتراک و تعداد کاربران انتخابی شما هنگام سفارش محاسبه می‌شود.</i>"
     )
     return text
 

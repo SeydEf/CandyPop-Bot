@@ -3,9 +3,9 @@ from __future__ import annotations
 import io
 import uuid
 
+from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 import qrcode
-
-from config import CUSTOM_PRICE_TIERS, CUSTOM_PRICE_DEFAULT_PER_GB
 
 
 def generate_qr(data: str) -> io.BytesIO:
@@ -34,28 +34,26 @@ def generate_email(tg_id: int, username: str | None = None, test: bool = False) 
         return f"{name}_{short}"
 
 
-def calculate_custom_price(gb: int) -> int:
-    if gb <= 0:
-        return 0
-
-    total_price = 0
-    remaining_gb = gb
-    prev_limit = 0
-
-    for max_gb, per_gb_price in CUSTOM_PRICE_TIERS:
-        if remaining_gb <= 0:
-            break
-        tier_gb = min(remaining_gb, max_gb - prev_limit)
-        if tier_gb > 0:
-            total_price += tier_gb * per_gb_price
-            remaining_gb -= tier_gb
-        prev_limit = max_gb
-
-    if remaining_gb > 0:
-        total_price += remaining_gb * CUSTOM_PRICE_DEFAULT_PER_GB
-
-    return total_price
-
-
 def gb_to_bytes(gb: int | float) -> int:
     return int(round(gb * 1024 * 1024 * 1024))
+
+
+async def safe_edit_text(
+    message: types.Message,
+    text: str,
+    reply_markup: types.InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = "HTML",
+    disable_web_page_preview: bool | None = None,
+) -> bool:
+    try:
+        await message.edit_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            disable_web_page_preview=disable_web_page_preview,
+        )
+        return True
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return False
+        raise e

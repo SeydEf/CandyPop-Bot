@@ -49,7 +49,9 @@ async def test_subscription(message: types.Message) -> None:
         )
         return
 
-    await message.answer("⏳ در حال ساخت اشتراک تست...", parse_mode="HTML")
+    creating_message = await message.answer(
+        "⏳ در حال ساخت اشتراک تست...", parse_mode="HTML"
+    )
 
     try:
         username = message.from_user.username
@@ -73,12 +75,13 @@ async def test_subscription(message: types.Message) -> None:
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
         text = (
-            f"🎁 <b>اشتراک تست شما فعال شد!</b>\n\n"
-            f"📦 نام سرویس: {email}\n"
-            f"⏱ مدت: {test_duration} روز\n"
-            f"👤 تعداد کاربر: {to_persian_digits(1)} کاربر\n"
-            f"📊 حجم: {format_size_gb(test_gb)}\n\n"
-            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
+            f"🎉 <b>تبریک! اشتراک شما با موفقیت فعال شد</b>\n\n"
+            f"🔹 <b>شناسه سرویس:</b> <code>{email}</code>\n"
+            f"⏱ <b>مدت اعتبار:</b> {test_duration} روز\n"
+            f"👥 <b>تعداد کاربر همزمان:</b> {to_persian_digits(1)} کاربر\n"
+            f"📊 <b>حجم اشتراک:</b> {format_size_gb(test_gb)}\n\n"
+            f"🔗 <b>لینک اتصال ساب‌اسکریپشن:</b>\n<code>{sub_link}</code>\n\n"
+            f"💡 <i>کافیه لینک بالا یا بارکد رو توی برنامه مورد نظرتون کپی و وارد کنید.</i>"
         )
 
         if sub_id:
@@ -106,3 +109,5 @@ async def test_subscription(message: types.Message) -> None:
             f"❌ خطا در ساخت اشتراک تست.\nلطفاً بعداً دوباره تلاش کنید.\n\nخطا: {e}",
             parse_mode="HTML",
         )
+
+    await creating_message.delete()
