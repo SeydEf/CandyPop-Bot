@@ -229,7 +229,8 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
         text=(
             f"❌ <b>پرداخت شما تأیید نشد.</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n\n"
-            "در صورت اطمینان از واریز، با پشتیبانی تماس بگیرید."
+            "در صورت اطمینان از واریز، با پشتیبانی تماس بگیرید.\n"
+            "👨‍💻 <b>آیدی پشتیبانی:</b> t.me/candypop_v?direct"
         ),
         parse_mode="HTML",
     )

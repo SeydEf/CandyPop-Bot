@@ -100,7 +100,6 @@ async def send_welcome(
                 )
 
 
-@router.message(Command("guide"))
 @router.message(Command("help"))
 @router.message(F.text == BTN_GUIDE)
 async def cmd_guide(message: types.Message) -> None:
@@ -128,7 +127,7 @@ async def cmd_support(message: types.Message) -> None:
         "🆘 <b>پشتیبانی و ارتباط با ما</b>\n\n"
         "تیم پشتیبانی CandyPop آماده پاسخگویی به سوالات، مشاوره و حل مشکلات شماست.\n\n"
         "جهت ارتباط مستقیم با پشتیبانی می‌توانید از آیدی زیر استفاده کنید:\n"
-        "👨‍💻 <b>آیدی پشتیبانی:</b> @CandyPop_Support\n\n"
+        "👨‍💻 <b>آیدی پشتیبانی:</b> t.me/candypop_v?direct\n\n"
         "⏱ <b>ساعات پاسخگویی:</b> همه روزه به صورت ۲۴ ساعته"
     )
     await message.answer(text, parse_mode="HTML")

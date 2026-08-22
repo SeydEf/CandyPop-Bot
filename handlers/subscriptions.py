@@ -259,9 +259,26 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
                 parse_mode="HTML",
             )
     except Exception as e:
-        logger.exception("Failed to rename client %s", old_email)
-        await state.clear()
-        await message.answer(f"❌ بروز خطا در تغییر نام سرویس: {e}")
+        logger.warning("Failed to rename client %s to %s: %s", old_email, new_name, e)
+        err_str = str(e).lower()
+        if (
+            "unique" in err_str
+            or "constraint" in err_str
+            or "exist" in err_str
+            or "already" in err_str
+        ):
+            await message.answer(
+                "⚠️ <b>این نام قبلاً توسط سرویس دیگری استفاده شده است!</b>\n\n"
+                "لطفاً یک نام جدید و متفاوت وارد کنید:\n"
+                "💡 <i>جهت انصراف، دستور /cancel را بفرستید.</i>",
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(
+                "⚠️ <b>امکان استفاده از این نام وجود ندارد.</b>\n\n"
+                "لطفاً نام دیگری را امتحان کنید یا دستور /cancel را ارسال بفرمایید:",
+                parse_mode="HTML",
+            )
 
 
 @router.callback_query(F.data.startswith("sub_regen_"))

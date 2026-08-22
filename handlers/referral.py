@@ -45,7 +45,7 @@ async def referral_menu(message: types.Message, bot: Bot) -> None:
     text = (
         f"💰 <b>با دعوت دوستات، درآمد کسب کن!</b>\n\n"
         f"هر دفعه که دوستت از لینک اختصاصی تو خرید کنه، "
-        f"<b>{to_persian_digits(percent)}٪</b> از مبلغش مستقیم میاد تو جیبت! 💸\n\n"
+        f"<b>{to_persian_digits(percent)}٪</b> از مبلغش مستقیم میاد تو کیف پولت! 💸\n\n"
         f"📊 <b>آمار فعلی تو:</b>\n"
         f"🎯 دوستای دعوت‌شده: <b>{to_persian_digits(invited_count)} نفر</b>\n"
         f"🤑 درصد پورسانت: <b>{to_persian_digits(percent)}٪</b>\n"
