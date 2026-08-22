@@ -38,26 +38,36 @@ class AdminCreateSubStates(StatesGroup):
     waiting_gb = State()
     waiting_dur = State()
     waiting_ip = State()
+    waiting_inbounds = State()
     waiting_group = State()
     waiting_confirm = State()
 
 
 @router.message(Command("create_sub", "new_sub", "add_sub"))
 @router.callback_query(F.data == "admin_create_sub_start")
+@router.callback_query(F.data == "admin_create_sub_step_user")
 async def admin_create_sub_start(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
     if not _is_admin(event):
         return
 
-    await state.clear()
+    if isinstance(event, types.Message) or event.data == "admin_create_sub_start":
+        await state.clear()
+
+    await _prompt_step_user(event, state)
+
+
+async def _prompt_step_user(
+    event: types.Message | types.CallbackQuery, state: FSMContext
+) -> None:
     await state.set_state(AdminCreateSubStates.waiting_user_id)
 
     text = (
-        "➕ <b>ساخت اشتراک اختصاصی سفارشی (مرحله ۱ از ۶)</b>\n\n"
+        "➕ <b>ساخت اشتراک اختصاصی (گام ۱ از ۷) - انتخاب کاربر مقصد</b>\n\n"
         "لطفاً <b>آیدی عددی تلگرام</b> یا <b>نام کاربری (@username)</b> مشتری را وارد کنید:\n\n"
         "• برای ساخت اشتراک مستقل (بدون انتساب به کاربر)، روی دکمه زیر کلیک کنید.\n"
-        "<i>برای انصراف /cancel را بزنید.</i>"
+        "<i>جهت انصراف، /cancel را ارسال کنید.</i>"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -68,7 +78,11 @@ async def admin_create_sub_start(
                     callback_data="admin_create_sub_nouser",
                 )
             ],
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_price_main")],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                )
+            ],
         ]
     )
 
@@ -93,7 +107,9 @@ async def admin_create_sub_nouser(
     if not _is_admin(callback):
         return
 
-    await state.update_data(target_tg_id=0, target_user_name="مستقل (بدون کاربر)")
+    await state.update_data(
+        target_tg_id=0, target_user_name="مستقل (بدون کاربر)", target_username=None
+    )
     await _prompt_step_email(callback, state)
 
 
@@ -137,6 +153,15 @@ async def admin_create_sub_user_input(
     await _prompt_step_email(message, state)
 
 
+@router.callback_query(F.data == "admin_create_sub_step_email")
+async def admin_create_sub_step_email_nav(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await _prompt_step_email(callback, state)
+
+
 async def _prompt_step_email(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
@@ -153,11 +178,11 @@ async def _prompt_step_email(
     await state.update_data(suggested_email=auto_email)
 
     text = (
-        f"🏷 <b>تعیین نام سرویس / ایمیل (مرحله ۲ از ۶)</b>\n\n"
-        f"نام پیشنهادی خودکار: <code>{auto_email}</code>\n\n"
+        f"🏷 <b>تعیین نام سرویس / ایمیل (گام ۲ از ۷)</b>\n\n"
+        f"نام پیشنهادی سیستم: <code>{auto_email}</code>\n\n"
         f"• می‌توانید نام دلخواه خود را تایپ و ارسال کنید.\n"
         f"• یا برای استفاده از نام پیشنهادی، دکمه زیر را بزنید:\n"
-        f"<i>برای انصراف /cancel را بزنید.</i>"
+        f"<i>جهت انصراف، /cancel را ارسال کنید.</i>"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -167,7 +192,13 @@ async def _prompt_step_email(
                     text=f"✅ استفاده از {auto_email}",
                     callback_data="admin_create_sub_use_suggested_email",
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 گام قبلی (انتخاب کاربر)",
+                    callback_data="admin_create_sub_step_user",
+                )
+            ],
         ]
     )
 
@@ -213,13 +244,22 @@ async def admin_create_sub_email_input(
     await _prompt_step_gb(message, state)
 
 
+@router.callback_query(F.data == "admin_create_sub_step_gb")
+async def admin_create_sub_step_gb_nav(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await _prompt_step_gb(callback, state)
+
+
 async def _prompt_step_gb(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
     await state.set_state(AdminCreateSubStates.waiting_gb)
 
     text = (
-        "📊 <b>تعیین حجم ترافیک (مرحله ۳ از ۶)</b>\n\n"
+        "📊 <b>تعیین حجم ترافیک (گام ۳ از ۷)</b>\n\n"
         "حجم اشتراک را به گیگابایت انتخاب کرده یا عدد مورد نظر خود را تایپ کنید:\n"
         "<i>(مثال برای تایپ: 45)</i>"
     )
@@ -247,6 +287,12 @@ async def _prompt_step_gb(
                 InlineKeyboardButton(
                     text="♾ نامحدود (0)", callback_data="admin_create_sub_gb_0"
                 ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 گام قبلی (نام سرویس)",
+                    callback_data="admin_create_sub_step_email",
+                )
             ],
         ]
     )
@@ -296,13 +342,22 @@ async def admin_create_sub_gb_input(message: types.Message, state: FSMContext) -
     await _prompt_step_dur(message, state)
 
 
+@router.callback_query(F.data == "admin_create_sub_step_dur")
+async def admin_create_sub_step_dur_nav(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await _prompt_step_dur(callback, state)
+
+
 async def _prompt_step_dur(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
     await state.set_state(AdminCreateSubStates.waiting_dur)
 
     text = (
-        "⏱ <b>تعیین مدت اعتبار (مرحله ۴ از ۶)</b>\n\n"
+        "⏱ <b>تعیین مدت اعتبار (گام ۴ از ۷)</b>\n\n"
         "مدت زمان اشتراک را به روز انتخاب کرده یا عدد دلخواه خود را تایپ کنید:\n"
         "<i>(مثال برای تایپ: 45)</i>"
     )
@@ -328,6 +383,12 @@ async def _prompt_step_dur(
             [
                 InlineKeyboardButton(
                     text="♾ نامحدود زمانی (0)", callback_data="admin_create_sub_dur_0"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 گام قبلی (حجم ترافیک)",
+                    callback_data="admin_create_sub_step_gb",
                 )
             ],
         ]
@@ -378,13 +439,22 @@ async def admin_create_sub_dur_input(message: types.Message, state: FSMContext) 
     await _prompt_step_ip(message, state)
 
 
+@router.callback_query(F.data == "admin_create_sub_step_ip")
+async def admin_create_sub_step_ip_nav(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await _prompt_step_ip(callback, state)
+
+
 async def _prompt_step_ip(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
     await state.set_state(AdminCreateSubStates.waiting_ip)
 
     text = (
-        "👤 <b>تعیین سقف کاربر همزمان - IP Limit (مرحله ۵ از ۶)</b>\n\n"
+        "👤 <b>تعیین سقف کاربر همزمان - IP Limit (گام ۵ از ۷)</b>\n\n"
         "تعداد کاربران مجاز همزمان را انتخاب کنید یا عدد تایپ نمایید:"
     )
 
@@ -404,6 +474,12 @@ async def _prompt_step_ip(
             [
                 InlineKeyboardButton(
                     text="♾ نامحدود (0)", callback_data="admin_create_sub_ip_0"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 گام قبلی (مدت اعتبار)",
+                    callback_data="admin_create_sub_step_dur",
                 )
             ],
         ]
@@ -432,7 +508,7 @@ async def admin_create_sub_ip_select(
 
     ip_val = int(callback.data[len("admin_create_sub_ip_") :])
     await state.update_data(final_ip=ip_val)
-    await _prompt_step_group(callback, state)
+    await _prompt_step_inbounds(callback, state)
 
 
 @router.message(AdminCreateSubStates.waiting_ip, F.text)
@@ -451,7 +527,147 @@ async def admin_create_sub_ip_input(message: types.Message, state: FSMContext) -
         return
 
     await state.update_data(final_ip=ip_val)
-    await _prompt_step_group(message, state)
+    await _prompt_step_inbounds(message, state)
+
+
+@router.callback_query(F.data == "admin_create_sub_step_inbounds")
+async def admin_create_sub_step_inbounds_nav(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await _prompt_step_inbounds(callback, state)
+
+
+async def _prompt_step_inbounds(
+    event: types.Message | types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.set_state(AdminCreateSubStates.waiting_inbounds)
+    data = await state.get_data()
+
+    inbounds = await xui_api.list_inbounds()
+    active_defaults = set(await get_active_inbound_ids())
+
+    selected_ids = data.get("final_inbound_ids")
+    if selected_ids is None:
+        selected_ids = list(active_defaults)
+        await state.update_data(final_inbound_ids=selected_ids)
+
+    sel_set = set(selected_ids)
+
+    text = (
+        "📡 <b>انتخاب اینباندهای مجاز برای اشتراک (گام ۶ از ۷)</b>\n\n"
+        "اینباندهای مورد نظر خود را با کلیک روی آنها روی وضعیت 🟢 فعال یا 🔴 غیرفعال تنظیم کنید:\n"
+        "<i>(در صورت عدم تغییر، از اینباندهای پیش‌فرض مشتریان استفاده می‌شود)</i>"
+    )
+
+    keyboard_rows = []
+
+    if inbounds:
+        for ib in inbounds:
+            ib_id = ib.get("id")
+            remark = ib.get("remark") or ib.get("tag") or f"Inbound #{ib_id}"
+            proto = ib.get("protocol", "").upper()
+            port = ib.get("port", 0)
+            is_sel = ib_id in sel_set
+            icon = "🟢" if is_sel else "🔴"
+
+            keyboard_rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"{icon} #{ib_id} | {remark} ({proto}:{port})",
+                        callback_data=f"admin_create_sub_ib_toggle_{ib_id}",
+                    )
+                ]
+            )
+
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="⭐️ ریست به اینباندهای پیش‌فرض مشتری",
+                    callback_data="admin_create_sub_ib_reset_default",
+                ),
+            ]
+        )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="➡️ گام بعدی (انتخاب گروه)",
+                callback_data="admin_create_sub_step_group",
+            )
+        ]
+    )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 گام قبلی (سقف کاربر)",
+                callback_data="admin_create_sub_step_ip",
+            )
+        ]
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+    if isinstance(event, types.Message):
+        await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    else:
+        await safe_edit_text(
+            event.message,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        await event.answer()
+
+
+@router.callback_query(
+    F.data.startswith("admin_create_sub_ib_toggle_"),
+    AdminCreateSubStates.waiting_inbounds,
+)
+async def admin_create_sub_ib_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    ib_id = int(callback.data[len("admin_create_sub_ib_toggle_") :])
+    data = await state.get_data()
+    selected_ids = set(data.get("final_inbound_ids") or [])
+
+    if ib_id in selected_ids:
+        selected_ids.remove(ib_id)
+    else:
+        selected_ids.add(ib_id)
+
+    await state.update_data(final_inbound_ids=sorted(selected_ids))
+    await _prompt_step_inbounds(callback, state)
+
+
+@router.callback_query(
+    F.data == "admin_create_sub_ib_reset_default",
+    AdminCreateSubStates.waiting_inbounds,
+)
+async def admin_create_sub_ib_reset_default(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    active_defaults = await get_active_inbound_ids()
+    await state.update_data(final_inbound_ids=active_defaults)
+    await callback.answer("✅ به اینباندهای پیش‌فرض ریست شد.", show_alert=True)
+    await _prompt_step_inbounds(callback, state)
+
+
+@router.callback_query(F.data == "admin_create_sub_step_group")
+async def admin_create_sub_step_group_nav(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await _prompt_step_group(callback, state)
 
 
 async def _prompt_step_group(
@@ -463,7 +679,7 @@ async def _prompt_step_group(
     active_group = await get_active_client_group()
 
     text = (
-        "🏷 <b>تعیین گروه مشتری (مرحله ۶ از ۶)</b>\n\n"
+        "🏷 <b>تعیین گروه مشتری (گام ۷ از ۷)</b>\n\n"
         "لطفاً گروه مورد نظر برای این اشتراک را انتخاب کنید:"
     )
 
@@ -487,6 +703,15 @@ async def _prompt_step_group(
         [
             InlineKeyboardButton(
                 text="⚪️ بدون گروه", callback_data="admin_create_sub_grp_none"
+            )
+        ]
+    )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 گام قبلی (انتخاب اینباند)",
+                callback_data="admin_create_sub_step_inbounds",
             )
         ]
     )
@@ -534,10 +759,12 @@ async def _show_summary_and_confirm(
     dur_val = data.get("final_dur", 30)
     ip_val = data.get("final_ip", 0)
     group_val = data.get("final_group", "") or "بدون گروه"
+    inbound_ids = data.get("final_inbound_ids") or await get_active_inbound_ids()
 
     gb_str = format_size_gb(gb_val) if gb_val > 0 else "نامحدود"
     dur_str = f"{to_persian_digits(dur_val)} روز" if dur_val > 0 else "نامحدود"
     ip_str = f"{to_persian_digits(ip_val)} کاربر" if ip_val > 0 else "نامحدود"
+    ib_str = ", ".join(f"#{i}" for i in inbound_ids) if inbound_ids else "هیچکدام"
 
     text = (
         f"📋 <b>پیش‌نمایش و تایید نهایی ساخت اشتراک سفارشی:</b>\n\n"
@@ -546,6 +773,7 @@ async def _show_summary_and_confirm(
         f"📊 <b>حجم ترافیک:</b> {gb_str}\n"
         f"⏱ <b>مدت اعتبار:</b> {dur_str}\n"
         f"👥 <b>سقف کاربر (IP):</b> {ip_str}\n"
+        f"📡 <b>اینباندهای فعال:</b> <code>{ib_str}</code>\n"
         f"📁 <b>گروه مشتری:</b> <code>{group_val}</code>\n\n"
         f"آیا از ایجاد این اشتراک با مشخصات فوق اطمینان دارید؟"
     )
@@ -556,6 +784,12 @@ async def _show_summary_and_confirm(
                 InlineKeyboardButton(
                     text="✅ تایید نهایی و صدور اشتراک",
                     callback_data="admin_create_sub_execute",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 گام قبلی (انتخاب گروه)",
+                    callback_data="admin_create_sub_step_group",
                 )
             ],
             [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_price_main")],
@@ -587,11 +821,10 @@ async def admin_create_sub_execute(
     dur_val = data.get("final_dur", 30)
     ip_val = data.get("final_ip", 0)
     group_val = data.get("final_group", "")
+    inbound_ids = data.get("final_inbound_ids") or await get_active_inbound_ids()
 
     total_bytes = gb_to_bytes(gb_val) if gb_val > 0 else 0
     expiry_ms = int((time.time() + dur_val * 86400) * 1000) if dur_val > 0 else 0
-
-    active_inbound_ids = await get_active_inbound_ids()
 
     try:
         await xui_api.add_client(
@@ -599,7 +832,7 @@ async def admin_create_sub_execute(
             total_gb=total_bytes,
             expiry_time=expiry_ms,
             tg_id=tg_id,
-            inbound_ids=active_inbound_ids,
+            inbound_ids=inbound_ids,
             limit_ip=ip_val,
             group=group_val,
         )
@@ -626,7 +859,7 @@ async def admin_create_sub_execute(
                     photo=input_file, caption=cap, parse_mode="HTML"
                 )
         else:
-            await callback.message.edit_text(  # type: ignore[union-attr]
+            await callback.message.edit_text(
                 f"🎉 <b>اشتراک اختصاصی با موفقیت ساخته شد!</b>\n\n"
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n",
                 parse_mode="HTML",
