@@ -164,6 +164,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="➕ ساخت اشتراک سفارشی جدید",
+                    callback_data="admin_create_sub_start",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔍 جستجوی کاربر و مدیریت اشتراک",
                     callback_data="admin_search_start",
                 ),

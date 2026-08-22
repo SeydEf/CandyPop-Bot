@@ -13,6 +13,7 @@ from db.database import close_db, init_db
 from handlers import (
     admin,
     admin_control,
+    admin_create_sub,
     admin_sub_manage,
     buy,
     pricing,
@@ -97,6 +98,7 @@ async def main() -> None:
         admin.router,
         admin_control.router,
         admin_sub_manage.router,
+        admin_create_sub.router,
     )
 
     logger.info("Starting CandyPop Bot...")
