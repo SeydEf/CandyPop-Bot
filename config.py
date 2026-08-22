@@ -16,9 +16,6 @@ INBOUND_IDS: list[int] = [
     int(x.strip()) for x in os.getenv("INBOUND_IDS", "1").split(",") if x.strip()
 ]
 
-CARD_NUMBER: str = os.getenv("CARD_NUMBER", "")
-CARD_HOLDER: str = os.getenv("CARD_HOLDER", "")
-
 SUB_BASE_URL: str = os.getenv("SUB_BASE_URL", "").rstrip("/")
 
 TEST_DATA_GB: float = 0.5

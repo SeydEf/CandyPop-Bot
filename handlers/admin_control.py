@@ -55,6 +55,9 @@ class AdminControlStates(StatesGroup):
     waiting_group_create_name = State()
     waiting_group_rename_name = State()
 
+    waiting_card_number = State()
+    waiting_card_holder = State()
+
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
     return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
@@ -63,9 +66,13 @@ def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     config = await get_pricing_config()
     test_config = await get_test_sub_config()
-    from db.models import get_referral_config
+    from db.models import get_card_config, get_referral_config
 
     ref_config = await get_referral_config()
+    card_config = await get_card_config()
+
+    card_num = card_config["card_number"] or "تنظیم نشده"
+    card_own = card_config["card_holder"] or "تنظیم نشده"
 
     base_rate = config["base_gb_rate"]
     user_surcharge = config["user_surcharge"]
@@ -106,6 +113,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
+        f"💳 <b>کارت جهت واریز:</b> <code>{card_num}</code> ({card_own})\n\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
         f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
@@ -148,6 +156,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="🏷️ مدیریت کدهای تخفیف",
                     callback_data="admin_discounts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💳 تنظیمات شماره کارت و صاحب کارت",
+                    callback_data="admin_card_menu",
                 ),
             ],
             [
@@ -1731,3 +1745,143 @@ async def admin_group_delete(callback: types.CallbackQuery, state: FSMContext) -
         await callback.answer(f"❌ خطا در حذف گروه: {e}", show_alert=True)
 
     await admin_groups_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_card_menu")
+async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.models import get_card_config
+
+    card_config = await get_card_config()
+    card_number = card_config["card_number"] or "تنظیم نشده"
+    card_holder = card_config["card_holder"] or "تنظیم نشده"
+
+    text = (
+        f"💳 <b>تنظیمات کارت بانکی جهت واریز کارت به کارت</b>\n\n"
+        f"🔢 <b>شماره کارت فعلی:</b> <code>{card_number}</code>\n"
+        f"👤 <b>نام صاحب کارت فعلی:</b> <b>{card_holder}</b>\n\n"
+        f"لطفاً یکی از گزینه‌های زیر را برای تغییر انتخاب کنید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔢 تغییر شماره کارت",
+                    callback_data="admin_card_edit_number",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👤 تغییر نام صاحب کارت",
+                    callback_data="admin_card_edit_holder",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                )
+            ],
+        ]
+    )
+
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_card_edit_number")
+async def admin_card_edit_number_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_card_number)
+    await callback.message.edit_text(
+        "🔢 <b>شماره کارت ۱۶ رقمی جدید را وارد کنید:</b>\n"
+        "مثال: <code>6037991812345678</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_card_number, F.text)
+async def admin_card_edit_number_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    clean_num = (
+        persian_to_english_digits(message.text.strip())
+        .replace(" ", "")
+        .replace("-", "")
+    )
+    if len(clean_num) != 16 or not clean_num.isdigit():
+        await message.answer("❌ لطفاً یک شماره کارت ۱۶ رقمی معتبر وارد کنید.")
+        return
+
+    from db.models import set_card_config
+
+    await set_card_config(card_number=clean_num)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ شماره کارت جدید (<code>{clean_num}</code>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_card_edit_holder")
+async def admin_card_edit_holder_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_card_holder)
+    await callback.message.edit_text(
+        "👤 <b>نام و نام‌خانوادگی صاحب کارت را وارد کنید:</b>\n"
+        "مثال: <code>رضا محمدی</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_card_holder, F.text)
+async def admin_card_edit_holder_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    holder_name = message.text.strip()
+    from db.models import set_card_config
+
+    await set_card_config(card_holder=holder_name)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ نام صاحب کارت (<b>{holder_name}</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )

@@ -471,3 +471,22 @@ async def search_users(query: str) -> list[dict[str, Any]]:
             unique_users.append(d)
 
     return unique_users
+
+
+async def get_card_config() -> dict[str, str]:
+    card_number = await get_setting("card_number")
+    card_holder = await get_setting("card_holder")
+
+    return {
+        "card_number": card_number,
+        "card_holder": card_holder,
+    }
+
+
+async def set_card_config(
+    card_number: str | None = None, card_holder: str | None = None
+) -> None:
+    if card_number is not None:
+        await set_setting("card_number", card_number.strip())
+    if card_holder is not None:
+        await set_setting("card_holder", card_holder.strip())

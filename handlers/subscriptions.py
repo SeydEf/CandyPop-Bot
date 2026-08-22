@@ -9,12 +9,13 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from config import CARD_HOLDER, CARD_NUMBER, INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
+from config import INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
 from db.discounts import validate_discount_code
 from db.models import (
     create_invoice,
     debit_wallet,
     get_balance,
+    get_card_config,
     update_invoice_status,
 )
 from keyboards.inline_kb import (
@@ -1065,6 +1066,10 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    card_config = await get_card_config()
+    card_number = card_config["card_number"]
+    card_holder = card_config["card_holder"]
+
     text = (
         f"💳 <b>فاکتور پرداخت کارت به کارت (تمدید اشتراک)</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
@@ -1074,15 +1079,15 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
         f"💎 <b>مبلغ نهایی جهت واریز:</b> <b>{format_price(price)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
-        f"<code>{CARD_NUMBER}</code>\n"
-        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"<code>{card_number}</code>\n"
+        f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
         f"📌 <i>لطفاً پس از واریز دقیق مبلغ، روی دکمه «✅ پرداخت کردم» کلیک کنید و تصویر فیش یا رسید را ارسال نمایید.</i>"
     )
 
     await callback.message.edit_text(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, CARD_NUMBER, price),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, price),
         parse_mode="HTML",
     )
     await callback.answer()

@@ -11,8 +11,6 @@ from aiogram.fsm.state import State, StatesGroup
 
 from config import (
     ADMIN_CHAT_ID,
-    CARD_HOLDER,
-    CARD_NUMBER,
     INVOICE_EXPIRY_MINUTES,
     SUB_BASE_URL,
 )
@@ -21,6 +19,7 @@ from db.models import (
     create_invoice,
     debit_wallet,
     get_balance,
+    get_card_config,
     get_invoice,
     set_invoice_message_id,
     set_invoice_receipt,
@@ -704,23 +703,26 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    card_config = await get_card_config()
+    card_number = card_config["card_number"]
+    card_holder = card_config["card_holder"]
+
     text = (
-        f"💳 <b>اطلاعات پرداخت کارت به کارت</b>\n\n"
-        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n\n"
+        f"💳 <b>سفارش شماره {invoice_id} ثبت شد!</b>\n\n"
         f"📋 <b>جزئیات سفارش شما:</b>\n"
         f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
         f"💎 <b>مبلغ قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{CARD_NUMBER}</code>\n"
-        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
+        f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت: {to_persian_digits(INVOICE_EXPIRY_MINUTES)} دقیقه</b>\n\n"
         f"✨ <i>نکته: پس از انتقال وجه، حتماً روی دکمه «✅ پرداخت کردم» کلیک کنید و رسید خود را ارسال نمایید تا اشتراک فوراً بررسی و فعال گردد.</i>"
     )
 
     await callback.message.edit_text(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, CARD_NUMBER, price),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, price),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -752,7 +754,9 @@ async def _expire_invoice_after(
 
 @router.callback_query(F.data.regexp(r"^copy_card_"))
 async def copy_card_number(callback: types.CallbackQuery) -> None:
-    await callback.answer(f"شماره کارت کپی شد: {CARD_NUMBER}", show_alert=True)
+    card_config = await get_card_config()
+    card_number = card_config["card_number"]
+    await callback.answer(f"شماره کارت کپی شد: {card_number}", show_alert=True)
 
 
 @router.callback_query(F.data.regexp(r"^copy_amount_"))

@@ -7,8 +7,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from config import CARD_HOLDER, CARD_NUMBER, INVOICE_EXPIRY_MINUTES
-from db.models import create_invoice
+from config import INVOICE_EXPIRY_MINUTES
+from db.models import create_invoice, get_card_config
 from keyboards.inline_kb import card_payment_keyboard, deposit_amount_keyboard
 from keyboards.reply_kb import BTN_INCREASE_WALLET, main_menu_keyboard
 from utils.formatting import format_price, persian_to_english_digits
@@ -21,34 +21,46 @@ class WalletStates(StatesGroup):
     waiting_deposit_amount = State()
 
 
-@router.message(Command("topup"))
+@router.message(Command("topup", "deposit", "wallet"))
 @router.message(F.text == BTN_INCREASE_WALLET)
-async def wallet_increase_start(message: types.Message, state: FSMContext) -> None:
-    await state.set_state(WalletStates.waiting_deposit_amount)
+async def wallet_deposit_start(message: types.Message, state: FSMContext) -> None:
+    await state.clear()
     text = (
         "💳 <b>افزایش موجودی کیف پول</b>\n\n"
-        "با داشتن موجودی در کیف پول، می‌توانید تمام سفارش‌ها و تمدیدهای خود را <b>به‌صورت آنی و خودکار</b> تحویل بگیرید.\n\n"
-        "🔹 لطفاً یکی از مبالغ آماده زیر را انتخاب کنید یا مبلغ دلخواه خود (به تومان) را ارسال نمایید:\n"
-        "💡 <i>مثال: <code>100000</code></i>"
+        "لطفاً مبلغ مورد نظر برای افزایش موجودی را از گزینه‌های زیر انتخاب نموده یا مبلغ دلخواه خود را به تومان ارسال نمایید:\n\n"
+        "💡 <i>حداقل مبلغ برای شارژ حساب ۵۰,۰۰۰ تومان می‌باشد.</i>"
     )
     await message.answer(
-        text,
-        reply_markup=deposit_amount_keyboard(),
-        parse_mode="HTML",
+        text, reply_markup=deposit_amount_keyboard(), parse_mode="HTML"
     )
 
 
-@router.callback_query(F.data.startswith("deposit_amt_"))
+@router.callback_query(F.data.startswith("deposit_select_"))
 async def wallet_deposit_preset(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     if not callback.from_user:
         return
-    amount = int(callback.data.split("_")[-1])
+
+    amount_str = callback.data.split("_")[-1]
+    if amount_str == "custom":
+        await state.set_state(WalletStates.waiting_deposit_amount)
+        await callback.message.edit_text(
+            "💰 <b>لطفاً مبلغ مورد نظر خود را (به تومان) وارد کنید:</b>\n\n"
+            "مثال: <code>150000</code>\n"
+            "برای انصراف دستور /cancel را ارسال کنید.",
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    try:
+        amount = int(amount_str)
+    except ValueError:
+        await callback.answer("مبلغ نامعتبر است.", show_alert=True)
+        return
+
     tg_id = callback.from_user.id
-
-    await state.clear()
-
     invoice = await create_invoice(
         tg_id=tg_id,
         amount=amount,
@@ -59,20 +71,24 @@ async def wallet_deposit_preset(
     )
     invoice_id = invoice["id"]
 
+    card_config = await get_card_config()
+    card_number = card_config["card_number"]
+    card_holder = card_config["card_holder"]
+
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
         f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
-        f"<code>{CARD_NUMBER}</code>\n"
-        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"<code>{card_number}</code>\n"
+        f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
         f"📌 <i>لطفاً پس از واریز مبلغ، روی دکمه «✅ پرداخت کردم» کلیک نموده و تصویر فیش واریزی را ارسال فرمایید تا حسابتان شارژ شود.</i>"
     )
 
     await callback.message.edit_text(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, CARD_NUMBER, amount),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, amount),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -144,20 +160,23 @@ async def wallet_deposit_custom_input(
         target_email="TOPUP",
     )
     invoice_id = invoice["id"]
+    card_config = await get_card_config()
+    card_number = card_config["card_number"]
+    card_holder = card_config["card_holder"]
 
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
         f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
-        f"<code>{CARD_NUMBER}</code>\n"
-        f"👤 <b>به نام:</b> {CARD_HOLDER}\n\n"
+        f"<code>{card_number}</code>\n"
+        f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
         f"📌 <i>لطفاً پس از واریز مبلغ، روی دکمه «✅ پرداخت کردم» کلیک نموده و تصویر فیش واریزی را ارسال فرمایید تا حسابتان شارژ شود.</i>"
     )
 
     await message.answer(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, CARD_NUMBER, amount),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, amount),
         parse_mode="HTML",
     )
