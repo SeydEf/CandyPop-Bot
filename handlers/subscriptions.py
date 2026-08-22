@@ -168,9 +168,19 @@ async def _build_dashboard_info(
     return text, subscription_manage_keyboard(email)
 
 
+@router.callback_query(F.data == "sub_view_current")
 @router.callback_query(F.data.startswith("sub_view_"))
-async def view_subscription(callback: types.CallbackQuery) -> None:
+async def view_subscription(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if callback.data == "sub_view_current":
+        await sub_view_current(callback, state)
+        return
+
     email = callback.data[len("sub_view_") :]
+    if email == "current":
+        await sub_view_current(callback, state)
+        return
+
+    await state.update_data(renew_email=email)
 
     info = await _build_dashboard_info(email)
     if not info:
