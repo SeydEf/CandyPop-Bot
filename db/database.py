@@ -63,11 +63,28 @@ async def init_db() -> None:
             created_at      TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS discount_codes (
+            code             TEXT PRIMARY KEY,
+            discount_percent INTEGER NOT NULL,
+            max_uses         INTEGER DEFAULT -1,
+            used_count       INTEGER NOT NULL DEFAULT 0,
+            is_active        INTEGER NOT NULL DEFAULT 1,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
     """)
+
+    cursor = await db.execute("PRAGMA table_info(invoices);")
+    columns = [row["name"] for row in await cursor.fetchall()]
+    if "discount_code" not in columns:
+        await db.execute("ALTER TABLE invoices ADD COLUMN discount_code TEXT;")
+    if "original_amount" not in columns:
+        await db.execute("ALTER TABLE invoices ADD COLUMN original_amount INTEGER;")
+
     await db.commit()
 
 

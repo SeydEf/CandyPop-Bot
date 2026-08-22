@@ -88,6 +88,11 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             )
             return
 
+        if invoice.get("discount_code"):
+            from db.discounts import increment_discount_usage
+
+            await increment_discount_usage(invoice["discount_code"])
+
         if target_email:
             email = target_email
             await xui_api.renew_client(

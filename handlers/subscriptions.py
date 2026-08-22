@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import CARD_HOLDER, CARD_NUMBER, INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
+from db.discounts import validate_discount_code
 from db.models import (
     create_invoice,
     debit_wallet,
@@ -47,6 +48,7 @@ router = Router(name="subscriptions")
 
 class SubStates(StatesGroup):
     waiting_rename = State()
+    waiting_renew_discount = State()
 
 
 async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
@@ -735,6 +737,9 @@ async def renew_wallet_confirm(
         await callback.answer("❌ موجودی کیف پول شما کافی نیست.", show_alert=True)
         return
 
+    discount_code = data.get("discount_code")
+    original_price = data.get("original_price", price)
+
     invoice = await create_invoice(
         tg_id=tg_id,
         amount=price,
@@ -743,8 +748,15 @@ async def renew_wallet_confirm(
         users_count=users,
         target_email=email,
         payment_method="wallet",
+        discount_code=discount_code,
+        original_amount=original_price,
     )
     await update_invoice_status(invoice["id"], "approved")
+
+    if discount_code:
+        from db.discounts import increment_discount_usage
+
+        await increment_discount_usage(discount_code)
 
     await callback.message.edit_text(
         "⏳ در حال تمدید اشتراک...",
@@ -810,6 +822,158 @@ async def renew_wallet_confirm(
     await callback.answer()
 
 
+@router.callback_query(F.data == "renew_discount_apply")
+async def renew_discount_apply_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    price = data.get("price", 0)
+    await state.update_data(original_price=data.get("original_price", price))
+    await state.set_state(SubStates.waiting_renew_discount)
+    await callback.message.edit_text(
+        "🏷️ <b>لطفاً کد تخفیف تمدید را وارد کنید:</b>\n\nبرای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(SubStates.waiting_renew_discount, F.text)
+async def renew_discount_process(message: types.Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    duration = data.get("duration", 30)
+    users = data.get("users", 1)
+    gb = data.get("gb", 10)
+    original_price = data.get("original_price") or data.get("price", 0)
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        bd = await get_price_breakdown(gb, duration, users)
+        dur_str = (
+            f" (+{format_price(bd['duration_surcharge'])})"
+            if bd["duration_surcharge"] > 0
+            else ""
+        )
+        user_str = (
+            f" (+{format_price(bd['user_surcharge'])})"
+            if bd["user_surcharge"] > 0
+            else ""
+        )
+        text = (
+            f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
+            f"📦 نام سرویس: {email}\n"
+            f"⏱ مدت جدید: {duration} روز{dur_str}\n"
+            f"👤 تعداد کاربر جدید: {to_persian_digits(users)} کاربر{user_str}\n"
+            f"📊 حجم جدید: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+            f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+            f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+        )
+        await message.answer(
+            text,
+            reply_markup=renew_payment_method_keyboard(has_discount=False),
+            parse_mode="HTML",
+        )
+        return
+
+    code = message.text.strip()
+    is_valid, err_msg, dc = await validate_discount_code(code)
+
+    if not is_valid or not dc:
+        await message.answer(
+            f"❌ <b>{err_msg}</b>\n\n"
+            "لطفاً کد تخفیف را مجدداً وارد کنید یا /cancel را ارسال کنید.",
+            parse_mode="HTML",
+        )
+        return
+
+    percent = dc["discount_percent"]
+    discount_amount = int(round(original_price * percent / 100))
+    final_price = max(0, original_price - discount_amount)
+    clean_code = dc["code"]
+
+    await state.update_data(
+        discount_code=clean_code,
+        discount_percent=percent,
+        price=final_price,
+        original_price=original_price,
+    )
+
+    bd = await get_price_breakdown(gb, duration, users)
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    text = (
+        f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
+        f"📦 نام سرویس: {email}\n"
+        f"⏱ مدت جدید: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر جدید: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم جدید: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"💰 مبلغ اولیه: {format_price(original_price)}\n"
+        f"🏷️ کد تخفیف: <code>{clean_code}</code> ({to_persian_digits(percent)}٪ تخفیف)\n"
+        f"📉 میزان تخفیف: -{format_price(discount_amount)}\n\n"
+        f"💰 <b>مبلغ نهایی قابل پرداخت:</b> {format_price(final_price)}\n\n"
+        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+    )
+    await message.answer(
+        text,
+        reply_markup=renew_payment_method_keyboard(has_discount=True),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "renew_discount_remove")
+async def renew_discount_remove(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    duration = data.get("duration", 30)
+    users = data.get("users", 1)
+    gb = data.get("gb", 10)
+    original_price = data.get("original_price") or data.get("price", 0)
+
+    await state.update_data(
+        discount_code=None,
+        discount_percent=None,
+        price=original_price,
+    )
+
+    bd = await get_price_breakdown(gb, duration, users)
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    text = (
+        f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
+        f"📦 نام سرویس: {email}\n"
+        f"⏱ مدت جدید: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر جدید: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم جدید: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=renew_payment_method_keyboard(has_discount=False),
+        parse_mode="HTML",
+    )
+    await callback.answer("✅ کد تخفیف حذف گردید.")
+
+
 @router.callback_query(F.data == "renew_pay_card")
 async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not callback.from_user:
@@ -820,6 +984,8 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
     users = data.get("users", 1)
     gb = data.get("gb", 10)
     price = data.get("price", 0)
+    discount_code = data.get("discount_code")
+    original_price = data.get("original_price", price)
     tg_id = callback.from_user.id
 
     invoice = await create_invoice(
@@ -829,6 +995,9 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         data_gb=gb,
         users_count=users,
         target_email=email,
+        payment_method="card",
+        discount_code=discount_code,
+        original_amount=original_price,
     )
     invoice_id = invoice["id"]
     await state.clear()

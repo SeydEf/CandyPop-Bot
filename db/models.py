@@ -166,6 +166,8 @@ async def create_invoice(
     users_count: int = 1,
     target_email: str | None = None,
     payment_method: str = "card",
+    discount_code: str | None = None,
+    original_amount: int | None = None,
 ) -> dict[str, Any]:
     await ensure_user(tg_id)
     db = await get_db()
@@ -174,8 +176,8 @@ async def create_invoice(
     expires_at = now + timedelta(minutes=INVOICE_EXPIRY_MINUTES)
 
     await db.execute(
-        """INSERT INTO invoices (id, tg_id, amount, duration_days, data_gb, users_count, target_email, payment_method, status, created_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+        """INSERT INTO invoices (id, tg_id, amount, duration_days, data_gb, users_count, target_email, payment_method, discount_code, original_amount, status, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
         (
             invoice_id,
             tg_id,
@@ -185,6 +187,8 @@ async def create_invoice(
             users_count,
             target_email,
             payment_method,
+            discount_code,
+            original_amount if original_amount is not None else amount,
             now.isoformat(),
             expires_at.isoformat(),
         ),
@@ -199,6 +203,8 @@ async def create_invoice(
         "users_count": users_count,
         "target_email": target_email,
         "payment_method": payment_method,
+        "discount_code": discount_code,
+        "original_amount": original_amount if original_amount is not None else amount,
         "status": "pending",
         "created_at": now.isoformat(),
         "expires_at": expires_at.isoformat(),

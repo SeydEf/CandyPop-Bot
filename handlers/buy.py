@@ -16,6 +16,7 @@ from config import (
     INVOICE_EXPIRY_MINUTES,
     SUB_BASE_URL,
 )
+from db.discounts import validate_discount_code
 from db.models import (
     create_invoice,
     debit_wallet,
@@ -58,6 +59,7 @@ router = Router(name="buy")
 
 class BuyStates(StatesGroup):
     waiting_custom_gb = State()
+    waiting_discount_code = State()
     waiting_receipt = State()
 
 
@@ -392,7 +394,9 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.regexp(r"^buy_wallet_confirm_\d+_\d+_\d+_\d+$"))
-async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
+async def buy_wallet_confirm(
+    callback: types.CallbackQuery, bot: Bot, state: FSMContext
+) -> None:
     if not callback.from_user:
         return
     parts = callback.data.split("_")
@@ -401,6 +405,10 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
     gb = int(parts[5])
     price = int(parts[6])
     tg_id = callback.from_user.id
+
+    data = await state.get_data()
+    discount_code = data.get("discount_code")
+    original_price = data.get("original_price", price)
 
     try:
         new_balance = await debit_wallet(tg_id, price)
@@ -415,8 +423,15 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
         data_gb=gb,
         users_count=users,
         payment_method="wallet",
+        discount_code=discount_code,
+        original_amount=original_price,
     )
     await update_invoice_status(invoice["id"], "approved")
+
+    if discount_code:
+        from db.discounts import increment_discount_usage
+
+        await increment_discount_usage(discount_code)
 
     await callback.message.edit_text(
         "⏳ در حال ساخت اشتراک...",
@@ -454,6 +469,7 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
             f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>"
         )
 
+        await state.clear()
         if sub_id:
             from aiogram.types import BufferedInputFile
             from utils.helpers import generate_qr
@@ -490,6 +506,158 @@ async def buy_wallet_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.regexp(r"^buy_discount_apply_\d+_\d+_\d+_\d+$"))
+async def buy_discount_apply_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    parts = callback.data.split("_")
+    duration = int(parts[3])
+    users = int(parts[4])
+    gb = int(parts[5])
+    price = int(parts[6])
+
+    await state.set_state(BuyStates.waiting_discount_code)
+    await state.update_data(
+        duration=duration,
+        users=users,
+        gb=gb,
+        original_price=price,
+    )
+    await callback.message.edit_text(
+        "🏷️ <b>لطفاً کد تخفیف خود را وارد کنید:</b>\n\nبرای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(BuyStates.waiting_discount_code, F.text)
+async def buy_discount_process(message: types.Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+
+    data = await state.get_data()
+    duration = data.get("duration", 30)
+    users = data.get("users", 1)
+    gb = data.get("gb", 10)
+    original_price = data.get("original_price", 0)
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        bd = await get_price_breakdown(gb, duration, users)
+        dur_str = (
+            f" (+{format_price(bd['duration_surcharge'])})"
+            if bd["duration_surcharge"] > 0
+            else ""
+        )
+        user_str = (
+            f" (+{format_price(bd['user_surcharge'])})"
+            if bd["user_surcharge"] > 0
+            else ""
+        )
+        text = (
+            f"📦 <b>خلاصه سفارش</b>\n\n"
+            f"⏱ مدت: {duration} روز{dur_str}\n"
+            f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+            f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+            f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+            f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+        )
+        await message.answer(
+            text,
+            reply_markup=payment_method_keyboard(duration, users, gb, original_price),
+            parse_mode="HTML",
+        )
+        return
+
+    code = message.text.strip()
+    is_valid, err_msg, dc = await validate_discount_code(code)
+
+    if not is_valid or not dc:
+        await message.answer(
+            f"❌ <b>{err_msg}</b>\n\n"
+            "لطفاً کد تخفیف را مجدداً وارد کنید یا /cancel را ارسال کنید.",
+            parse_mode="HTML",
+        )
+        return
+
+    percent = dc["discount_percent"]
+    discount_amount = int(round(original_price * percent / 100))
+    final_price = max(0, original_price - discount_amount)
+    clean_code = dc["code"]
+
+    await state.update_data(
+        discount_code=clean_code,
+        discount_percent=percent,
+        final_price=final_price,
+    )
+
+    bd = await get_price_breakdown(gb, duration, users)
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    text = (
+        f"📦 <b>خلاصه سفارش</b>\n\n"
+        f"⏱ مدت: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"💰 مبلغ اولیه: {format_price(original_price)}\n"
+        f"🏷️ کد تخفیف: <code>{clean_code}</code> ({to_persian_digits(percent)}٪ تخفیف)\n"
+        f"📉 میزان تخفیف: -{format_price(discount_amount)}\n\n"
+        f"💰 <b>مبلغ نهایی قابل پرداخت:</b> {format_price(final_price)}\n\n"
+        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+    )
+    await message.answer(
+        text,
+        reply_markup=payment_method_keyboard(
+            duration, users, gb, final_price, has_discount=True
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.regexp(r"^buy_discount_remove_\d+_\d+_\d+_\d+$"))
+async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split("_")
+    duration = int(parts[3])
+    users = int(parts[4])
+    gb = int(parts[5])
+    _ = int(parts[6])
+
+    await state.update_data(discount_code=None, discount_percent=None, final_price=None)
+    bd = await get_price_breakdown(gb, duration, users)
+    original_price = bd["total_price"]
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    text = (
+        f"📦 <b>خلاصه سفارش</b>\n\n"
+        f"⏱ مدت: {duration} روز{dur_str}\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 حجم: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=payment_method_keyboard(duration, users, gb, original_price),
+        parse_mode="HTML",
+    )
+    await callback.answer("✅ کد تخفیف حذف گردید.")
+
+
 @router.callback_query(F.data.regexp(r"^buy_pay_card_\d+_\d+_\d+_\d+$"))
 async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not callback.from_user:
@@ -501,7 +669,20 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     price = int(parts[6])
     tg_id = callback.from_user.id
 
-    invoice = await create_invoice(tg_id, price, duration, gb, users_count=users)
+    data = await state.get_data()
+    discount_code = data.get("discount_code")
+    original_price = data.get("original_price", price)
+
+    invoice = await create_invoice(
+        tg_id=tg_id,
+        amount=price,
+        duration_days=duration,
+        data_gb=gb,
+        users_count=users,
+        payment_method="card",
+        discount_code=discount_code,
+        original_amount=original_price,
+    )
     invoice_id = invoice["id"]
 
     bd = await get_price_breakdown(gb, duration, users)

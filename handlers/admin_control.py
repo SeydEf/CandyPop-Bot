@@ -43,6 +43,13 @@ class AdminControlStates(StatesGroup):
     waiting_test_dur = State()
     waiting_test_cooldown = State()
 
+    waiting_disc_manual_code = State()
+    waiting_disc_auto_length = State()
+    waiting_disc_percent = State()
+    waiting_disc_max_uses = State()
+    waiting_disc_edit_percent = State()
+    waiting_disc_edit_max_uses = State()
+
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
     return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
@@ -121,6 +128,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="🎁 تنظیمات اشتراک تست",
                     callback_data="admin_test_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏷️ مدیریت کدهای تخفیف",
+                    callback_data="admin_discounts_menu",
                 ),
             ],
             [
@@ -666,3 +679,494 @@ async def admin_test_reset_all(
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_discounts_menu")
+async def admin_discounts_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.discounts import list_discount_codes
+
+    codes = await list_discount_codes()
+
+    text = f"🏷️ <b>مدیریت کدهای تخفیف</b>\n\nتعداد کدهای موجود: {to_persian_digits(len(codes))}\n\n"
+
+    if codes:
+        for dc in codes:
+            status_emoji = "🟢" if dc["is_active"] else "🔴"
+            max_uses_str = (
+                "بی‌نهایت"
+                if (
+                    dc["max_uses"] is None
+                    or dc["max_uses"] <= 0
+                    or dc["max_uses"] == -1
+                )
+                else f"{to_persian_digits(dc['max_uses'])}"
+            )
+            used_str = to_persian_digits(dc["used_count"])
+            percent_str = to_persian_digits(dc["discount_percent"])
+
+            text += (
+                f"🔹 <b>{dc['code']}</b> — {percent_str}٪ تخفیف | "
+                f"استفاده: {used_str}/{max_uses_str} | وضعیت: {status_emoji}\n"
+            )
+        text += "\nجهت مشاهده جزئیات یا ویرایش، کد مورد نظر را انتخاب کنید:"
+    else:
+        text += "<i>هیچ کد تخفیفی ثبت نشده است.</i>"
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="➕ ساخت کد تخفیف جدید", callback_data="admin_disc_create_menu"
+            )
+        ]
+    ]
+
+    for dc in codes[:10]:
+        status_symbol = "🟢" if dc["is_active"] else "🔴"
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{status_symbol} {dc['code']} ({to_persian_digits(dc['discount_percent'])}%)",
+                    callback_data=f"admin_disc_view_{dc['code']}",
+                )
+            ]
+        )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+            )
+        ]
+    )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_disc_create_menu")
+async def admin_disc_create_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    text = (
+        "➕ <b>ایجاد کد تخفیف جدید</b>\n\n"
+        "نوع تعریف کد تخفیف را انتخاب کنید:\n"
+        "• <b>کد اختصاصی:</b> وارد کردن عبارات دلخواه (مثلاً VIP20)\n"
+        "• <b>تولید خودکار:</b> ساخت کد تصادفی با طول مشخص"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✏️ ورود دستی کد", callback_data="admin_disc_create_manual"
+                ),
+                InlineKeyboardButton(
+                    text="🎲 تولید خودکار کد", callback_data="admin_disc_create_auto"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت", callback_data="admin_discounts_menu"
+                ),
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_disc_create_manual")
+async def admin_disc_create_manual_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminControlStates.waiting_disc_manual_code)
+    await callback.message.edit_text(
+        "✏️ <b>کد تخفیف اختصاصی را وارد کنید:</b>\n"
+        "مثال: <code>SUMMER2026</code> یا <code>VIP50</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_manual_code, F.text)
+async def admin_disc_create_manual_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    code = message.text.strip().upper()
+    if len(code) < 2 or len(code) > 30:
+        await message.answer("❌ طول کد تخفیف باید بین ۲ تا ۳۰ کاراکتر باشد.")
+        return
+
+    from db.discounts import get_discount_code
+
+    existing = await get_discount_code(code)
+    if existing:
+        await message.answer(
+            "❌ این کد تخفیف قبلاً ثبت شده است. لطفاً کد دیگری وارد کنید."
+        )
+        return
+
+    await state.update_data(new_code=code)
+    await state.set_state(AdminControlStates.waiting_disc_percent)
+    await message.answer(
+        f"✅ کد <code>{code}</code> انتخاب شد.\n\n"
+        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\n"
+        "مثال: <code>20</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_disc_create_auto")
+async def admin_disc_create_auto_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await state.set_state(AdminControlStates.waiting_disc_auto_length)
+    await callback.message.edit_text(
+        "🎲 <b>طول کاراکترهای کد تصادفی را وارد کنید (بين ۴ تا ۱۶):</b>\n"
+        "مثال: <code>8</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_auto_length, F.text)
+async def admin_disc_create_auto_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        length = int(clean)
+        if length < 4 or length > 16:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد بین ۴ تا ۱۶ وارد کنید.")
+        return
+
+    from db.discounts import generate_random_code, get_discount_code
+
+    code = generate_random_code(length)
+    while await get_discount_code(code):
+        code = generate_random_code(length)
+
+    await state.update_data(new_code=code)
+    await state.set_state(AdminControlStates.waiting_disc_percent)
+    await message.answer(
+        f"🎲 کد تصادفی <code>{code}</code> تولید گردید.\n\n"
+        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\n"
+        "مثال: <code>20</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminControlStates.waiting_disc_percent, F.text)
+async def admin_disc_create_percent_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        percent = int(clean)
+        if percent < 1 or percent > 100:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+        return
+
+    await state.update_data(new_percent=percent)
+    await state.set_state(AdminControlStates.waiting_disc_max_uses)
+    await message.answer(
+        f"✅ میزان تخفیف: <b>{to_persian_digits(percent)}٪</b>\n\n"
+        "🔢 <b>حداکثر تعداد استفاده از این کد را وارد کنید:</b>\n"
+        "(برای <b>استفاده بی‌نهایت</b> عدد <code>0</code> را ارسال کنید)\n"
+        "مثال: <code>50</code> یا <code>0</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminControlStates.waiting_disc_max_uses, F.text)
+async def admin_disc_create_max_uses_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        max_uses = int(clean)
+        if max_uses < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).")
+        return
+
+    data = await state.get_data()
+    code = data["new_code"]
+    percent = data["new_percent"]
+    uses_value = -1 if max_uses == 0 else max_uses
+
+    from db.discounts import create_discount_code
+
+    success = await create_discount_code(code, percent, uses_value)
+    await state.clear()
+
+    if success:
+        panel_text, keyboard = await _build_pricing_panel()
+        max_str = "بی‌نهایت" if uses_value == -1 else f"{to_persian_digits(uses_value)}"
+        await message.answer(
+            f"✅ کد تخفیف <code>{code}</code> با <b>{to_persian_digits(percent)}٪</b> تخفیف "
+            f"و ظرفیت <b>{max_str}</b> ساخته شد!\n\n{panel_text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer("❌ خطا در ثبت کد تخفیف. ممکن است کد تکراری باشد.")
+
+
+@router.callback_query(F.data.startswith("admin_disc_view_"))
+async def admin_disc_view(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    code = callback.data[len("admin_disc_view_") :]
+    from db.discounts import get_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد تخفیف یافت نشد.", show_alert=True)
+        return
+
+    status_str = "🟢 فعال" if dc["is_active"] else "🔴 غیرفعال"
+    max_uses_str = (
+        "بی‌نهایت"
+        if (dc["max_uses"] is None or dc["max_uses"] <= 0 or dc["max_uses"] == -1)
+        else f"{to_persian_digits(dc['max_uses'])}"
+    )
+
+    text = (
+        f"🏷️ <b>جزئیات کد تخفیف:</b> <code>{dc['code']}</code>\n\n"
+        f"📊 <b>میزان تخفیف:</b> {to_persian_digits(dc['discount_percent'])}٪\n"
+        f"🔢 <b>میزان استفاده:</b> {to_persian_digits(dc['used_count'])} از {max_uses_str}\n"
+        f"🔘 <b>وضعیت:</b> {status_str}\n\n"
+        "جهت تغییر ویژگی‌ها یا حذف، گزینه مورد نظر را انتخاب کنید:"
+    )
+
+    toggle_btn_text = "🔴 غیرفعال‌سازی" if dc["is_active"] else "🟢 فعال‌سازی"
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text,
+                    callback_data=f"admin_disc_toggle_{dc['code']}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📊 تغییر درصد تخفیف",
+                    callback_data=f"admin_disc_edit_p_{dc['code']}",
+                ),
+                InlineKeyboardButton(
+                    text="⏱ تغییر سقف استفاده",
+                    callback_data=f"admin_disc_edit_m_{dc['code']}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑️ حذف کد تخفیف", callback_data=f"admin_disc_del_{dc['code']}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به لیست کدهای تخفیف",
+                    callback_data="admin_discounts_menu",
+                ),
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_toggle_"))
+async def admin_disc_toggle(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+
+    code = callback.data[len("admin_disc_toggle_") :]
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد تخفیف یافت نشد.", show_alert=True)
+        return
+
+    new_status = not bool(dc["is_active"])
+    await update_discount_code(code, is_active=new_status)
+
+    status_msg = "فعال" if new_status else "غیرفعال"
+    await callback.answer(f"✅ کد تخفیف {code} {status_msg} شد.")
+
+    await admin_disc_view(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_disc_del_"))
+async def admin_disc_delete(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+
+    code = callback.data[len("admin_disc_del_") :]
+    from db.discounts import delete_discount_code
+
+    deleted = await delete_discount_code(code)
+    if deleted:
+        await callback.answer(f"✅ کد تخفیف {code} حذف شد.", show_alert=True)
+    else:
+        await callback.answer("❌ خطا در حذف کد تخفیف.", show_alert=True)
+
+    await admin_discounts_menu(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_disc_edit_p_"))
+async def admin_disc_edit_percent_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    code = callback.data[len("admin_disc_edit_p_") :]
+    await state.set_state(AdminControlStates.waiting_disc_edit_percent)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"📊 <b>درصد جدید تخفیف را برای کد <code>{code}</code> (۱ تا ۱۰۰) وارد کنید:</b>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_edit_percent, F.text)
+async def admin_disc_edit_percent_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 1 or val > 100:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+        return
+
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import update_discount_code
+
+    await update_discount_code(code, discount_percent=val)
+    await state.clear()
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ درصد تخفیف کد <code>{code}</code> به <b>{to_persian_digits(val)}٪</b> تغییر یافت.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_edit_m_"))
+async def admin_disc_edit_max_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    code = callback.data[len("admin_disc_edit_m_") :]
+    await state.set_state(AdminControlStates.waiting_disc_edit_max_uses)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"⏱ <b>حداکثر سقف استفاده جدید برای کد <code>{code}</code> را وارد کنید:</b>\n"
+        "(جهت استفاده <b>بی‌نهایت</b> عدد <code>0</code> را وارد کنید)\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_edit_max_uses, F.text)
+async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).")
+        return
+
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import update_discount_code
+
+    uses_value = -1 if val == 0 else val
+    await update_discount_code(code, max_uses=uses_value)
+    await state.clear()
+    panel_text, keyboard = await _build_pricing_panel()
+    max_str = "بی‌نهایت" if uses_value == -1 else f"{to_persian_digits(uses_value)}"
+    await message.answer(
+        f"✅ سقف استفاده از کد <code>{code}</code> به <b>{max_str}</b> تغییر یافت.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )

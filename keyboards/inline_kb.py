@@ -92,10 +92,23 @@ async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
 
 
 def payment_method_keyboard(
-    duration: int, users: int, gb: int, price: int
+    duration: int, users: int, gb: int, price: int, has_discount: bool = False
 ) -> InlineKeyboardMarkup:
+    discount_btn = (
+        InlineKeyboardButton(
+            text="❌ حذف کد تخفیف",
+            callback_data=f"buy_discount_remove_{duration}_{users}_{gb}_{price}",
+        )
+        if has_discount
+        else InlineKeyboardButton(
+            text="🏷️ اعمال کد تخفیف",
+            callback_data=f"buy_discount_apply_{duration}_{users}_{gb}_{price}",
+        )
+    )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [discount_btn],
             [
                 InlineKeyboardButton(
                     text="💰 کیف پول",
@@ -367,9 +380,22 @@ async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMark
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def renew_payment_method_keyboard() -> InlineKeyboardMarkup:
+def renew_payment_method_keyboard(has_discount: bool = False) -> InlineKeyboardMarkup:
+    discount_btn = (
+        InlineKeyboardButton(
+            text="❌ حذف کد تخفیف",
+            callback_data="renew_discount_remove",
+        )
+        if has_discount
+        else InlineKeyboardButton(
+            text="🏷️ اعمال کد تخفیف",
+            callback_data="renew_discount_apply",
+        )
+    )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [discount_btn],
             [
                 InlineKeyboardButton(
                     text="💰 کیف پول",
