@@ -29,9 +29,9 @@ def generate_email(tg_id: int, username: str | None = None, test: bool = False) 
     name = username or "user"
     name = "".join(c if c.isalnum() or c == "_" else "" for c in name)
     if test:
-        return f"{name}_{tg_id}_{short}_test"
+        return f"{name}_{short}_test"
     else:
-        return f"{name}_{tg_id}_{short}"
+        return f"{name}_{short}"
 
 
 def calculate_custom_price(gb: int) -> int:
