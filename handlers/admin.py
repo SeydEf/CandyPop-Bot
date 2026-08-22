@@ -6,7 +6,7 @@ import time
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 
-from config import ADMIN_CHAT_ID, INBOUND_IDS, SUB_BASE_URL
+from config import ADMIN_CHAT_ID, SUB_BASE_URL
 from db.models import (
     get_invoice,
     get_user,
@@ -113,12 +113,16 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             total_bytes = gb_to_bytes(gb)
             expiry_ms = int((time.time() + duration * 86400) * 1000)
 
+            from db.models import get_active_inbound_ids
+
+            active_inbound_ids = await get_active_inbound_ids()
+
             await xui_api.add_client(
                 email=email,
                 total_gb=total_bytes,
                 expiry_time=expiry_ms,
                 tg_id=tg_id,
-                inbound_ids=INBOUND_IDS,
+                inbound_ids=active_inbound_ids,
                 limit_ip=users_count,
             )
             action_msg = "اشتراک فعال گردید"

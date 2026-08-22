@@ -402,3 +402,34 @@ async def process_referral_commission(
             pass
 
     return commission
+
+
+async def get_active_inbound_ids() -> list[int]:
+    from config import INBOUND_IDS
+
+    val = await get_setting("active_inbound_ids")
+    if not val or not val.strip():
+        return INBOUND_IDS
+
+    try:
+        ids = [int(x.strip()) for x in val.split(",") if x.strip()]
+        return ids if ids else INBOUND_IDS
+    except ValueError:
+        return INBOUND_IDS
+
+
+async def set_active_inbound_ids(inbound_ids: list[int]) -> None:
+    str_val = ",".join(str(i) for i in sorted(set(inbound_ids)))
+    await set_setting("active_inbound_ids", str_val)
+
+
+async def toggle_assigned_inbound_id(inbound_id: int) -> list[int]:
+    current_ids = set(await get_active_inbound_ids())
+    if inbound_id in current_ids:
+        current_ids.remove(inbound_id)
+    else:
+        current_ids.add(inbound_id)
+
+    new_list = sorted(current_ids)
+    await set_active_inbound_ids(new_list)
+    return new_list

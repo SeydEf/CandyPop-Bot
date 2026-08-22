@@ -200,6 +200,14 @@ async def get_client_links(email: str) -> list[str]:
         return []
 
 
+async def set_inbound_enable(inbound_id: int, enable: bool) -> dict[str, Any]:
+    payload = {"enable": enable}
+    data = await _request(
+        "POST", f"/panel/api/inbounds/setEnable/{inbound_id}", json_data=payload
+    )
+    return data
+
+
 async def close_client() -> None:
     global _client
     if _client is not None and not _client.is_closed:

@@ -7,7 +7,6 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 
 from config import (
-    INBOUND_IDS,
     SUB_BASE_URL,
 )
 from db.models import can_get_test_sub, set_test_used
@@ -61,12 +60,16 @@ async def test_subscription(message: types.Message) -> None:
         total_bytes = gb_to_bytes(test_gb)
         expiry_ms = int((time.time() + test_duration * 86400) * 1000)
 
+        from db.models import get_active_inbound_ids
+
+        active_inbound_ids = await get_active_inbound_ids()
+
         await xui_api.add_client(
             email=email,
             total_gb=total_bytes,
             expiry_time=expiry_ms,
             tg_id=tg_id,
-            inbound_ids=INBOUND_IDS,
+            inbound_ids=active_inbound_ids,
         )
 
         client = await xui_api.get_client(email)

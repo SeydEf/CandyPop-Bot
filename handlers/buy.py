@@ -13,7 +13,6 @@ from config import (
     ADMIN_CHAT_ID,
     CARD_HOLDER,
     CARD_NUMBER,
-    INBOUND_IDS,
     INVOICE_EXPIRY_MINUTES,
     SUB_BASE_URL,
 )
@@ -445,12 +444,16 @@ async def buy_wallet_confirm(
         total_bytes = gb_to_bytes(gb)
         expiry_ms = int((time.time() + duration * 86400) * 1000)
 
+        from db.models import get_active_inbound_ids
+
+        active_inbound_ids = await get_active_inbound_ids()
+
         await xui_api.add_client(
             email=email,
             total_gb=total_bytes,
             expiry_time=expiry_ms,
             tg_id=tg_id,
-            inbound_ids=INBOUND_IDS,
+            inbound_ids=active_inbound_ids,
             limit_ip=users,
         )
 

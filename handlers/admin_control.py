@@ -155,6 +155,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="📡 مدیریت اینباندها (Inbounds)",
+                    callback_data="admin_inbounds_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="♻️ بازنشانی تست همه کاربران",
                     callback_data="admin_test_reset_all",
                 ),
@@ -1306,3 +1312,150 @@ async def admin_ref_edit_percent_save(
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data == "admin_inbounds_menu")
+async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.models import get_active_inbound_ids
+    from services import xui_api
+
+    inbounds = await xui_api.list_inbounds()
+    assigned_ids = set(await get_active_inbound_ids())
+
+    if not inbounds:
+        text = "📡 <b>هیچ اینباندی روی سرور یافت نشد یا ارتباط با پنل برقرار نیست.</b>"
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    )
+                ]
+            ]
+        )
+        from utils.helpers import safe_edit_text
+
+        await safe_edit_text(
+            callback.message,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    inbound_lines = []
+    keyboard_rows = []
+
+    for ib in inbounds:
+        ib_id = ib.get("id")
+        remark = ib.get("remark") or ib.get("tag") or f"Inbound #{ib_id}"
+        protocol = ib.get("protocol", "").upper()
+        port = ib.get("port", 0)
+        is_enabled = ib.get("enable", True)
+        is_assigned = ib_id in assigned_ids
+
+        status_icon = "🟢 فعال" if is_enabled else "🔴 غیرفعال"
+        assign_icon = "⭐️ اختصاصی مشتری" if is_assigned else "⚪️ غیر اختصاصی"
+
+        inbound_lines.append(
+            f"• <b>#{ib_id} | {remark}</b> ({protocol}:{port})\n"
+            f"  وضعیت پنل: {status_icon} | وضعیت مشتری: {assign_icon}"
+        )
+
+        enable_btn_text = (
+            f"🔴 غیرفعال‌سازی #{ib_id}" if is_enabled else f"🟢 فعال‌سازی #{ib_id}"
+        )
+        assign_btn_text = (
+            f"⭐️ لغو اختصاص #{ib_id}" if is_assigned else f"➕ اختصاص به مشتری #{ib_id}"
+        )
+
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text=enable_btn_text,
+                    callback_data=f"admin_inbound_toggle_enable_{ib_id}",
+                ),
+                InlineKeyboardButton(
+                    text=assign_btn_text,
+                    callback_data=f"admin_inbound_toggle_assign_{ib_id}",
+                ),
+            ]
+        )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+            )
+        ]
+    )
+
+    text = (
+        "📡 <b>مدیریت اینباندهای سرور (Inbounds)</b>\n\n"
+        "در این بخش می‌توانید وضعیت فعال/غیرفعال بودن هر اینباند در پنل X-UI و همچنین تعیین اینباندهای اختصاصی برای مشتریان را مدیریت کنید.\n\n"
+        + "\n\n".join(inbound_lines)
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inbound_toggle_enable_"))
+async def admin_inbound_toggle_enable(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    inbound_id = int(callback.data.split("_")[-1])
+    from services import xui_api
+
+    inbound = await xui_api.get_inbound(inbound_id)
+    if not inbound:
+        await callback.answer("❌ اینباند یافت نشد.", show_alert=True)
+        return
+
+    current_enable = inbound.get("enable", True)
+    new_enable = not current_enable
+
+    await xui_api.set_inbound_enable(inbound_id, new_enable)
+
+    msg = "فعال" if new_enable else "غیرفعال"
+    await callback.answer(f"✅ اینباند #{inbound_id} {msg} گردید.", show_alert=True)
+
+    await admin_inbounds_menu(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_inbound_toggle_assign_"))
+async def admin_inbound_toggle_assign(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    inbound_id = int(callback.data.split("_")[-1])
+    from db.models import toggle_assigned_inbound_id
+
+    new_list = await toggle_assigned_inbound_id(inbound_id)
+
+    is_assigned = inbound_id in new_list
+    status_str = (
+        "به مشتریان اختصاص یافت" if is_assigned else "از اختصاص مشتریان خارج شد"
+    )
+    await callback.answer(f"✅ اینباند #{inbound_id} {status_str}.", show_alert=True)
+
+    await admin_inbounds_menu(callback, state)
