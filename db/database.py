@@ -52,7 +52,9 @@ async def init_db() -> None:
             receipt_text    TEXT,
             message_id      INTEGER,
             target_email    TEXT,
-            payment_method  TEXT DEFAULT 'card'
+            payment_method  TEXT DEFAULT 'card',
+            discount_code   TEXT,
+            original_amount INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS referrals (
@@ -77,13 +79,6 @@ async def init_db() -> None:
             value TEXT NOT NULL
         );
     """)
-
-    cursor = await db.execute("PRAGMA table_info(invoices);")
-    columns = [row["name"] for row in await cursor.fetchall()]
-    if "discount_code" not in columns:
-        await db.execute("ALTER TABLE invoices ADD COLUMN discount_code TEXT;")
-    if "original_amount" not in columns:
-        await db.execute("ALTER TABLE invoices ADD COLUMN original_amount INTEGER;")
 
     await db.commit()
 
