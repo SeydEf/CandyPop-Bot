@@ -195,19 +195,23 @@ async def _perform_search_and_render(
         )
 
 
-@router.callback_query(F.data.startswith("admin_manage_sub_"))
-async def admin_manage_sub_dashboard(
-    callback: types.CallbackQuery, state: FSMContext
+async def _render_sub_dashboard(
+    event: types.CallbackQuery | types.Message,
+    email: str,
+    state: FSMContext,
+    notice: str = "",
 ) -> None:
-    if not _is_admin(callback):
-        return
-
-    email = callback.data[len("admin_manage_sub_") :]
     client = await xui_api.get_client(email)
 
     if not client:
-        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        err_msg = "❌ اشتراک یافت نشد یا حذف شده است."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(err_msg, show_alert=True)
+        else:
+            await event.answer(err_msg)
         return
+
+    await state.update_data(manage_email=email)
 
     traffic = await xui_api.get_client_traffic(email)
     up_bytes = traffic.get("up", 0) if traffic else 0
@@ -242,7 +246,10 @@ async def admin_manage_sub_dashboard(
     sub_id = client.get("subId", "")
     sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
+    notice_block = f"{notice}\n\n" if notice else ""
+
     text = (
+        f"{notice_block}"
         f"⚙️ <b>مدیریت اشتراک:</b> <code>{email}</code>\n\n"
         f"🔘 <b>وضعیت:</b> {status_str}\n"
         f"👥 <b>سقف کاربر (IP):</b> {limit_ip_str}\n"
@@ -307,13 +314,96 @@ async def admin_manage_sub_dashboard(
         ]
     )
 
-    await safe_edit_text(
-        callback.message,
-        text,
-        reply_markup=keyboard,
-        parse_mode="HTML",
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_text(
+            event.message,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def _render_user_dashboard(
+    event: types.CallbackQuery | types.Message,
+    tg_id: int,
+    state: FSMContext,
+    notice: str = "",
+) -> None:
+    user = await get_user(tg_id)
+
+    if not user:
+        err_msg = "❌ کاربر در دیتابیس یافت نشد."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(err_msg, show_alert=True)
+        else:
+            await event.answer(err_msg)
+        return
+
+    await state.update_data(manage_user_id=tg_id)
+
+    bal = await get_balance(tg_id)
+    username = user.get("username")
+    username_str = f"@{username}" if username else "نامشخص"
+    full_name = user.get("full_name") or "نامشخص"
+    referrer = user.get("referrer_id") or "بدون معرفی‌کننده"
+
+    notice_block = f"{notice}\n\n" if notice else ""
+
+    text = (
+        f"{notice_block}"
+        f"👤 <b>مدیریت کاربر:</b> <code>{tg_id}</code>\n\n"
+        f"نام و نام‌خانوادگی: <b>{full_name}</b>\n"
+        f"یوزرنیم: <b>{username_str}</b>\n"
+        f"💰 <b>موجودی کیف پول:</b> {format_price(bal)}\n"
+        f"👥 <b>معرفی‌کننده:</b> <code>{referrer}</code>"
     )
-    await callback.answer()
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕ ساخت اشتراک جدید برای این کاربر",
+                    callback_data=f"admin_user_create_sub_{tg_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💳 شارژ / تغییر موجودی کیف پول",
+                    callback_data=f"admin_user_wallet_{tg_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به جستجو", callback_data="admin_search_back"
+                )
+            ],
+        ]
+    )
+
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_text(
+            event.message,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("admin_manage_sub_"))
+async def admin_manage_sub_dashboard(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_manage_sub_") :]
+    await _render_sub_dashboard(callback, email, state)
 
 
 @router.callback_query(F.data.startswith("admin_sub_gb_menu_"))
@@ -338,13 +428,19 @@ async def admin_sub_gb_prompt(callback: types.CallbackQuery, state: FSMContext) 
 
 @router.message(AdminSearchStates.waiting_add_gb, F.text)
 async def admin_sub_gb_save(message: types.Message, state: FSMContext) -> None:
-    if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
-        return
-
     data = await state.get_data()
     email = data.get("manage_email")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if email:
+            await _render_sub_dashboard(
+                message, email, state, notice="❌ تغییر حجم لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
     if not email:
         await state.clear()
         return
@@ -380,9 +476,11 @@ async def admin_sub_gb_save(message: types.Message, state: FSMContext) -> None:
     try:
         await xui_api.update_client(email, update_data)
         await state.clear()
-        await message.answer(
-            f"✅ <b>حجم کل اشتراک «{email}» به {format_size_gb(new_total_gb)} تغییر یافت.</b>",
-            parse_mode="HTML",
+        await _render_sub_dashboard(
+            message,
+            email,
+            state,
+            notice=f"✅ <b>حجم کل اشتراک به {format_size_gb(new_total_gb)} تغییر یافت.</b>",
         )
     except Exception as e:
         logger.error("Failed to update GB for %s: %s", email, e)
@@ -413,13 +511,19 @@ async def admin_sub_days_prompt(
 
 @router.message(AdminSearchStates.waiting_add_days, F.text)
 async def admin_sub_days_save(message: types.Message, state: FSMContext) -> None:
-    if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
-        return
-
     data = await state.get_data()
     email = data.get("manage_email")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if email:
+            await _render_sub_dashboard(
+                message, email, state, notice="❌ تغییر زمان لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
     if not email:
         await state.clear()
         return
@@ -459,11 +563,11 @@ async def admin_sub_days_save(message: types.Message, state: FSMContext) -> None
     try:
         await xui_api.update_client(email, update_data)
         await state.clear()
-        expiry_dt = datetime.fromtimestamp(new_expiry_ms / 1000, tz=timezone.utc)
-        await message.answer(
-            f"✅ <b>زمان اشتراک «{email}» با موفقیت بروزرسانی شد.</b>\n"
-            f"⏱ تاریخ انقضای جدید: {format_datetime(expiry_dt.isoformat())}",
-            parse_mode="HTML",
+        await _render_sub_dashboard(
+            message,
+            email,
+            state,
+            notice="✅ <b>زمان اشتراک با موفقیت بروزرسانی شد.</b>",
         )
     except Exception as e:
         logger.error("Failed to update expiry for %s: %s", email, e)
@@ -491,13 +595,19 @@ async def admin_sub_ip_prompt(callback: types.CallbackQuery, state: FSMContext) 
 
 @router.message(AdminSearchStates.waiting_limit_ip, F.text)
 async def admin_sub_ip_save(message: types.Message, state: FSMContext) -> None:
-    if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
-        return
-
     data = await state.get_data()
     email = data.get("manage_email")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if email:
+            await _render_sub_dashboard(
+                message, email, state, notice="❌ تغییر سقف کاربر لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
     if not email:
         await state.clear()
         return
@@ -522,12 +632,11 @@ async def admin_sub_ip_save(message: types.Message, state: FSMContext) -> None:
     try:
         await xui_api.update_client(email, update_data)
         await state.clear()
-        limit_str = (
-            f"{to_persian_digits(limit_ip)} کاربر" if limit_ip > 0 else "نامحدود"
-        )
-        await message.answer(
-            f"✅ <b>سقف کاربر اشتراک «{email}» به {limit_str} تغییر یافت.</b>",
-            parse_mode="HTML",
+        await _render_sub_dashboard(
+            message,
+            email,
+            state,
+            notice="✅ <b>سقف کاربر اشتراک با موفقیت تغییر یافت.</b>",
         )
     except Exception as e:
         logger.error("Failed to update limitIp for %s: %s", email, e)
@@ -556,15 +665,20 @@ async def admin_sub_rename_prompt(
 
 @router.message(AdminSearchStates.waiting_rename_email, F.text)
 async def admin_sub_rename_save(message: types.Message, state: FSMContext) -> None:
-    if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
-        return
-
-    new_email = message.text.strip()[:50]
     data = await state.get_data()
     old_email = data.get("manage_email")
 
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if old_email:
+            await _render_sub_dashboard(
+                message, old_email, state, notice="❌ تغییر نام لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    new_email = message.text.strip()[:50]
     if not old_email:
         await state.clear()
         return
@@ -581,9 +695,11 @@ async def admin_sub_rename_save(message: types.Message, state: FSMContext) -> No
     try:
         await xui_api.update_client(old_email, update_data)
         await state.clear()
-        await message.answer(
-            f"✅ <b>نام سرویس با موفقیت از «{old_email}» به «{new_email}» تغییر یافت.</b>",
-            parse_mode="HTML",
+        await _render_sub_dashboard(
+            message,
+            new_email,
+            state,
+            notice=f"✅ <b>نام سرویس از «{old_email}» به «{new_email}» تغییر یافت.</b>",
         )
     except Exception as e:
         logger.warning("Failed to rename %s: %s", old_email, e)
@@ -623,14 +739,12 @@ async def admin_sub_toggle_enable(
     try:
         await xui_api.update_client(email, update_data)
         status_msg = "فعال" if new_enable else "غیرفعال"
-        await callback.answer(
-            f"✅ اشتراک «{email}» {status_msg} گردید.", show_alert=True
-        )
+        notice = f"✅ <b>اشتراک «{email}» {status_msg} گردید.</b>"
     except Exception as e:
         logger.error("Failed to toggle enable for %s: %s", email, e)
-        await callback.answer(f"❌ خطا در تغییر وضعیت: {e}", show_alert=True)
+        notice = f"❌ <b>خطا در تغییر وضعیت:</b> {e}"
 
-    await admin_manage_sub_dashboard(callback, state)
+    await _render_sub_dashboard(callback, email, state, notice=notice)
 
 
 @router.callback_query(F.data.startswith("admin_sub_reset_traffic_"))
@@ -643,14 +757,12 @@ async def admin_sub_reset_traffic(
     email = callback.data[len("admin_sub_reset_traffic_") :]
     try:
         await xui_api.reset_client_traffic(email)
-        await callback.answer(
-            f"✅ مصرف ترافیک اشتراک «{email}» صفر شد.", show_alert=True
-        )
+        notice = f"✅ <b>مصرف ترافیک اشتراک «{email}» صفر شد.</b>"
     except Exception as e:
         logger.error("Failed to reset traffic for %s: %s", email, e)
-        await callback.answer(f"❌ خطا در صفر کردن مصرف: {e}", show_alert=True)
+        notice = f"❌ <b>خطا در صفر کردن مصرف:</b> {e}"
 
-    await admin_manage_sub_dashboard(callback, state)
+    await _render_sub_dashboard(callback, email, state, notice=notice)
 
 
 @router.callback_query(F.data.startswith("admin_sub_qr_"))
@@ -713,55 +825,7 @@ async def admin_manage_user_dashboard(
 
     u_id_str = callback.data[len("admin_manage_user_") :]
     tg_id = int(u_id_str)
-    user = await get_user(tg_id)
-
-    if not user:
-        await callback.answer("❌ کاربر در دیتابیس یافت نشد.", show_alert=True)
-        return
-
-    bal = await get_balance(tg_id)
-    username = user.get("username")
-    username_str = f"@{username}" if username else "نامشخص"
-    full_name = user.get("full_name") or "نامشخص"
-    referrer = user.get("referrer_id") or "بدون معرفی‌کننده"
-
-    text = (
-        f"👤 <b>مدیریت کاربر:</b> <code>{tg_id}</code>\n\n"
-        f"نام و نام‌خانوادگی: <b>{full_name}</b>\n"
-        f"یوزرنیم: <b>{username_str}</b>\n"
-        f"💰 <b>موجودی کیف پول:</b> {format_price(bal)}\n"
-        f"👥 <b>معرفی‌کننده:</b> <code>{referrer}</code>"
-    )
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="➕ ساخت اشتراک جدید برای این کاربر",
-                    callback_data=f"admin_user_create_sub_{tg_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💳 شارژ / تغییر موجودی کیف پول",
-                    callback_data=f"admin_user_wallet_{tg_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به جستجو", callback_data="admin_search_back"
-                )
-            ],
-        ]
-    )
-
-    await safe_edit_text(
-        callback.message,
-        text,
-        reply_markup=keyboard,
-        parse_mode="HTML",
-    )
-    await callback.answer()
+    await _render_user_dashboard(callback, tg_id, state)
 
 
 @router.callback_query(F.data.startswith("admin_user_wallet_"))
@@ -788,13 +852,19 @@ async def admin_user_wallet_prompt(
 
 @router.message(AdminSearchStates.waiting_user_wallet, F.text)
 async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> None:
-    if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
-        return
-
     data = await state.get_data()
     tg_id = data.get("manage_user_id")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if tg_id:
+            await _render_user_dashboard(
+                message, tg_id, state, notice="❌ تغییر کیف پول لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
     if not tg_id:
         await state.clear()
         return
@@ -824,9 +894,11 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
         new_balance = await credit_wallet(tg_id, amount)
 
     await state.clear()
-    await message.answer(
-        f"✅ <b>موجودی جدید کیف پول کاربر {tg_id}:</b> {format_price(new_balance)}",
-        parse_mode="HTML",
+    await _render_user_dashboard(
+        message,
+        tg_id,
+        state,
+        notice=f"✅ <b>موجودی جدید کیف پول کاربر: {format_price(new_balance)}</b>",
     )
 
 
@@ -855,9 +927,17 @@ async def admin_user_create_sub_start(
 async def admin_user_create_sub_gb_save(
     message: types.Message, state: FSMContext
 ) -> None:
+    data = await state.get_data()
+    tg_id = data.get("manage_user_id")
+
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
+        if tg_id:
+            await _render_user_dashboard(
+                message, tg_id, state, notice="❌ ساخت اشتراک لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
         return
 
     try:
@@ -883,9 +963,17 @@ async def admin_user_create_sub_gb_save(
 async def admin_user_create_sub_dur_save(
     message: types.Message, state: FSMContext
 ) -> None:
+    data = await state.get_data()
+    tg_id = data.get("manage_user_id")
+
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
+        if tg_id:
+            await _render_user_dashboard(
+                message, tg_id, state, notice="❌ ساخت اشتراک لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
         return
 
     try:
@@ -896,8 +984,6 @@ async def admin_user_create_sub_dur_save(
         await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (مثال: 30).")
         return
 
-    data = await state.get_data()
-    tg_id = data.get("manage_user_id")
     gb_val = data.get("new_sub_gb", 10.0)
 
     if not tg_id:
@@ -937,6 +1023,12 @@ async def admin_user_create_sub_dur_save(
             f"⏱ مدت: {to_persian_digits(dur_val)} روز\n\n"
             f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>",
             parse_mode="HTML",
+        )
+        await _render_user_dashboard(
+            message,
+            tg_id,
+            state,
+            notice=f"🎉 <b>اشتراک جدید ({email}) برای این کاربر ساخته شد.</b>",
         )
     except Exception as e:
         logger.error("Failed to create custom sub for %s: %s", tg_id, e)
