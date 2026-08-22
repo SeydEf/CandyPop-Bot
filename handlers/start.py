@@ -100,6 +100,7 @@ async def send_welcome(
                 )
 
 
+@router.message(Command("guide"))
 @router.message(Command("help"))
 @router.message(F.text == BTN_GUIDE)
 async def cmd_guide(message: types.Message) -> None:
