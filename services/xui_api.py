@@ -118,6 +118,50 @@ async def get_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
         return []
 
 
+async def search_clients_all(query: str) -> list[dict[str, Any]]:
+    clean_q = query.strip().lower()
+    if clean_q.startswith("@"):
+        clean_q = clean_q[1:]
+
+    results: list[dict[str, Any]] = []
+    seen_emails: set[str] = set()
+
+    c = await get_client(query.strip())
+    if c and c.get("email"):
+        email = c["email"]
+        seen_emails.add(email)
+        results.append(c)
+
+    if clean_q.isdigit():
+        tg_id = int(clean_q)
+        by_tg = await get_clients_by_tg_id(tg_id)
+        for client in by_tg:
+            if isinstance(client, dict):
+                em = client.get("email") or client.get("client", {}).get("email")
+                if em and em not in seen_emails:
+                    seen_emails.add(em)
+                    results.append(
+                        client.get("client") if "client" in client else client
+                    )
+
+    try:
+        inbounds = await list_inbounds()
+        for ib in inbounds:
+            client_stats = ib.get("clientStats") or []
+            for cs in client_stats:
+                em = cs.get("email", "")
+                tg = str(cs.get("tgId", ""))
+                if (clean_q in em.lower() or clean_q in tg) and em not in seen_emails:
+                    full_c = await get_client(em)
+                    if full_c:
+                        seen_emails.add(em)
+                        results.append(full_c)
+    except Exception as e:
+        logger.warning("Error searching inbounds for clients: %s", e)
+
+    return results
+
+
 async def update_client(
     email: str,
     client_data: dict[str, Any],

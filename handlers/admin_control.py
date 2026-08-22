@@ -50,10 +50,8 @@ class AdminControlStates(StatesGroup):
     waiting_disc_edit_percent = State()
     waiting_disc_edit_max_uses = State()
 
-    # Referral System States
     waiting_ref_percent = State()
 
-    # Client Groups States
     waiting_group_create_name = State()
     waiting_group_rename_name = State()
 
@@ -162,6 +160,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="📡 مدیریت اینباندها (Inbounds)",
                     callback_data="admin_inbounds_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔍 جستجوی کاربر و مدیریت اشتراک",
+                    callback_data="admin_search_start",
                 ),
             ],
             [

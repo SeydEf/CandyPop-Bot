@@ -441,3 +441,33 @@ async def get_active_client_group() -> str:
 
 async def set_active_client_group(group_name: str) -> None:
     await set_setting("active_client_group", group_name)
+
+
+async def search_users(query: str) -> list[dict[str, Any]]:
+    clean_q = query.strip().lstrip("@").lower()
+    db = await get_db()
+
+    rows = []
+    if clean_q.isdigit():
+        tg_id = int(clean_q)
+        r = await db.execute_fetchall(
+            "SELECT * FROM users WHERE tg_id = ? OR username LIKE ? OR full_name LIKE ?",
+            (tg_id, f"%{clean_q}%", f"%{clean_q}%"),
+        )
+        rows.extend(r)
+    else:
+        r = await db.execute_fetchall(
+            "SELECT * FROM users WHERE username LIKE ? OR full_name LIKE ?",
+            (f"%{clean_q}%", f"%{clean_q}%"),
+        )
+        rows.extend(r)
+
+    seen = set()
+    unique_users = []
+    for row in rows:
+        d = dict(row)
+        if d["tg_id"] not in seen:
+            seen.add(d["tg_id"])
+            unique_users.append(d)
+
+    return unique_users
