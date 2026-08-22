@@ -7,9 +7,9 @@ BTN_INCREASE_WALLET = "افزایش موجودی 💳"
 BTN_PROFILE = "👤 پروفایل"
 BTN_PRICING = "💰 تعرفه‌ها"
 BTN_GUIDE = "📖 راهنمای اتصال"
-BTN_FAQ = "❓ سوالات متداول"
 BTN_SUPPORT = "🆘 پشتیبانی"
 BTN_INVITE = "👥 دعوت از دوستان"
+# BTN_FAQ = "❓ سوالات متداول"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
@@ -31,11 +31,11 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text=BTN_GUIDE),
             ],
             [
-                KeyboardButton(text=BTN_FAQ),
-                KeyboardButton(text=BTN_SUPPORT),
+                # KeyboardButton(text=BTN_FAQ),
+                KeyboardButton(text=BTN_INVITE),
             ],
             [
-                KeyboardButton(text=BTN_INVITE),
+                KeyboardButton(text=BTN_SUPPORT),
             ],
         ],
         resize_keyboard=True,

@@ -4,6 +4,7 @@ import logging
 from urllib.parse import quote
 
 from aiogram import Bot, F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.models import get_referral_config, get_referral_stats
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 router = Router(name="referral")
 
 
+@router.message(Command("invite"))
 @router.message(F.text == BTN_INVITE)
 async def referral_menu(message: types.Message, bot: Bot) -> None:
     if not message.from_user:

@@ -4,6 +4,7 @@ import logging
 import uuid
 
 from aiogram import Bot, F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -77,6 +78,7 @@ def _build_sub_link(sub_id: str) -> str:
     return "نامشخص"
 
 
+@router.message(Command("subs"))
 @router.message(F.text == BTN_MY_SUBS)
 async def my_subscriptions(message: types.Message) -> None:
     if not message.from_user:

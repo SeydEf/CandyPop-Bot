@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -20,6 +21,7 @@ class WalletStates(StatesGroup):
     waiting_deposit_amount = State()
 
 
+@router.message(Command("topup"))
 @router.message(F.text == BTN_INCREASE_WALLET)
 async def wallet_increase_start(message: types.Message, state: FSMContext) -> None:
     await state.set_state(WalletStates.waiting_deposit_amount)

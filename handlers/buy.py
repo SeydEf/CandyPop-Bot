@@ -5,6 +5,7 @@ import logging
 import time
 
 from aiogram import Bot, F, Router, types
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -77,6 +78,7 @@ async def _get_duration_step_text() -> str:
     )
 
 
+@router.message(Command("buy"))
 @router.message(F.text == BTN_BUY)
 async def buy_start(message: types.Message, state: FSMContext) -> None:
     await state.clear()

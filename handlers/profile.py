@@ -5,6 +5,7 @@ import math
 from typing import Any
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from db.models import (
@@ -62,6 +63,7 @@ async def _build_profile_text(tg_id: int, user_info: dict[str, Any] | None) -> s
     return text
 
 
+@router.message(Command("profile"))
 @router.message(F.text == BTN_PROFILE)
 async def profile_dashboard(message: types.Message) -> None:
     if not message.from_user:

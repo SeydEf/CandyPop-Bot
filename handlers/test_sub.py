@@ -4,6 +4,7 @@ import logging
 import time
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 
 from config import (
     INBOUND_IDS,
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = Router(name="test_sub")
 
 
+@router.message(Command("test"))
 @router.message(F.text == BTN_TEST)
 async def test_subscription(message: types.Message) -> None:
     if not message.from_user:

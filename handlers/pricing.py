@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 
 from keyboards.reply_kb import BTN_PRICING
 from services.pricing import get_pricing_config
@@ -59,6 +60,7 @@ async def build_pricing_text() -> str:
     return text
 
 
+@router.message(Command("pricing"))
 @router.message(F.text == BTN_PRICING)
 async def show_pricing(message: types.Message) -> None:
     text = await build_pricing_text()

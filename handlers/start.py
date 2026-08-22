@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from aiogram import Router, types
-from aiogram.filters import CommandStart
+from aiogram import F, Router, types
+from aiogram.filters import Command, CommandStart
 
 from db.models import create_user, get_user, create_referral
-from keyboards.reply_kb import main_menu_keyboard
+from keyboards.reply_kb import BTN_GUIDE, BTN_SUPPORT, main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name="start")
@@ -98,3 +98,36 @@ async def send_welcome(
                     reply_markup=main_menu_keyboard(),
                     parse_mode="HTML",
                 )
+
+
+@router.message(Command("help"))
+@router.message(F.text == BTN_GUIDE)
+async def cmd_guide(message: types.Message) -> None:
+    text = (
+        "📖 <b>راهنمای اتصال به سرویس‌های CandyPop</b>\n\n"
+        "برای استفاده از اشتراک خود در برنامه‌های مختلف، لینک ساب‌اسکریپشن دریافت شده را کپی کرده و طبق راهنمای زیر در برنامه وارد کنید:\n\n"
+        "📱 <b>اندروید (Android):</b>\n"
+        "برنامه‌های پیشنهادی: <b>v2rayNG</b> | <b>NekoBox</b> | <b>Streisand</b>\n"
+        "• برنامه را باز کنید ⬅️ منو / علامت + ⬅️ گزینه <i>Import config from clipboard</i> یا افزودن ساب‌اسکریپشن.\n\n"
+        "🍏 <b>آیفون (iOS):</b>\n"
+        "برنامه‌های پیشنهادی: <b>v2box</b> | <b>Streisand</b> | <b>Shadowrocket</b>\n"
+        "• برنامه را باز کرده ⬅️ بخش Subscriptions ⬅️ دکمه + ⬅️ لینک ساب‌اسکریپشن را وارد و ذخیره کنید.\n\n"
+        "💻 <b>ویندوز (Windows):</b>\n"
+        "برنامه‌های پیشنهادی: <b>v2rayN</b> | <b>NekoRay</b>\n"
+        "• برنامه را باز کرده ⬅️ گزینه Subscription Group ⬅️ افزودن لینک ⬅️ دکمه Update Subscription.\n\n"
+        "💡 <i>در صورت نیاز به راهنمایی بیشتر، از بخش «🆘 پشتیبانی» با ما در ارتباط باشید.</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("support"))
+@router.message(F.text == BTN_SUPPORT)
+async def cmd_support(message: types.Message) -> None:
+    text = (
+        "🆘 <b>پشتیبانی و ارتباط با ما</b>\n\n"
+        "تیم پشتیبانی CandyPop آماده پاسخگویی به سوالات، مشاوره و حل مشکلات شماست.\n\n"
+        "جهت ارتباط مستقیم با پشتیبانی می‌توانید از آیدی زیر استفاده کنید:\n"
+        "👨‍💻 <b>آیدی پشتیبانی:</b> @CandyPop_Support\n\n"
+        "⏱ <b>ساعات پاسخگویی:</b> همه روزه به صورت ۲۴ ساعته"
+    )
+    await message.answer(text, parse_mode="HTML")
