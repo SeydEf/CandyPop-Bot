@@ -673,7 +673,10 @@ async def admin_test_reset_all(
     await state.clear()
     count = await reset_all_test_subs()
     panel_text, keyboard = await _build_pricing_panel()
-    await callback.message.edit_text(
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
         f"✅ امکان دریافت اشتراک تست برای <b>{to_persian_digits(count)} کاربر</b> با موفقیت بازنشانی شد.\n\n{panel_text}",
         reply_markup=keyboard,
         parse_mode="HTML",

@@ -24,12 +24,29 @@ from handlers import (
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.xui_api import close_client
 
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import ErrorEvent
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+async def global_error_handler(event: ErrorEvent) -> bool:
+    if isinstance(
+        event.exception, TelegramBadRequest
+    ) and "message is not modified" in str(event.exception):
+        logger.debug("Suppressed TelegramBadRequest: message is not modified.")
+        if event.update and event.update.callback_query:
+            try:
+                await event.update.callback_query.answer()
+            except Exception:
+                pass
+        return True
+    return False
 
 
 async def on_startup(bot: Bot) -> None:
@@ -60,6 +77,8 @@ async def main() -> None:
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
+
+    dp.error.register(global_error_handler)
 
     dp.message.outer_middleware(ChannelCheckMiddleware())
     dp.callback_query.outer_middleware(ChannelCheckMiddleware())
