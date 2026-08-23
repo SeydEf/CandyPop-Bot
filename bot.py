@@ -12,6 +12,7 @@ from config import BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
 from handlers import (
     admin,
+    admin_broadcast,
     admin_control,
     admin_create_sub,
     admin_sub_manage,
@@ -99,6 +100,7 @@ async def main() -> None:
         admin_control.router,
         admin_sub_manage.router,
         admin_create_sub.router,
+        admin_broadcast.router,
     )
 
     logger.info("Starting CandyPop Bot...")

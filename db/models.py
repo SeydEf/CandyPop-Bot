@@ -490,3 +490,9 @@ async def set_card_config(
         await set_setting("card_number", card_number.strip())
     if card_holder is not None:
         await set_setting("card_holder", card_holder.strip())
+
+
+async def get_all_user_ids() -> list[int]:
+    db = await get_db()
+    rows = await db.execute_fetchall("SELECT DISTINCT tg_id FROM users")
+    return [r["tg_id"] for r in rows]

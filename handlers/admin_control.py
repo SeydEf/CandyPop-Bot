@@ -178,6 +178,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="📢 ارسال پیام همگانی (اطلاعیه)",
+                    callback_data="admin_broadcast_start",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="➕ ساخت اشتراک سفارشی جدید",
                     callback_data="admin_create_sub_start",
                 ),
