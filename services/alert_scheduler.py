@@ -138,7 +138,12 @@ async def check_and_send_alerts(bot: Bot) -> None:
                         )
 
             # 2. Low Bandwidth Check (Per 1GB Milestones)
-            if low_gb_enabled and total > 0 and not is_volume_expired:
+            if (
+                low_gb_enabled
+                and total > 0
+                and not is_volume_expired
+                and not is_test_sub
+            ):
                 rem_bytes = max(0, total - used)
                 rem_gb = rem_bytes / (1024**3)
 
@@ -193,7 +198,12 @@ async def check_and_send_alerts(bot: Bot) -> None:
                             )
 
             # 3. Expiring Days Check (Daily Reminder Until Expiration)
-            if expiring_days_enabled and expiry_time > 0 and not is_time_expired:
+            if (
+                expiring_days_enabled
+                and expiry_time > 0
+                and not is_time_expired
+                and not is_test_sub
+            ):
                 rem_ms = expiry_time - now_ms
                 rem_days = int(rem_ms / (86400 * 1000))
 
@@ -265,7 +275,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
                                     del_text = (
                                         f"🗑 <b>اطلاعیه حذف اشتراک منقضی‌شده</b>\n\n"
                                         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
-                                        f"اشتراک فوق به دلیل گذشت بیش از {to_persian_digits(auto_delete_days)} روز از تاریخ انقضا، از سرور حذف گردید."
+                                        f"اشتراک فوق به دلیل گذشت بیش از {to_persian_digits(auto_delete_days)} روز از تاریخ انقضا، حذف گردید."
                                     )
                                     await bot.send_message(
                                         chat_id=tg_id, text=del_text, parse_mode="HTML"
