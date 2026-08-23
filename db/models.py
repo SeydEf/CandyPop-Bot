@@ -627,3 +627,78 @@ async def clear_notified_alerts(email: str) -> None:
     db = await get_db()
     await db.execute("DELETE FROM notified_alerts WHERE email = ?", (email,))
     await db.commit()
+
+
+async def get_ip_violation(email: str) -> dict[str, Any] | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT email, violation_count, total_incidents, last_violated_at, suspended FROM ip_violations WHERE email = ?",
+        (email,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row:
+            return dict(row)
+    return None
+
+
+async def record_ip_violation(email: str) -> tuple[int, int]:
+    db = await get_db()
+    rec = await get_ip_violation(email)
+    if not rec:
+        current_strikes = 1
+        total_incidents = 0
+        await db.execute(
+            "INSERT INTO ip_violations (email, violation_count, total_incidents, suspended) VALUES (?, 1, 0, 0)",
+            (email,),
+        )
+    else:
+        current_strikes = rec["violation_count"] + 1
+        total_incidents = rec["total_incidents"]
+        if current_strikes >= 3:
+            total_incidents += 1
+        await db.execute(
+            "UPDATE ip_violations SET violation_count = ?, total_incidents = ?, last_violated_at = datetime('now') WHERE email = ?",
+            (current_strikes, total_incidents, email),
+        )
+    await db.commit()
+    return current_strikes, total_incidents
+
+
+async def set_ip_suspended(email: str, suspended: bool) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE ip_violations SET suspended = ? WHERE email = ?",
+        (1 if suspended else 0, email),
+    )
+    await db.commit()
+
+
+async def reset_ip_violations(email: str) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE ip_violations SET violation_count = 0, suspended = 0 WHERE email = ?",
+        (email,),
+    )
+    await db.commit()
+
+
+async def get_ip_checker_config() -> dict[str, Any]:
+    enabled_str = await get_setting("ip_checker_enabled", "1") or "1"
+    interval_str = await get_setting("ip_checker_interval_minutes", "5") or "5"
+    try:
+        interval_minutes = int(interval_str)
+    except ValueError:
+        interval_minutes = 5
+    return {
+        "enabled": enabled_str == "1",
+        "interval_minutes": interval_minutes,
+    }
+
+
+async def set_ip_checker_config(
+    enabled: bool | None = None, interval_minutes: int | None = None
+) -> None:
+    if enabled is not None:
+        await set_setting("ip_checker_enabled", "1" if enabled else "0")
+    if interval_minutes is not None:
+        await set_setting("ip_checker_interval_minutes", str(interval_minutes))

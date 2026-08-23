@@ -313,6 +313,34 @@ async def get_client_links(email: str) -> list[str]:
         return []
 
 
+async def get_client_ips(email: str) -> list[str]:
+    try:
+        data = await _request("POST", f"/panel/api/inbounds/clientIps/{email}")
+        obj = data.get("obj")
+        if isinstance(obj, list):
+            return [str(ip).strip() for ip in obj if str(ip).strip()]
+        if isinstance(obj, str) and obj:
+            return [line.strip() for line in obj.splitlines() if line.strip()]
+    except Exception:
+        pass
+
+    try:
+        data = await _request("GET", "/panel/api/server/clientIps")
+        obj = data.get("obj")
+        if isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, dict) and item.get("clientEmail") == email:
+                    ips = item.get("ips")
+                    if isinstance(ips, list):
+                        return [str(p).strip() for p in ips if str(p).strip()]
+                    if isinstance(ips, str) and ips:
+                        return [p.strip() for p in ips.split(",") if p.strip()]
+    except Exception:
+        pass
+
+    return []
+
+
 async def set_inbound_enable(inbound_id: int, enable: bool) -> dict[str, Any]:
     payload = {"enable": enable}
     data = await _request(

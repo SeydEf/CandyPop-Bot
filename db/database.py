@@ -85,6 +85,14 @@ async def init_db() -> None:
             notified_at TEXT NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (email, alert_type)
         );
+
+        CREATE TABLE IF NOT EXISTS ip_violations (
+            email            TEXT PRIMARY KEY,
+            violation_count  INTEGER NOT NULL DEFAULT 0,
+            total_incidents  INTEGER NOT NULL DEFAULT 0,
+            last_violated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            suspended        INTEGER NOT NULL DEFAULT 0
+        );
     """)
 
     await db.commit()

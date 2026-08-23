@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from aiogram import F, Router, types
+from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -63,6 +63,7 @@ class AdminControlStates(StatesGroup):
     waiting_alert_days = State()
     waiting_alert_delete_days = State()
     waiting_alert_interval = State()
+    waiting_ip_checker_interval = State()
 
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
@@ -1957,15 +1958,18 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         return
     await state.clear()
 
-    from db.models import get_alert_config
+    from db.models import get_alert_config, get_ip_checker_config
 
     alert_config = await get_alert_config()
+    ip_config = await get_ip_checker_config()
     min_gb = float(alert_config["min_gb"])
     min_days = int(alert_config["min_days"])
     auto_delete_days = int(alert_config["auto_delete_days"])
     interval_minutes = int(alert_config.get("interval_minutes", 30))
+    ip_interval_minutes = int(ip_config.get("interval_minutes", 5))
     low_gb_enabled = bool(alert_config.get("low_gb_enabled", True))
     expiring_days_enabled = bool(alert_config.get("expiring_days_enabled", True))
+    ip_checker_enabled = bool(ip_config.get("enabled", True))
 
     del_str = (
         f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
@@ -1983,11 +1987,18 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         if expiring_days_enabled
         else "🔴 یادآور روزانه زمان (غیرفعال)"
     )
+    ip_btn_text = (
+        "🟢 پایش سقف IP کاربر (فعال)"
+        if ip_checker_enabled
+        else "🔴 پایش سقف IP کاربر (غیرفعال)"
+    )
 
     text = (
         f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاكسازی اشتراك‌ها</b>\n\n"
-        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس یا در لحظه انقضا آگاه می‌سازد.\n\n"
-        f"⏳ <b>فاصله زمان بررسی پایش:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
+        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس یا در صورت تخلف IP آگاه می‌سازد.\n\n"
+        f"⏳ <b>فاصله زمان بررسی پایش هشدارهای عمومی:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
+        f"🛡 <b>فاصله زمان پایش سقف IP:</b> هر <b>{to_persian_digits(ip_interval_minutes)} دقیقه</b>\n"
+        f"🛡 <b>وضعیت پایش سقف IP (تخلفات):</b> {ip_btn_text}\n"
         f"📊 <b>هشدار پله‌ای حجم (هر ۱ گیگ):</b> {low_gb_btn_text}\n"
         f"⏱ <b>حدآستانه هشدار ترافیک:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
         f"📅 <b>یادآور روزانه اتمام زمان:</b> {exp_days_btn_text}\n"
@@ -1998,6 +2009,17 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=ip_btn_text, callback_data="admin_alert_toggle_ip_checker"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
+                    callback_data="admin_ip_edit_interval",
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text=low_gb_btn_text, callback_data="admin_alert_toggle_low_gb"
@@ -2011,7 +2033,7 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
             ],
             [
                 InlineKeyboardButton(
-                    text="⏳ تغییر فاصله زمانی بررسی (دقیقه)",
+                    text="⏳ تغییر فاصله عمومی بررسی (دقیقه)",
                     callback_data="admin_alert_edit_interval",
                 )
             ],
@@ -2365,3 +2387,218 @@ async def admin_toggle_renewals(
     status = await get_shop_status()
     await set_shop_status(renewals_enabled=not status["renewals_enabled"])
     await admin_shop_status_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_alert_toggle_ip_checker")
+async def admin_alert_toggle_ip_checker(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import get_ip_checker_config, set_ip_checker_config
+
+    cfg = await get_ip_checker_config()
+    curr = bool(cfg.get("enabled", True))
+    await set_ip_checker_config(enabled=not curr)
+    await admin_alert_menu(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_ip_reactivate_"))
+async def admin_ip_reactivate_start(callback: types.CallbackQuery) -> None:
+    if not _is_admin(callback):
+        return
+    email = callback.data[len("admin_ip_reactivate_") :]
+
+    text = (
+        f"⚠️ <b>تأییدیه رفع مسدودی سرویس</b>\n\n"
+        f"آیا از رفع مسدودی و فعال‌سازی مجدد سرویس <code>{email}</code> مطمئن هستید؟"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🟢 بله، فعال شود",
+                    callback_data=f"admin_ip_confirm_reactivate_{email}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data=f"admin_ip_cancel_{email}"
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_ip_confirm_reactivate_"))
+async def admin_ip_confirm_reactivate(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(callback):
+        return
+    email = callback.data[len("admin_ip_confirm_reactivate_") :]
+
+    from db.models import reset_ip_violations, resolve_client_tg_id
+    from services import xui_api
+
+    try:
+        client_full = await xui_api.get_client(email)
+        if client_full:
+            update_data = dict(client_full)
+            update_data["enable"] = True
+            await xui_api.update_client(email, update_data)
+
+        await reset_ip_violations(email)
+
+        tg_id = 0
+        if client_full:
+            tg_id = await resolve_client_tg_id(client_full)
+
+        if tg_id > 0:
+            try:
+                user_msg = (
+                    f"✅ <b>اشتراک شما مجدداً فعال گردید</b>\n\n"
+                    f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
+                    f"اشتراک شما توسط مدیریت از حالت مسدودی خارج و فعال گردید. لطفاً سقف استفاده همزمان دستگاه‌ها را رعایت فرمایید."
+                )
+                await bot.send_message(chat_id=tg_id, text=user_msg, parse_mode="HTML")
+            except Exception:
+                pass
+
+        await callback.message.edit_text(
+            f"✅ سرویس <code>{email}</code> با موفقیت توسط مدیریت رفع مسدودی و فعال شد.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.exception("Failed to reactivate client %s", email)
+        await callback.answer(f"❌ بروز خطا: {e}", show_alert=True)
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_ip_delete_"))
+async def admin_ip_delete_start(callback: types.CallbackQuery) -> None:
+    if not _is_admin(callback):
+        return
+    email = callback.data[len("admin_ip_delete_") :]
+
+    text = (
+        f"🚨 <b>تأییدیه حذف کامل سرویس مسدودشده</b>\n\n"
+        f"آیا از حذف کامل سرویس <code>{email}</code> از سرور مطمئن هستید؟ این عمل غیرقابل بازگشت است."
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔴 بله، حذف شود",
+                    callback_data=f"admin_ip_confirm_delete_{email}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data=f"admin_ip_cancel_{email}"
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_ip_confirm_delete_"))
+async def admin_ip_confirm_delete(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(callback):
+        return
+    email = callback.data[len("admin_ip_confirm_delete_") :]
+
+    from db.models import reset_ip_violations, resolve_client_tg_id
+    from services import xui_api
+
+    try:
+        client_full = await xui_api.get_client(email)
+        tg_id = 0
+        if client_full:
+            tg_id = await resolve_client_tg_id(client_full)
+
+        await xui_api.delete_client(email)
+        await reset_ip_violations(email)
+
+        if tg_id > 0:
+            try:
+                user_msg = (
+                    f"🗑 <b>اطلاعیه حذف سرویس مسدودشده</b>\n\n"
+                    f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
+                    f"اشتراک فوق به دلیل عدم رعایت قوانین استفاده، توسط مدیریت از سرور حذف گردید."
+                )
+                await bot.send_message(chat_id=tg_id, text=user_msg, parse_mode="HTML")
+            except Exception:
+                pass
+
+        await callback.message.edit_text(
+            f"🗑 سرویس <code>{email}</code> با موفقیت از سرور حذف گردید.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.exception("Failed to delete client %s", email)
+        await callback.answer(f"❌ بروز خطا: {e}", show_alert=True)
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_ip_cancel_"))
+async def admin_ip_cancel(callback: types.CallbackQuery) -> None:
+    if not _is_admin(callback):
+        return
+    await callback.message.edit_text("❌ عملیات تعیین تکلیف سرویس لغو شد.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ip_edit_interval")
+async def admin_ip_edit_interval_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_ip_checker_interval)
+    await callback.message.edit_text(
+        "⏳ <b>فاصله زمان جدید پایش سقف IP (به دقیقه) را وارد کنید:</b>\n"
+        "مثال: <code>3</code> یا <code>5</code> یا <code>10</code>\n"
+        "<i>(حداقل ۱ دقیقه)</i>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_ip_checker_interval, F.text)
+async def admin_ip_edit_interval_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        from utils.formatting import persian_to_english_digits
+
+        interval_val = int(persian_to_english_digits(message.text.strip()))
+        if interval_val < 1:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر (به دقیقه) وارد کنید.")
+        return
+
+    from db.models import set_ip_checker_config
+
+    await set_ip_checker_config(interval_minutes=interval_val)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ فاصله زمان جدید پایش سقف IP (<b>هر {to_persian_digits(interval_val)} دقیقه</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
