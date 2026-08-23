@@ -498,6 +498,20 @@ async def sub_view_current(callback: types.CallbackQuery, state: FSMContext) -> 
 @router.callback_query(F.data == "sub_renew_current")
 @router.callback_query(F.data.startswith("sub_renew_"))
 async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> None:
+    from db.models import get_shop_status
+
+    shop_status = await get_shop_status()
+    if not shop_status["renewals_enabled"]:
+        await callback.answer(
+            "⛔️ تمدید اشتراک‌ها موقتاً غیرفعال می‌باشد.", show_alert=True
+        )
+        await callback.message.answer(
+            "⛔️ <b>تمدید اشتراک‌ها موقتاً غیرفعال می‌باشد.</b>\n\n"
+            "امکان تمدید سرویس در حال حاضر توسط مدیریت متوقف شده است. لطفاً بعداً مراجعه فرمایید.",
+            parse_mode="HTML",
+        )
+        return
+
     if callback.data.startswith("sub_renew_") and callback.data != "sub_renew_current":
         email = callback.data[len("sub_renew_") :]
         await state.update_data(renew_email=email)

@@ -72,11 +72,24 @@ def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     config = await get_pricing_config()
     test_config = await get_test_sub_config()
-    from db.models import get_alert_config, get_card_config, get_referral_config
+    from db.models import (
+        get_alert_config,
+        get_card_config,
+        get_referral_config,
+        get_shop_status,
+    )
 
     ref_config = await get_referral_config()
     card_config = await get_card_config()
     alert_config = await get_alert_config()
+    shop_status = await get_shop_status()
+
+    pur_status_str = (
+        "🟢 باز (فعال)" if shop_status["purchases_enabled"] else "🔴 بسته (غیرفعال)"
+    )
+    ren_status_str = (
+        "🟢 باز (فعال)" if shop_status["renewals_enabled"] else "🔴 بسته (غیرفعال)"
+    )
 
     card_num = card_config["card_number"] or "تنظیم نشده"
     card_own = card_config["card_holder"] or "تنظیم نشده"
@@ -141,6 +154,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     text = (
         f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
+        f"🛒 <b>فروش جدید:</b> {pur_status_str}\n"
+        f"🔄 <b>تمدید اشتراک:</b> {ren_status_str}\n\n"
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"💳 <b>کارت جهت واریز:</b> <code>{card_num}</code> ({card_own})\n\n"
@@ -153,6 +168,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🛒/🔄 وضعیت فروش و تمدید اشتراک",
+                    callback_data="admin_shop_status_menu",
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     text="💰 تغییر نرخ پایه (هر گیگ)",
@@ -2248,3 +2269,99 @@ async def admin_alert_toggle_expiring_days(
     curr = bool(cfg.get("expiring_days_enabled", True))
     await set_alert_config(expiring_days_enabled=not curr)
     await admin_alert_menu(callback, state)
+
+
+# ──────────────────────────── Shop Status Configuration ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_shop_status_menu")
+async def admin_shop_status_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.models import get_shop_status
+
+    status = await get_shop_status()
+    pur_enabled = status["purchases_enabled"]
+    ren_enabled = status["renewals_enabled"]
+
+    pur_text = "🟢 باز (فعال)" if pur_enabled else "🔴 بسته (موقتاً غیرفعال)"
+    ren_text = "🟢 باز (فعال)" if ren_enabled else "🔴 بسته (موقتاً غیرفعال)"
+
+    text = (
+        f"🛒/🔄 <b>تنظیمات وضعیت فروش و تمدید اشتراک‌ها</b>\n\n"
+        f"از این بخش می‌توانید فروش اشتراک جدید و امکان تمدید سرویس‌های موجود را به صورت مستقل باز کرده یا ببندید.\n\n"
+        f"🛒 <b>وضعیت فروش اشتراک جدید:</b> <b>{pur_text}</b>\n"
+        f"🔄 <b>وضعیت تمدید اشتراک‌ها:</b> <b>{ren_text}</b>\n\n"
+        f"جهت تغییر وضعیت هر بخش، روی دکمه مربوطه کلیک کنید:"
+    )
+
+    pur_btn = (
+        "🟢 فروش جدید: باز (کلیک جهت بستن)"
+        if pur_enabled
+        else "🔴 فروش جدید: بسته (کلیک جهت بازکردن)"
+    )
+    ren_btn = (
+        "🟢 تمدید اشتراک: باز (کلیک جهت بستن)"
+        if ren_enabled
+        else "🔴 تمدید اشتراک: بسته (کلیک جهت بازکردن)"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=pur_btn, callback_data="admin_toggle_purchases"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=ren_btn, callback_data="admin_toggle_renewals"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,  # type: ignore[arg-type]
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_purchases")
+async def admin_toggle_purchases(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import get_shop_status, set_shop_status
+
+    status = await get_shop_status()
+    await set_shop_status(purchases_enabled=not status["purchases_enabled"])
+    await admin_shop_status_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_toggle_renewals")
+async def admin_toggle_renewals(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import get_shop_status, set_shop_status
+
+    status = await get_shop_status()
+    await set_shop_status(renewals_enabled=not status["renewals_enabled"])
+    await admin_shop_status_menu(callback, state)

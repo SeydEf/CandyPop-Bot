@@ -557,6 +557,25 @@ async def set_alert_config(
         )
 
 
+async def get_shop_status() -> dict[str, bool]:
+    purchases_str = await get_setting("shop_purchases_enabled", "1") or "1"
+    renewals_str = await get_setting("shop_renewals_enabled", "1") or "1"
+    return {
+        "purchases_enabled": purchases_str == "1",
+        "renewals_enabled": renewals_str == "1",
+    }
+
+
+async def set_shop_status(
+    purchases_enabled: bool | None = None,
+    renewals_enabled: bool | None = None,
+) -> None:
+    if purchases_enabled is not None:
+        await set_setting("shop_purchases_enabled", "1" if purchases_enabled else "0")
+    if renewals_enabled is not None:
+        await set_setting("shop_renewals_enabled", "1" if renewals_enabled else "0")
+
+
 async def has_notified_alert(email: str, alert_type: str) -> bool:
     db = await get_db()
     async with db.execute(

@@ -80,6 +80,18 @@ async def _get_duration_step_text() -> str:
 @router.message(F.text == BTN_BUY)
 async def buy_start(message: types.Message, state: FSMContext) -> None:
     await state.clear()
+
+    from db.models import get_shop_status
+
+    shop_status = await get_shop_status()
+    if not shop_status["purchases_enabled"]:
+        await message.answer(
+            "⛔️ <b>فروش اشتراک جدید موقتاً غیرفعال می‌باشد.</b>\n\n"
+            "امکان خرید اشتراک جدید در حال حاضر توسط مدیریت متوقف شده است. لطفاً بعداً مراجعه فرمایید.",
+            parse_mode="HTML",
+        )
+        return
+
     text = await _get_duration_step_text()
     await message.answer(
         text,
