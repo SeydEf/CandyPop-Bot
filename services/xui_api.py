@@ -49,6 +49,66 @@ async def list_inbounds() -> list[dict[str, Any]]:
     return data.get("obj", [])
 
 
+async def list_clients() -> list[dict[str, Any]]:
+    import json
+
+    clients_map: dict[str, dict[str, Any]] = {}
+    try:
+        inbounds = await list_inbounds()
+        for ib in inbounds:
+            settings_raw = ib.get("settings", "")
+            clients_list = []
+            if isinstance(settings_raw, str) and settings_raw:
+                try:
+                    parsed = json.loads(settings_raw)
+                    clients_list = parsed.get("clients", [])
+                except Exception:
+                    pass
+            elif isinstance(settings_raw, dict):
+                clients_list = settings_raw.get("clients", [])
+
+            for c in clients_list:
+                if isinstance(c, dict) and "email" in c:
+                    em = c["email"]
+                    if em not in clients_map:
+                        clients_map[em] = {
+                            "email": em,
+                            "tgId": c.get("tgId", 0),
+                            "total": c.get("totalGB", 0),
+                            "expiryTime": c.get("expiryTime", 0),
+                            "enable": c.get("enable", True),
+                            "up": 0,
+                            "down": 0,
+                        }
+
+            client_stats = ib.get("clientStats") or []
+            for cs in client_stats:
+                if isinstance(cs, dict) and "email" in cs:
+                    em = cs["email"]
+                    if em not in clients_map:
+                        clients_map[em] = {
+                            "email": em,
+                            "tgId": cs.get("tgId", 0),
+                            "total": cs.get("total", 0),
+                            "expiryTime": cs.get("expiryTime", 0),
+                            "enable": cs.get("enable", True),
+                            "up": cs.get("up", 0),
+                            "down": cs.get("down", 0),
+                        }
+                    else:
+                        clients_map[em]["up"] += cs.get("up", 0)
+                        clients_map[em]["down"] += cs.get("down", 0)
+                        if not clients_map[em]["total"] and cs.get("total"):
+                            clients_map[em]["total"] = cs.get("total")
+                        if not clients_map[em]["expiryTime"] and cs.get("expiryTime"):
+                            clients_map[em]["expiryTime"] = cs.get("expiryTime")
+
+    except Exception as e:
+        logger.error("Error listing clients from inbounds: %s", e)
+
+    return list(clients_map.values())
+
+
 async def get_inbound(inbound_id: int) -> dict[str, Any]:
     data = await _request("GET", f"/panel/api/inbounds/get/{inbound_id}")
     return data.get("obj", {})

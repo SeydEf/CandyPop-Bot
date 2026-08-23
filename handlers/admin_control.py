@@ -62,6 +62,7 @@ class AdminControlStates(StatesGroup):
     waiting_alert_gb = State()
     waiting_alert_days = State()
     waiting_alert_delete_days = State()
+    waiting_alert_interval = State()
 
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
@@ -83,6 +84,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     min_gb_alert = float(alert_config["min_gb"])
     min_days_alert = int(alert_config["min_days"])
     auto_delete_days = int(alert_config["auto_delete_days"])
+    interval_minutes = int(alert_config.get("interval_minutes", 30))
 
     base_rate = config["base_gb_rate"]
     user_surcharge = config["user_surcharge"]
@@ -126,6 +128,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     )
 
     alert_text = (
+        f"  • فاصله زمان بررسی (پایش): هر {to_persian_digits(interval_minutes)} دقیقه\n"
         f"  • هشدار ترافیک: کمتر از {format_size_gb(min_gb_alert)}\n"
         f"  • هشدار انقضا: کمتر از {to_persian_digits(min_days_alert)} روز\n"
         f"  • حذف منقضی‌شده‌ها: {del_days_str}\n"
@@ -1934,6 +1937,7 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     min_gb = float(alert_config["min_gb"])
     min_days = int(alert_config["min_days"])
     auto_delete_days = int(alert_config["auto_delete_days"])
+    interval_minutes = int(alert_config.get("interval_minutes", 30))
 
     del_str = (
         f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
@@ -1944,6 +1948,7 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     text = (
         f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاكسازی اشتراك‌ها</b>\n\n"
         f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس از طریق دکمه «🔄 تمدید اشتراک» آگاه می‌سازد.\n\n"
+        f"⏳ <b>فاصله زمان بررسی پایش:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
         f"📊 <b>حدآستانه هشدار ترافیک فعلی:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
         f"⏱ <b>حدآستانه هشدار انقضا فعلی:</b> کمتر از <b>{to_persian_digits(min_days)} روز</b>\n"
         f"🗑 <b>مهلت حذف اشتراک‌های منقضی‌شده:</b> {del_str}\n\n"
@@ -1952,6 +1957,12 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⏳ تغییر فاصله زمانی بررسی (دقیقه)",
+                    callback_data="admin_alert_edit_interval",
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text="📊 تغییر حدآستانه حجم (گیگ)",
@@ -2125,6 +2136,54 @@ async def admin_alert_edit_delete_days_save(
     )
     await message.answer(
         f"✅ مهلت جدید حذف اشتراک‌های منقضی‌شده (<b>{res_str}</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_alert_edit_interval")
+async def admin_alert_edit_interval_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_alert_interval)
+    await callback.message.edit_text(
+        "⏳ <b>فاصله زمان جدید بررسی (پایش) سرویس‌ها (به دقیقه) را وارد کنید:</b>\n"
+        "مثال: <code>15</code> یا <code>30</code> یا <code>60</code>\n"
+        "<i>(حداقل ۱ دقیقه)</i>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_alert_interval, F.text)
+async def admin_alert_edit_interval_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        interval_val = int(persian_to_english_digits(message.text.strip()))
+        if interval_val < 1:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر (به دقیقه) وارد کنید.")
+        return
+
+    from db.models import set_alert_config
+
+    await set_alert_config(interval_minutes=interval_val)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ فاصله زمان جدید بررسی (<b>هر {to_persian_digits(interval_val)} دقیقه</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
         reply_markup=keyboard,
         parse_mode="HTML",
     )

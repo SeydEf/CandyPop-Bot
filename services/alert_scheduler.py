@@ -10,43 +10,14 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.models import (
     get_alert_config,
-    get_db,
     has_notified_alert,
     record_notified_alert,
+    resolve_client_tg_id,
 )
 from services import xui_api
 from utils.formatting import format_size_gb, to_persian_digits
 
 logger = logging.getLogger(__name__)
-
-ALERT_POLL_INTERVAL_SECONDS = 1800
-
-
-async def _resolve_tg_id_for_client(client: dict) -> int:
-    tg_id = client.get("tgId")
-    if tg_id and isinstance(tg_id, int) and tg_id > 0:
-        return tg_id
-
-    try:
-        tg_id_int = int(tg_id)
-        if tg_id_int > 0:
-            return tg_id_int
-    except (TypeError, ValueError):
-        pass
-
-    email = client.get("email", "")
-    if not email:
-        return 0
-
-    db = await get_db()
-    row = await db.execute_fetchone(
-        "SELECT tg_id FROM invoices WHERE target_email = ? ORDER BY created_at DESC LIMIT 1",
-        (email,),
-    )
-    if row:
-        return row["tg_id"]
-
-    return 0
 
 
 async def check_and_send_alerts(bot: Bot) -> None:
@@ -69,7 +40,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
             if not email or not enable:
                 continue
 
-            tg_id = await _resolve_tg_id_for_client(client)
+            tg_id = await resolve_client_tg_id(client)
             if not tg_id:
                 continue
 
@@ -211,4 +182,11 @@ async def start_alert_scheduler(bot: Bot) -> None:
         except Exception as e:
             logger.error("Unexpected error in alert scheduler loop: %s", e)
 
-        await asyncio.sleep(ALERT_POLL_INTERVAL_SECONDS)
+        try:
+            config = await get_alert_config()
+            interval_minutes = int(config.get("interval_minutes", 30))
+            sleep_seconds = max(60, interval_minutes * 60)
+        except Exception:
+            sleep_seconds = 1800
+
+        await asyncio.sleep(sleep_seconds)

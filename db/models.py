@@ -502,6 +502,7 @@ async def get_alert_config() -> dict[str, float | int]:
     gb_str = await get_setting("alert_min_gb", "2.0") or "2.0"
     days_str = await get_setting("alert_min_days", "3") or "3"
     del_days_str = await get_setting("auto_delete_expired_days", "3") or "3"
+    interval_str = await get_setting("alert_poll_interval_minutes", "30") or "30"
     try:
         min_gb = float(gb_str)
     except ValueError:
@@ -514,10 +515,15 @@ async def get_alert_config() -> dict[str, float | int]:
         auto_delete_days = int(del_days_str)
     except ValueError:
         auto_delete_days = 3
+    try:
+        interval_minutes = int(interval_str)
+    except ValueError:
+        interval_minutes = 30
     return {
         "min_gb": min_gb,
         "min_days": min_days,
         "auto_delete_days": auto_delete_days,
+        "interval_minutes": interval_minutes,
     }
 
 
@@ -525,6 +531,7 @@ async def set_alert_config(
     min_gb: float | None = None,
     min_days: int | None = None,
     auto_delete_days: int | None = None,
+    interval_minutes: int | None = None,
 ) -> None:
     if min_gb is not None:
         await set_setting("alert_min_gb", str(min_gb))
@@ -532,15 +539,46 @@ async def set_alert_config(
         await set_setting("alert_min_days", str(min_days))
     if auto_delete_days is not None:
         await set_setting("auto_delete_expired_days", str(auto_delete_days))
+    if interval_minutes is not None:
+        await set_setting("alert_poll_interval_minutes", str(interval_minutes))
 
 
 async def has_notified_alert(email: str, alert_type: str) -> bool:
     db = await get_db()
-    row = await db.execute_fetchone(
+    async with db.execute(
         "SELECT 1 FROM notified_alerts WHERE email = ? AND alert_type = ?",
         (email, alert_type),
-    )
-    return row is not None
+    ) as cursor:
+        row = await cursor.fetchone()
+        return row is not None
+
+
+async def resolve_client_tg_id(client: dict[str, Any]) -> int:
+    tg_id = client.get("tgId")
+    if tg_id and isinstance(tg_id, int) and tg_id > 0:
+        return tg_id
+
+    try:
+        tg_id_int = int(tg_id)
+        if tg_id_int > 0:
+            return tg_id_int
+    except (TypeError, ValueError):
+        pass
+
+    email = client.get("email", "")
+    if not email:
+        return 0
+
+    db = await get_db()
+    async with db.execute(
+        "SELECT tg_id FROM invoices WHERE target_email = ? ORDER BY created_at DESC LIMIT 1",
+        (email,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row:
+            return row["tg_id"]
+
+    return 0
 
 
 async def record_notified_alert(email: str, alert_type: str) -> None:
