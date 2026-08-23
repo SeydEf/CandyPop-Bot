@@ -2299,9 +2299,6 @@ async def admin_alert_toggle_expiring_days(
     await admin_alert_menu(callback, state)
 
 
-# ──────────────────────────── Shop Status Configuration ────────────────────────────
-
-
 @router.callback_query(F.data == "admin_shop_status_menu")
 async def admin_shop_status_menu(
     callback: types.CallbackQuery, state: FSMContext
@@ -2359,7 +2356,7 @@ async def admin_shop_status_menu(
     )
 
     await safe_edit_text(
-        callback.message,  # type: ignore[arg-type]
+        callback.message,
         text,
         reply_markup=keyboard,
         parse_mode="HTML",
@@ -2610,9 +2607,6 @@ async def admin_ip_edit_interval_save(
     )
 
 
-# ──────────────────────────── Bulk Gift System ────────────────────────────
-
-
 @router.callback_query(F.data == "admin_bulk_gift_menu")
 async def admin_bulk_gift_menu(
     callback: types.CallbackQuery, state: FSMContext
@@ -2629,7 +2623,7 @@ async def admin_bulk_gift_menu(
         "گزینه مورد نظر جهت تنظیم مقدار هدیه را انتخاب کنید:"
     )
     await safe_edit_text(
-        callback.message,  # type: ignore[arg-type]
+        callback.message,
         text,
         reply_markup=bulk_gift_menu_keyboard(),
         parse_mode="HTML",
