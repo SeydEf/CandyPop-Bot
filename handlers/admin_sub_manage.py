@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import ADMIN_CHAT_ID, SUB_BASE_URL
+from config import SUB_BASE_URL
 from db.models import (
     credit_wallet,
     get_active_client_group,
@@ -33,8 +33,20 @@ logger = logging.getLogger(__name__)
 router = Router(name="admin_sub_manage")
 
 
-def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
-    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+async def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    from db.models import has_admin_permission
+
+    if event.from_user is None:
+        return False
+    permitted = await has_admin_permission(event.from_user.id, "manage_subs")
+    if not permitted:
+        msg = "⛔️ شما دسترسی به بخش «جستجو و مدیریت اشتراک‌ها» را ندارید."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return False
+    return True
 
 
 class AdminSearchStates(StatesGroup):
@@ -53,7 +65,7 @@ class AdminSearchStates(StatesGroup):
 async def admin_search_start(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(event):
+    if not await _is_admin(event):
         return
 
     await state.set_state(AdminSearchStates.waiting_search_query)
@@ -399,7 +411,7 @@ async def _render_user_dashboard(
 async def admin_manage_sub_dashboard(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_manage_sub_") :]
@@ -408,7 +420,7 @@ async def admin_manage_sub_dashboard(
 
 @router.callback_query(F.data.startswith("admin_sub_gb_menu_"))
 async def admin_sub_gb_prompt(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_gb_menu_") :]
@@ -491,7 +503,7 @@ async def admin_sub_gb_save(message: types.Message, state: FSMContext) -> None:
 async def admin_sub_days_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_days_menu_") :]
@@ -576,7 +588,7 @@ async def admin_sub_days_save(message: types.Message, state: FSMContext) -> None
 
 @router.callback_query(F.data.startswith("admin_sub_ip_menu_"))
 async def admin_sub_ip_prompt(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_ip_menu_") :]
@@ -647,7 +659,7 @@ async def admin_sub_ip_save(message: types.Message, state: FSMContext) -> None:
 async def admin_sub_rename_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_rename_menu_") :]
@@ -722,7 +734,7 @@ async def admin_sub_rename_save(message: types.Message, state: FSMContext) -> No
 async def admin_sub_toggle_enable(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_toggle_enable_") :]
@@ -751,7 +763,7 @@ async def admin_sub_toggle_enable(
 async def admin_sub_reset_traffic(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_reset_traffic_") :]
@@ -767,7 +779,7 @@ async def admin_sub_reset_traffic(
 
 @router.callback_query(F.data.startswith("admin_sub_qr_"))
 async def admin_sub_qr(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_qr_") :]
@@ -797,7 +809,7 @@ async def admin_sub_qr(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_sub_delete_"))
 async def admin_sub_delete(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_delete_") :]
@@ -820,7 +832,7 @@ async def admin_sub_delete(callback: types.CallbackQuery, state: FSMContext) -> 
 async def admin_manage_user_dashboard(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     u_id_str = callback.data[len("admin_manage_user_") :]
@@ -832,7 +844,7 @@ async def admin_manage_user_dashboard(
 async def admin_user_wallet_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     tg_id = int(callback.data[len("admin_user_wallet_") :])
@@ -906,7 +918,7 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
 async def admin_user_create_sub_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     tg_id = int(callback.data[len("admin_user_create_sub_") :])
@@ -1037,7 +1049,7 @@ async def admin_user_create_sub_dur_save(
 
 @router.callback_query(F.data == "admin_search_back")
 async def admin_search_back(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     data = await state.get_data()

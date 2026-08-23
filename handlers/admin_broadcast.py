@@ -10,7 +10,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import ADMIN_CHAT_ID
 from db.models import get_all_user_ids
 from utils.formatting import to_persian_digits
 from utils.helpers import safe_edit_text
@@ -19,8 +18,20 @@ logger = logging.getLogger(__name__)
 router = Router(name="admin_broadcast")
 
 
-def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
-    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+async def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    from db.models import has_admin_permission
+
+    if event.from_user is None:
+        return False
+    permitted = await has_admin_permission(event.from_user.id, "broadcast")
+    if not permitted:
+        msg = "⛔️ شما دسترسی به بخش «ارسال پیام همگانی» را ندارید."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return False
+    return True
 
 
 class AdminBroadcastStates(StatesGroup):
@@ -33,7 +44,7 @@ class AdminBroadcastStates(StatesGroup):
 async def admin_broadcast_start(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(event):
+    if not await _is_admin(event):
         return
 
     await state.clear()

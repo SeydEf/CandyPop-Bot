@@ -861,14 +861,32 @@ async def receive_receipt_photo(
         f"💰 مبلغ: {format_price(invoice['amount'])}\n"
     )
 
-    admin_msg = await bot.send_photo(
-        chat_id=ADMIN_CHAT_ID,
-        photo=file_id,
-        caption=admin_text,
-        reply_markup=admin_payment_review_keyboard(invoice_id),
-        parse_mode="HTML",
-    )
-    await set_invoice_message_id(invoice_id, admin_msg.message_id)
+    from db.models import get_all_admins, has_admin_permission
+
+    admin_ids = [ADMIN_CHAT_ID]
+    for adm in await get_all_admins():
+        a_id = adm["tg_id"]
+        if a_id > 0 and a_id not in admin_ids:
+            if await has_admin_permission(a_id, "approve_invoices"):
+                admin_ids.append(a_id)
+
+    primary_msg_id = 0
+    for a_id in admin_ids:
+        try:
+            sent_msg = await bot.send_photo(
+                chat_id=a_id,
+                photo=file_id,
+                caption=admin_text,
+                reply_markup=admin_payment_review_keyboard(invoice_id),
+                parse_mode="HTML",
+            )
+            if primary_msg_id == 0:
+                primary_msg_id = sent_msg.message_id
+        except Exception as e:
+            logger.warning("Failed to send invoice review photo to %d: %s", a_id, e)
+
+    if primary_msg_id > 0:
+        await set_invoice_message_id(invoice_id, primary_msg_id)
 
 
 @router.message(BuyStates.waiting_receipt, F.text)
@@ -930,13 +948,31 @@ async def receive_receipt_text(
         f"📝 متن رسید:\n<code>{receipt_text}</code>"
     )
 
-    admin_msg = await bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
-        text=admin_text,
-        reply_markup=admin_payment_review_keyboard(invoice_id),
-        parse_mode="HTML",
-    )
-    await set_invoice_message_id(invoice_id, admin_msg.message_id)
+    from db.models import get_all_admins, has_admin_permission
+
+    admin_ids = [ADMIN_CHAT_ID]
+    for adm in await get_all_admins():
+        a_id = adm["tg_id"]
+        if a_id > 0 and a_id not in admin_ids:
+            if await has_admin_permission(a_id, "approve_invoices"):
+                admin_ids.append(a_id)
+
+    primary_msg_id = 0
+    for a_id in admin_ids:
+        try:
+            sent_msg = await bot.send_message(
+                chat_id=a_id,
+                text=admin_text,
+                reply_markup=admin_payment_review_keyboard(invoice_id),
+                parse_mode="HTML",
+            )
+            if primary_msg_id == 0:
+                primary_msg_id = sent_msg.message_id
+        except Exception as e:
+            logger.warning("Failed to send invoice review text to %d: %s", a_id, e)
+
+    if primary_msg_id > 0:
+        await set_invoice_message_id(invoice_id, primary_msg_id)
 
 
 @router.callback_query(F.data == "buy_cancel")

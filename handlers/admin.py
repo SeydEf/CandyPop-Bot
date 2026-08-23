@@ -6,7 +6,7 @@ import time
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 
-from config import ADMIN_CHAT_ID, SUB_BASE_URL
+from config import SUB_BASE_URL
 from db.models import (
     get_invoice,
     get_user,
@@ -22,13 +22,30 @@ logger = logging.getLogger(__name__)
 router = Router(name="admin")
 
 
-def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
-    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+async def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    from db.models import has_admin_permission
+
+    if event.from_user is None:
+        return False
+    permitted = await has_admin_permission(event.from_user.id, "approve_invoices")
+    if not permitted:
+        msg = "⛔️ شما دسترسی به بخش «تأیید و رد پرداخت فاکتورها» را ندارید."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return False
+    return True
 
 
 @router.message(Command("reset_test", "reset_tests"))
 async def admin_reset_tests(message: types.Message) -> None:
-    if not _is_admin(message):
+    from db.models import has_admin_permission
+
+    if not message.from_user or not await has_admin_permission(
+        message.from_user.id, "reset_configs"
+    ):
+        await message.answer("⛔️ شما دسترسی به بازنشانی تنظیمات را ندارید.")
         return
 
     count = await reset_all_test_subs()
@@ -41,7 +58,7 @@ async def admin_reset_tests(message: types.Message) -> None:
 
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         await callback.answer("❌ شما دسترسی ندارید.", show_alert=True)
         return
 
@@ -193,7 +210,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
 
 @router.callback_query(F.data.startswith("admin_reject_"))
 async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         await callback.answer("❌ شما دسترسی ندارید.", show_alert=True)
         return
 

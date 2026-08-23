@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import ADMIN_CHAT_ID, SUB_BASE_URL
+from config import SUB_BASE_URL
 from db.models import (
     get_active_client_group,
     get_active_inbound_ids,
@@ -28,8 +28,20 @@ logger = logging.getLogger(__name__)
 router = Router(name="admin_create_sub")
 
 
-def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
-    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+async def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    from db.models import has_admin_permission
+
+    if event.from_user is None:
+        return False
+    permitted = await has_admin_permission(event.from_user.id, "create_sub")
+    if not permitted:
+        msg = "⛔️ شما دسترسی به بخش «ساخت اشتراک سفارشی» را ندارید."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return False
+    return True
 
 
 class AdminCreateSubStates(StatesGroup):
@@ -49,7 +61,7 @@ class AdminCreateSubStates(StatesGroup):
 async def admin_create_sub_start(
     event: types.Message | types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(event):
+    if not await _is_admin(event):
         return
 
     if isinstance(event, types.Message) or event.data == "admin_create_sub_start":
@@ -104,7 +116,7 @@ async def _prompt_step_user(
 async def admin_create_sub_nouser(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.update_data(
@@ -157,7 +169,7 @@ async def admin_create_sub_user_input(
 async def admin_create_sub_step_email_nav(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await _prompt_step_email(callback, state)
 
@@ -221,7 +233,7 @@ async def _prompt_step_email(
 async def admin_create_sub_use_suggested_email(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     data = await state.get_data()
@@ -248,7 +260,7 @@ async def admin_create_sub_email_input(
 async def admin_create_sub_step_gb_nav(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await _prompt_step_gb(callback, state)
 
@@ -315,7 +327,7 @@ async def _prompt_step_gb(
 async def admin_create_sub_gb_select(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     gb_val = float(callback.data[len("admin_create_sub_gb_") :])
@@ -346,7 +358,7 @@ async def admin_create_sub_gb_input(message: types.Message, state: FSMContext) -
 async def admin_create_sub_step_dur_nav(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await _prompt_step_dur(callback, state)
 
@@ -412,7 +424,7 @@ async def _prompt_step_dur(
 async def admin_create_sub_dur_select(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     dur_val = int(callback.data[len("admin_create_sub_dur_") :])
@@ -443,7 +455,7 @@ async def admin_create_sub_dur_input(message: types.Message, state: FSMContext) 
 async def admin_create_sub_step_ip_nav(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await _prompt_step_ip(callback, state)
 
@@ -503,7 +515,7 @@ async def _prompt_step_ip(
 async def admin_create_sub_ip_select(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     ip_val = int(callback.data[len("admin_create_sub_ip_") :])
@@ -534,7 +546,7 @@ async def admin_create_sub_ip_input(message: types.Message, state: FSMContext) -
 async def admin_create_sub_step_inbounds_nav(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await _prompt_step_inbounds(callback, state)
 
@@ -629,7 +641,7 @@ async def _prompt_step_inbounds(
 async def admin_create_sub_ib_toggle(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     ib_id = int(callback.data[len("admin_create_sub_ib_toggle_") :])
@@ -652,7 +664,7 @@ async def admin_create_sub_ib_toggle(
 async def admin_create_sub_ib_reset_default(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     active_defaults = await get_active_inbound_ids()
@@ -665,7 +677,7 @@ async def admin_create_sub_ib_reset_default(
 async def admin_create_sub_step_group_nav(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await _prompt_step_group(callback, state)
 
@@ -736,7 +748,7 @@ async def _prompt_step_group(
 async def admin_create_sub_group_select(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     grp_raw = callback.data[len("admin_create_sub_grp_") :]
@@ -811,7 +823,7 @@ async def _show_summary_and_confirm(
 async def admin_create_sub_execute(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     data = await state.get_data()

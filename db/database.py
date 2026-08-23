@@ -93,7 +93,22 @@ async def init_db() -> None:
             last_violated_at TEXT NOT NULL DEFAULT (datetime('now')),
             suspended        INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS bot_admins (
+            tg_id       INTEGER PRIMARY KEY,
+            username    TEXT,
+            added_by    INTEGER,
+            permissions TEXT DEFAULT '{}',
+            added_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     """)
+
+    try:
+        await db.execute(
+            "ALTER TABLE bot_admins ADD COLUMN permissions TEXT DEFAULT '{}'"
+        )
+    except Exception:
+        pass
 
     await db.commit()
 

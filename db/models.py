@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from db.database import get_db
 from config import INVOICE_EXPIRY_MINUTES
+from db.database import get_db
+
+logger = logging.getLogger(__name__)
 
 
 async def get_user(tg_id: int) -> dict[str, Any] | None:
@@ -702,3 +706,151 @@ async def set_ip_checker_config(
         await set_setting("ip_checker_enabled", "1" if enabled else "0")
     if interval_minutes is not None:
         await set_setting("ip_checker_interval_minutes", str(interval_minutes))
+
+
+# ──────────────────────────── Admin Role Management ────────────────────────────
+
+
+def is_owner(tg_id: int) -> bool:
+    """Check if tg_id belongs to the bot owner (ADMIN_CHAT_ID)."""
+    from config import ADMIN_CHAT_ID
+
+    return tg_id > 0 and tg_id == ADMIN_CHAT_ID
+
+
+async def is_admin(tg_id: int) -> bool:
+    """Check if tg_id is the bot owner or a registered secondary admin."""
+    if is_owner(tg_id):
+        return True
+    if tg_id <= 0:
+        return False
+
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM bot_admins WHERE tg_id = ?", (tg_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        return row is not None
+
+
+async def get_all_admins() -> list[dict[str, Any]]:
+    """Fetch all registered secondary bot admins."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT tg_id, username, added_by, permissions, added_at FROM bot_admins ORDER BY added_at DESC"
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def add_admin(tg_id: int, username: str = "", added_by: int = 0) -> bool:
+    """Register a new secondary bot admin."""
+    if is_owner(tg_id):
+        return False
+    db = await get_db()
+    try:
+        default_perms_json = json.dumps(DEFAULT_ADMIN_PERMISSIONS)
+        await db.execute(
+            "INSERT OR REPLACE INTO bot_admins (tg_id, username, added_by, permissions) VALUES (?, ?, ?, ?)",
+            (tg_id, username.lstrip("@"), added_by, default_perms_json),
+        )
+        await db.commit()
+        return True
+    except Exception as e:
+        logger.error("Failed to add bot admin %d: %s", tg_id, e)
+        return False
+
+
+async def remove_admin(tg_id: int) -> bool:
+    """Remove a secondary bot admin."""
+    if is_owner(tg_id):
+        return False
+    db = await get_db()
+    await db.execute("DELETE FROM bot_admins WHERE tg_id = ?", (tg_id,))
+    await db.commit()
+    return True
+
+
+PERMISSION_TITLES: dict[str, str] = {
+    "manage_subs": "جستجو و مدیریت اشتراک‌ها",
+    "create_sub": "ساخت اشتراک سفارشی",
+    "approve_invoices": "تأیید و رد پرداخت فاکتورها",
+    "pricing": "قیمت‌گذاری و تغییر نرخ‌ها",
+    "shop_status": "وضعیت فروش و تمدید",
+    "discounts": "مدیریت کدهای تخفیف",
+    "test_sub": "تنظیمات اشتراک تست",
+    "bulk_gift": "اعمال هدیه همگانی",
+    "alerts": "هشدارها و پایش IP",
+    "card_config": "تنظیمات کارت بانکی",
+    "inbounds": "مدیریت اینباندهای سرور",
+    "referral": "تنظیمات زیرمجموعه‌گیری",
+    "broadcast": "ارسال پیام همگانی",
+    "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
+}
+
+DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
+    "manage_subs": True,
+    "create_sub": True,
+    "approve_invoices": True,
+    "pricing": False,
+    "shop_status": True,
+    "discounts": True,
+    "test_sub": True,
+    "bulk_gift": True,
+    "alerts": True,
+    "card_config": False,
+    "inbounds": False,
+    "referral": True,
+    "broadcast": True,
+    "reset_configs": False,
+}
+
+
+async def get_admin_permissions(tg_id: int) -> dict[str, bool]:
+    """Fetch granted permissions dict for a secondary admin."""
+    if is_owner(tg_id):
+        return {k: True for k in PERMISSION_TITLES}
+
+    db = await get_db()
+    async with db.execute(
+        "SELECT permissions FROM bot_admins WHERE tg_id = ?", (tg_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row or not row["permissions"]:
+            return dict(DEFAULT_ADMIN_PERMISSIONS)
+
+        try:
+            saved_perms = json.loads(row["permissions"])
+            full_perms = dict(DEFAULT_ADMIN_PERMISSIONS)
+            full_perms.update(saved_perms)
+            return full_perms
+        except Exception:
+            return dict(DEFAULT_ADMIN_PERMISSIONS)
+
+
+async def has_admin_permission(tg_id: int, perm_key: str) -> bool:
+    """Check if tg_id has a specific admin permission."""
+    if is_owner(tg_id):
+        return True
+    if tg_id <= 0:
+        return False
+
+    perms = await get_admin_permissions(tg_id)
+    return perms.get(perm_key, False)
+
+
+async def toggle_admin_permission(tg_id: int, perm_key: str) -> dict[str, bool]:
+    """Toggle a permission key ON/OFF for a secondary admin."""
+    if is_owner(tg_id) or perm_key not in PERMISSION_TITLES:
+        return {k: True for k in PERMISSION_TITLES}
+
+    current_perms = await get_admin_permissions(tg_id)
+    current_perms[perm_key] = not current_perms.get(perm_key, False)
+
+    db = await get_db()
+    await db.execute(
+        "UPDATE bot_admins SET permissions = ? WHERE tg_id = ?",
+        (json.dumps(current_perms), tg_id),
+    )
+    await db.commit()
+    return current_perms

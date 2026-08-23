@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import DURATION_OPTIONS, VOLUME_TIERS
@@ -671,3 +673,110 @@ def bulk_gift_days_stepper_keyboard(days: int) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def admin_manage_admins_keyboard(admins: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for adm in admins:
+        tg_id = adm["tg_id"]
+        username = adm.get("username", "")
+        name_str = f"@{username}" if username else f"ID: {tg_id}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"⚙️ دسترسی‌های {name_str}",
+                    callback_data=f"admin_perm_panel_{tg_id}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن ادمین جدید",
+                callback_data="admin_add_admin_start",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🗑 عزل / حذف ادمین",
+                callback_data="admin_remove_admin_menu",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_permissions_keyboard(
+    tg_id: int, perms: dict[str, bool]
+) -> InlineKeyboardMarkup:
+    from db.models import PERMISSION_TITLES
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for perm_key, title in PERMISSION_TITLES.items():
+        is_active = perms.get(perm_key, False)
+        status_icon = "🟢" if is_active else "🔴"
+        btn_text = f"{status_icon} {title}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"admin_toggle_perm_{tg_id}_{perm_key}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🗑 عزل و حذف دسترسی این ادمین",
+                callback_data=f"admin_remove_admin_confirm_{tg_id}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به لیست ادمین‌ها",
+                callback_data="admin_manage_admins_menu",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_remove_admins_keyboard(admins: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for adm in admins:
+        tg_id = adm["tg_id"]
+        username = adm.get("username", "")
+        name_str = f"@{username}" if username else f"ID: {tg_id}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🗑 عزل {name_str}",
+                    callback_data=f"admin_remove_admin_confirm_{tg_id}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به مدیریت ادمین‌ها",
+                callback_data="admin_manage_admins_menu",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)

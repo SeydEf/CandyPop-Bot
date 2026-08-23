@@ -64,10 +64,49 @@ class AdminControlStates(StatesGroup):
     waiting_alert_delete_days = State()
     waiting_alert_interval = State()
     waiting_ip_checker_interval = State()
+    waiting_add_admin_id = State()
 
 
-def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
-    return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
+def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
+    from db.models import is_owner
+
+    return event.from_user is not None and is_owner(event.from_user.id)
+
+
+async def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
+    from db.models import is_admin
+
+    return event.from_user is not None and await is_admin(event.from_user.id)
+
+
+async def _require_owner(callback: types.CallbackQuery) -> bool:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ این بخش اختصاصی مدیریت ارشد (مالک ربات) می‌باشد.", show_alert=True
+        )
+        return False
+    return True
+
+
+async def _require_permission(
+    event: types.CallbackQuery | types.Message, perm_key: str
+) -> bool:
+    from db.models import PERMISSION_TITLES, has_admin_permission
+
+    if event.from_user is None:
+        return False
+
+    tg_id = event.from_user.id
+    permitted = await has_admin_permission(tg_id, perm_key)
+    if not permitted:
+        title = PERMISSION_TITLES.get(perm_key, perm_key)
+        msg = f"⛔️ شما دسترسی به بخش «{title}» را ندارید."
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return False
+    return True
 
 
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
@@ -243,6 +282,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="👥 مدیریت مدیران ربات (ادمین‌ها) 👑",
+                    callback_data="admin_manage_admins_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="📢 ارسال پیام همگانی (اطلاعیه)",
                     callback_data="admin_broadcast_start",
                 ),
@@ -290,7 +335,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
 
 @router.message(Command("control", "admin_control"))
 async def admin_pricing_cmd(message: types.Message, state: FSMContext) -> None:
-    if not _is_admin(message):
+    if not await _is_admin(message):
         return
     await state.clear()
     text, keyboard = await _build_pricing_panel()
@@ -299,7 +344,7 @@ async def admin_pricing_cmd(message: types.Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "admin_price_main")
 async def admin_pricing_main(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.clear()
     text, keyboard = await _build_pricing_panel()
@@ -317,7 +362,7 @@ async def admin_pricing_close(callback: types.CallbackQuery, state: FSMContext) 
 async def admin_price_base_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "pricing"):
         return
     await state.set_state(AdminControlStates.waiting_base_rate)
     await callback.message.edit_text(
@@ -331,6 +376,8 @@ async def admin_price_base_start(
 
 @router.message(AdminControlStates.waiting_base_rate, F.text)
 async def admin_price_base_save(message: types.Message, state: FSMContext) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -365,7 +412,7 @@ async def admin_price_base_save(message: types.Message, state: FSMContext) -> No
 async def admin_price_user_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "pricing"):
         return
     await state.set_state(AdminControlStates.waiting_user_surcharge)
     await callback.message.edit_text(
@@ -379,6 +426,8 @@ async def admin_price_user_start(
 
 @router.message(AdminControlStates.waiting_user_surcharge, F.text)
 async def admin_price_user_save(message: types.Message, state: FSMContext) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -411,7 +460,7 @@ async def admin_price_user_save(message: types.Message, state: FSMContext) -> No
 
 @router.callback_query(F.data == "admin_price_dur_menu")
 async def admin_price_dur_menu(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "pricing"):
         return
     config = await get_pricing_config()
     durs = config["duration_surcharges"]
@@ -452,7 +501,7 @@ async def admin_price_dur_menu(callback: types.CallbackQuery) -> None:
 async def admin_price_dur_60_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "pricing"):
         return
     await state.set_state(AdminControlStates.waiting_dur_60)
     await callback.message.edit_text(
@@ -497,7 +546,7 @@ async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> 
 async def admin_price_dur_90_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "pricing"):
         return
     await state.set_state(AdminControlStates.waiting_dur_90)
     await callback.message.edit_text(
@@ -542,7 +591,7 @@ async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> 
 async def admin_price_tiers_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "pricing"):
         return
     await state.set_state(AdminControlStates.waiting_tiers_text)
     await callback.message.edit_text(
@@ -613,7 +662,7 @@ async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> N
 
 @router.callback_query(F.data == "admin_price_reset")
 async def admin_price_reset(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "reset_configs"):
         return
     await reset_pricing_config_to_defaults()
     await state.clear()
@@ -628,7 +677,7 @@ async def admin_price_reset(callback: types.CallbackQuery, state: FSMContext) ->
 
 @router.callback_query(F.data == "admin_test_menu")
 async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "test_sub"):
         return
     await state.clear()
 
@@ -674,7 +723,7 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data == "admin_test_gb")
 async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.set_state(AdminControlStates.waiting_test_gb)
     await callback.message.edit_text(
@@ -717,7 +766,7 @@ async def admin_test_gb_save(message: types.Message, state: FSMContext) -> None:
 async def admin_test_dur_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.set_state(AdminControlStates.waiting_test_dur)
     await callback.message.edit_text(
@@ -757,7 +806,7 @@ async def admin_test_dur_save(message: types.Message, state: FSMContext) -> None
 async def admin_test_cooldown_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.set_state(AdminControlStates.waiting_test_cooldown)
     await callback.message.edit_text(
@@ -797,7 +846,7 @@ async def admin_test_cooldown_save(message: types.Message, state: FSMContext) ->
 async def admin_test_reset_all(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "reset_configs"):
         return
     await state.clear()
     count = await reset_all_test_subs()
@@ -817,7 +866,7 @@ async def admin_test_reset_all(
 async def admin_discounts_menu(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "discounts"):
         return
     await state.clear()
 
@@ -889,7 +938,7 @@ async def admin_discounts_menu(
 async def admin_disc_create_menu(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.clear()
 
@@ -925,7 +974,7 @@ async def admin_disc_create_menu(
 async def admin_disc_create_manual_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.set_state(AdminControlStates.waiting_disc_manual_code)
     await callback.message.edit_text(
@@ -974,7 +1023,7 @@ async def admin_disc_create_manual_save(
 async def admin_disc_create_auto_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.set_state(AdminControlStates.waiting_disc_auto_length)
     await callback.message.edit_text(
@@ -1092,7 +1141,7 @@ async def admin_disc_create_max_uses_save(
 
 @router.callback_query(F.data.startswith("admin_disc_view_"))
 async def admin_disc_view(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.clear()
 
@@ -1158,7 +1207,7 @@ async def admin_disc_view(callback: types.CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data.startswith("admin_disc_toggle_"))
 async def admin_disc_toggle(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     code = callback.data[len("admin_disc_toggle_") :]
@@ -1180,7 +1229,7 @@ async def admin_disc_toggle(callback: types.CallbackQuery, state: FSMContext) ->
 
 @router.callback_query(F.data.startswith("admin_disc_del_"))
 async def admin_disc_delete(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     code = callback.data[len("admin_disc_del_") :]
@@ -1199,7 +1248,7 @@ async def admin_disc_delete(callback: types.CallbackQuery, state: FSMContext) ->
 async def admin_disc_edit_percent_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     code = callback.data[len("admin_disc_edit_p_") :]
@@ -1253,7 +1302,7 @@ async def admin_disc_edit_percent_save(
 async def admin_disc_edit_max_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     code = callback.data[len("admin_disc_edit_m_") :]
@@ -1306,7 +1355,7 @@ async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) ->
 
 @router.callback_query(F.data == "admin_ref_menu")
 async def admin_ref_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "referral"):
         return
     await state.clear()
 
@@ -1358,7 +1407,7 @@ async def admin_ref_menu(callback: types.CallbackQuery, state: FSMContext) -> No
 
 @router.callback_query(F.data == "admin_ref_toggle")
 async def admin_ref_toggle(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import get_referral_config, set_referral_config
@@ -1377,7 +1426,7 @@ async def admin_ref_toggle(callback: types.CallbackQuery, state: FSMContext) -> 
 async def admin_ref_edit_percent_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_ref_percent)
@@ -1422,7 +1471,7 @@ async def admin_ref_edit_percent_save(
 
 @router.callback_query(F.data == "admin_inbounds_menu")
 async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "inbounds"):
         return
     await state.clear()
 
@@ -1524,7 +1573,7 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
 async def admin_inbound_toggle_enable(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     inbound_id = int(callback.data.split("_")[-1])
@@ -1550,7 +1599,7 @@ async def admin_inbound_toggle_enable(
 async def admin_inbound_toggle_assign(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     inbound_id = int(callback.data.split("_")[-1])
@@ -1569,7 +1618,7 @@ async def admin_inbound_toggle_assign(
 
 @router.callback_query(F.data == "admin_groups_menu")
 async def admin_groups_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await state.clear()
 
@@ -1672,7 +1721,7 @@ async def admin_groups_menu(callback: types.CallbackQuery, state: FSMContext) ->
 async def admin_group_create_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_group_create_name)
@@ -1711,7 +1760,7 @@ async def admin_group_create_save(message: types.Message, state: FSMContext) -> 
 
 @router.callback_query(F.data.startswith("admin_group_select_"))
 async def admin_group_select(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     g_name = callback.data[len("admin_group_select_") :]
@@ -1729,7 +1778,7 @@ async def admin_group_select(callback: types.CallbackQuery, state: FSMContext) -
 async def admin_group_deselect(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import set_active_client_group
@@ -1745,7 +1794,7 @@ async def admin_group_deselect(
 async def admin_group_rename_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     old_name = callback.data[len("admin_group_rename_") :]
@@ -1797,7 +1846,7 @@ async def admin_group_rename_save(message: types.Message, state: FSMContext) -> 
 
 @router.callback_query(F.data.startswith("admin_group_delete_"))
 async def admin_group_delete(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     g_name = callback.data[len("admin_group_delete_") :]
@@ -1820,7 +1869,7 @@ async def admin_group_delete(callback: types.CallbackQuery, state: FSMContext) -
 
 @router.callback_query(F.data == "admin_card_menu")
 async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "card_config"):
         return
     await state.clear()
 
@@ -1874,7 +1923,7 @@ async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> N
 async def admin_card_edit_number_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_card_number)
@@ -1922,7 +1971,7 @@ async def admin_card_edit_number_save(
 async def admin_card_edit_holder_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_card_holder)
@@ -1960,7 +2009,7 @@ async def admin_card_edit_holder_save(
 
 @router.callback_query(F.data == "admin_alert_menu")
 async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "alerts"):
         return
     await state.clear()
 
@@ -2082,7 +2131,7 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
 async def admin_alert_edit_gb_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_alert_gb)
@@ -2127,7 +2176,7 @@ async def admin_alert_edit_gb_save(message: types.Message, state: FSMContext) ->
 async def admin_alert_edit_days_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_alert_days)
@@ -2172,7 +2221,7 @@ async def admin_alert_edit_days_save(message: types.Message, state: FSMContext) 
 async def admin_alert_edit_delete_days_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_alert_delete_days)
@@ -2225,7 +2274,7 @@ async def admin_alert_edit_delete_days_save(
 async def admin_alert_edit_interval_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_alert_interval)
@@ -2273,7 +2322,7 @@ async def admin_alert_edit_interval_save(
 async def admin_alert_toggle_low_gb(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import get_alert_config, set_alert_config
@@ -2288,7 +2337,7 @@ async def admin_alert_toggle_low_gb(
 async def admin_alert_toggle_expiring_days(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import get_alert_config, set_alert_config
@@ -2303,7 +2352,7 @@ async def admin_alert_toggle_expiring_days(
 async def admin_shop_status_menu(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "shop_status"):
         return
     await state.clear()
 
@@ -2368,7 +2417,7 @@ async def admin_shop_status_menu(
 async def admin_toggle_purchases(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import get_shop_status, set_shop_status
@@ -2382,7 +2431,7 @@ async def admin_toggle_purchases(
 async def admin_toggle_renewals(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import get_shop_status, set_shop_status
@@ -2396,7 +2445,7 @@ async def admin_toggle_renewals(
 async def admin_alert_toggle_ip_checker(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     from db.models import get_ip_checker_config, set_ip_checker_config
@@ -2409,7 +2458,7 @@ async def admin_alert_toggle_ip_checker(
 
 @router.callback_query(F.data.startswith("admin_ip_reactivate_"))
 async def admin_ip_reactivate_start(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     email = callback.data[len("admin_ip_reactivate_") :]
 
@@ -2438,7 +2487,7 @@ async def admin_ip_reactivate_start(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_ip_confirm_reactivate_"))
 async def admin_ip_confirm_reactivate(callback: types.CallbackQuery, bot: Bot) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     email = callback.data[len("admin_ip_confirm_reactivate_") :]
 
@@ -2482,7 +2531,7 @@ async def admin_ip_confirm_reactivate(callback: types.CallbackQuery, bot: Bot) -
 
 @router.callback_query(F.data.startswith("admin_ip_delete_"))
 async def admin_ip_delete_start(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     email = callback.data[len("admin_ip_delete_") :]
 
@@ -2511,7 +2560,7 @@ async def admin_ip_delete_start(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_ip_confirm_delete_"))
 async def admin_ip_confirm_delete(callback: types.CallbackQuery, bot: Bot) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     email = callback.data[len("admin_ip_confirm_delete_") :]
 
@@ -2551,7 +2600,7 @@ async def admin_ip_confirm_delete(callback: types.CallbackQuery, bot: Bot) -> No
 
 @router.callback_query(F.data.startswith("admin_ip_cancel_"))
 async def admin_ip_cancel(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     await callback.message.edit_text("❌ عملیات تعیین تکلیف سرویس لغو شد.")
     await callback.answer()
@@ -2561,7 +2610,7 @@ async def admin_ip_cancel(callback: types.CallbackQuery) -> None:
 async def admin_ip_edit_interval_start(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     await state.set_state(AdminControlStates.waiting_ip_checker_interval)
@@ -2611,7 +2660,7 @@ async def admin_ip_edit_interval_save(
 async def admin_bulk_gift_menu(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    if not _is_admin(callback):
+    if not await _require_permission(callback, "bulk_gift"):
         return
     await state.clear()
 
@@ -2634,7 +2683,7 @@ async def admin_bulk_gift_menu(
 @router.callback_query(F.data == "admin_bulk_gift_gb_start")
 @router.callback_query(F.data.startswith("admin_bulk_gift_gb_step_"))
 async def admin_bulk_gift_gb_stepper(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     if callback.data.startswith("admin_bulk_gift_gb_step_"):
@@ -2665,7 +2714,7 @@ async def admin_bulk_gift_gb_stepper(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_bulk_gift_gb_confirm_"))
 async def admin_bulk_gift_gb_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     gb = int(callback.data.split("_")[-1])
 
@@ -2724,7 +2773,7 @@ async def admin_bulk_gift_days_stepper(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_bulk_gift_days_confirm_"))
 async def admin_bulk_gift_days_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
     days = int(callback.data.split("_")[-1])
 
@@ -2747,3 +2796,209 @@ async def admin_bulk_gift_days_confirm(callback: types.CallbackQuery, bot: Bot) 
     )
     await callback.message.edit_text(res_text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
+
+
+# ──────────────────────────── Admin Management System ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_manage_admins_menu")
+async def admin_manage_admins_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_owner(callback):
+        return
+    await state.clear()
+
+    from db.models import get_all_admins
+    from keyboards.inline_kb import admin_manage_admins_keyboard
+
+    admins = await get_all_admins()
+    admin_list_str = ""
+    if admins:
+        for idx, adm in enumerate(admins, start=1):
+            username_str = (
+                f"(@{adm['username']})" if adm.get("username") else "(بدون آیدی)"
+            )
+            admin_list_str += f"  {to_persian_digits(idx)}. 🆔 <code>{adm['tg_id']}</code> {username_str}\n"
+    else:
+        admin_list_str = "  <i>هیچ ادمین جانبی ثبتی وجود ندارد.</i>\n"
+
+    text = (
+        f"👥 <b>پنل مدیریت ادمین‌های ربات</b>\n\n"
+        f"👑 <b>مالک ارشد ربات:</b> <code>{ADMIN_CHAT_ID}</code>\n\n"
+        f"📋 <b>لیست ادمین‌های فعلی:</b>\n{admin_list_str}\n"
+        f"💡 <i>ادمین‌ها امکان مدیریت اشتراک‌ها، پاسخ به سفارشات، ارسال پیام همگانی و اعمال هدیه را دارند.</i>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=admin_manage_admins_keyboard(admins),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_add_admin_start")
+async def admin_add_admin_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_owner(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_add_admin_id)
+    await callback.message.edit_text(
+        "➕ <b>افزودن ادمین جدید:</b>\n\n"
+        "لطفاً شناسه عددی تلگرام (Telegram User ID) ادمین جدید را ارسال کنید.\n"
+        "یا یک پیام از کاربر مورد نظر را به این گفتگو **فوروارد (Forward)** کنید.\n\n"
+        "🔸 مثال: <code>123456789</code>\n\n"
+        "<i>برای انصراف /cancel را بفرستید.</i>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_add_admin_id)
+async def admin_add_admin_save(message: types.Message, state: FSMContext) -> None:
+    if not _is_owner(message):
+        return
+
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات افزودن ادمین لغو شد.")
+        return
+
+    new_tg_id = 0
+    username = ""
+
+    if message.forward_from:
+        new_tg_id = message.forward_from.id
+        username = message.forward_from.username or ""
+    elif message.text:
+        try:
+            clean_id = (
+                persian_to_english_digits(message.text.strip())
+                .replace(" ", "")
+                .lstrip("@")
+            )
+            new_tg_id = int(clean_id)
+        except ValueError:
+            await message.answer(
+                "⚠️ لطفاً یک شناسه عددی معتبر تلگرام یا پیام فورواردی ارسال کنید."
+            )
+            return
+
+    if new_tg_id <= 0:
+        await message.answer("⚠️ شناسه تلگرام وارد شده معتبر نیست.")
+        return
+
+    from db.models import add_admin
+
+    success = await add_admin(
+        tg_id=new_tg_id, username=username, added_by=message.from_user.id
+    )
+    await state.clear()
+
+    if success:
+        panel_text, keyboard = await _build_pricing_panel()
+        await message.answer(
+            f"✅ کاربر با شناسه <code>{new_tg_id}</code> با موفقیت به عنوان ادمین ربات ثبت شد.\n\n{panel_text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer("❌ خطا در ثبت ادمین جدید (ممکن است مالک اصلی باشد).")
+
+
+@router.callback_query(F.data == "admin_remove_admin_menu")
+async def admin_remove_admin_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_owner(callback):
+        return
+    await state.clear()
+
+    from db.models import get_all_admins
+    from keyboards.inline_kb import admin_remove_admins_keyboard
+
+    admins = await get_all_admins()
+    if not admins:
+        await callback.answer("⚠️ هیچ ادمین جانبی برای عزل وجود ندارد.", show_alert=True)
+        return
+
+    text = "🗑 <b>انتخاب ادمین جهت عزل و سلب دسترسی:</b>\n\nبرای عزل ادمین، روی دکمه مربوطه کلیک کنید:"
+    await callback.message.edit_text(
+        text,
+        reply_markup=admin_remove_admins_keyboard(admins),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_remove_admin_confirm_"))
+async def admin_remove_admin_confirm(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_owner(callback):
+        return
+
+    target_id = int(callback.data.split("_")[-1])
+
+    from db.models import remove_admin
+
+    await remove_admin(target_id)
+    await callback.answer("✅ دسترسی ادمین با موفقیت سلب گردید.", show_alert=True)
+
+    await admin_manage_admins_menu(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_perm_panel_"))
+async def admin_perm_panel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_owner(callback):
+        return
+    await state.clear()
+
+    target_id = int(callback.data.split("_")[-1])
+
+    from db.models import get_admin_permissions
+    from keyboards.inline_kb import admin_permissions_keyboard
+
+    perms = await get_admin_permissions(target_id)
+
+    text = (
+        f"⚙️ <b>مدیریت دسترسی‌های ادمین جانبی</b>\n\n"
+        f"👤 <b>شناسه ادمین:</b> <code>{target_id}</code>\n\n"
+        f"💡 <i>با کلیک روی هر گزینه، دسترسی مربوطه را فعال (🟢) یا غیرفعال (🔴) کنید:</i>"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=admin_permissions_keyboard(target_id, perms),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_toggle_perm_"))
+async def admin_toggle_perm(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_owner(callback):
+        return
+
+    parts = callback.data.split("_")
+    target_id = int(parts[3])
+    perm_key = "_".join(parts[4:])
+
+    from db.models import PERMISSION_TITLES, toggle_admin_permission
+    from keyboards.inline_kb import admin_permissions_keyboard
+
+    updated_perms = await toggle_admin_permission(target_id, perm_key)
+    new_status = updated_perms.get(perm_key, False)
+    status_str = "🟢 فعال" if new_status else "🔴 غیرفعال"
+    perm_title = PERMISSION_TITLES.get(perm_key, perm_key)
+
+    await callback.answer(f"دسترسی «{perm_title}» {status_str} شد.")
+
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=admin_permissions_keyboard(target_id, updated_perms)
+        )
+    except Exception:
+        pass
