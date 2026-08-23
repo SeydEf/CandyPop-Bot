@@ -125,6 +125,29 @@ async def add_client(
     limit_ip: int = 0,
     group: str = "",
 ) -> dict[str, Any]:
+    import uuid
+
+    target_inbound_ids: list[int] = []
+    try:
+        server_inbounds = await list_inbounds()
+        enabled_server_ids = [
+            int(ib["id"]) for ib in server_inbounds if ib.get("enable", True)
+        ]
+        if enabled_server_ids:
+            target_inbound_ids = [i for i in inbound_ids if i in enabled_server_ids]
+            if not target_inbound_ids:
+                target_inbound_ids = enabled_server_ids
+    except Exception as e:
+        logger.warning("Failed to validate inbound_ids with X-UI panel: %s", e)
+
+    if not target_inbound_ids:
+        target_inbound_ids = inbound_ids
+
+    if not target_inbound_ids:
+        raise RuntimeError("هیچ اینباند فعالی روی سرور جهت ساخت اشتراک یافت نشد.")
+
+    sub_id = uuid.uuid4().hex[:16]
+
     payload = {
         "client": {
             "email": email,
@@ -133,13 +156,13 @@ async def add_client(
             "tgId": tg_id,
             "limitIp": limit_ip,
             "enable": enable,
-            "subId": "",
+            "subId": sub_id,
             "reset": 0,
             "comment": "",
             "security": "auto",
             "group": group,
         },
-        "inboundIds": inbound_ids,
+        "inboundIds": target_inbound_ids,
     }
     data = await _request("POST", "/panel/api/clients/add", json_data=payload)
     return data
