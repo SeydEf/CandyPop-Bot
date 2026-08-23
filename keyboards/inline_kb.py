@@ -512,18 +512,23 @@ def deposit_amount_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="50,000 تومان", callback_data="deposit_amt_50000"
+                    text="50,000 تومان", callback_data="deposit_select_50000"
                 ),
                 InlineKeyboardButton(
-                    text="100,000 تومان", callback_data="deposit_amt_100000"
+                    text="100,000 تومان", callback_data="deposit_select_100000"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="200,000 تومان", callback_data="deposit_amt_200000"
+                    text="200,000 تومان", callback_data="deposit_select_200000"
                 ),
                 InlineKeyboardButton(
-                    text="500,000 تومان", callback_data="deposit_amt_500000"
+                    text="500,000 تومان", callback_data="deposit_select_500000"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ مبلغ دلخواه", callback_data="deposit_select_custom"
                 ),
             ],
             [

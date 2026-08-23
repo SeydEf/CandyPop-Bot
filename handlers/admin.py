@@ -99,7 +99,10 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
                 f"👛 موجودی جدید کیف پول: {format_price(new_balance)}"
             )
             await bot.send_message(chat_id=tg_id, text=user_text, parse_mode="HTML")
-            await callback.message.edit_text(
+            from utils.helpers import safe_edit_text
+
+            await safe_edit_text(
+                callback.message,
                 f"✅ فاکتور <code>{invoice_id}</code> (شارژ کیف پول به مبلغ {format_price(amount)}) با موفقیت تأیید شد.",
                 parse_mode="HTML",
             )

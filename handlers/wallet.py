@@ -36,6 +36,7 @@ async def wallet_deposit_start(message: types.Message, state: FSMContext) -> Non
 
 
 @router.callback_query(F.data.startswith("deposit_select_"))
+@router.callback_query(F.data.startswith("deposit_amt_"))
 async def wallet_deposit_preset(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:

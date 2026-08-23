@@ -46,12 +46,19 @@ async def safe_edit_text(
     disable_web_page_preview: bool | None = None,
 ) -> bool:
     try:
-        await message.edit_text(
-            text=text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            disable_web_page_preview=disable_web_page_preview,
-        )
+        if message.photo:
+            await message.edit_caption(
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+        else:
+            await message.edit_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                disable_web_page_preview=disable_web_page_preview,
+            )
         return True
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):

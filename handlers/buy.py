@@ -837,29 +837,56 @@ async def receive_receipt_photo(
     await update_invoice_status(invoice_id, "paid")
     await state.clear()
 
+    is_topup = invoice.get("target_email") == "TOPUP" or (
+        invoice.get("duration_days") == 0 and invoice.get("data_gb") == 0
+    )
+
+    if is_topup:
+        user_msg = (
+            "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+            "درخواست افزایش موجودی کیف پول شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+            "به‌محض تأیید، موجودی کیف پول شما شارژ خواهد شد. 👛"
+        )
+    else:
+        user_msg = (
+            "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+            "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+            "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀"
+        )
+
     await message.answer(
-        "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-        "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-        "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀",
+        user_msg,
         parse_mode="HTML",
         reply_markup=main_menu_keyboard(),
     )
 
     users_count = invoice.get("users_count", 1)
-    admin_text = (
-        f"🔔 <b>درخواست تأیید پرداخت (کارت به کارت)</b>\n\n"
-        f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-        f"👤 کاربر: <code>{message.from_user.id}</code>"
-    )
-    if message.from_user.username:
-        admin_text += f" (@{message.from_user.username})"
-    admin_text += (
-        f"\n\n📦 سفارش:\n"
-        f"⏱ مدت: {invoice['duration_days']} روز\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
-        f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
-        f"💰 مبلغ: {format_price(invoice['amount'])}\n"
-    )
+    if is_topup:
+        admin_text = (
+            f"👛 <b>درخواست افزایش موجودی کیف پول (کارت به کارت)</b>\n\n"
+            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
+            f"👤 کاربر: <code>{message.from_user.id}</code>"
+        )
+        if message.from_user.username:
+            admin_text += f" (@{message.from_user.username})"
+        admin_text += (
+            f"\n\n💰 <b>مبلغ افزایش موجودی:</b> {format_price(invoice['amount'])}\n"
+        )
+    else:
+        admin_text = (
+            f"🔔 <b>درخواست تأیید پرداخت اشتراک (کارت به کارت)</b>\n\n"
+            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
+            f"👤 کاربر: <code>{message.from_user.id}</code>"
+        )
+        if message.from_user.username:
+            admin_text += f" (@{message.from_user.username})"
+        admin_text += (
+            f"\n\n📦 <b>جزئیات سفارش:</b>\n"
+            f"⏱ مدت: {invoice['duration_days']} روز\n"
+            f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
+            f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
+            f"💰 مبلغ: {format_price(invoice['amount'])}\n"
+        )
 
     from db.models import get_all_admins, has_admin_permission
 
@@ -923,30 +950,58 @@ async def receive_receipt_text(
     await update_invoice_status(invoice_id, "paid")
     await state.clear()
 
+    is_topup = invoice.get("target_email") == "TOPUP" or (
+        invoice.get("duration_days") == 0 and invoice.get("data_gb") == 0
+    )
+
+    if is_topup:
+        user_msg = (
+            "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+            "درخواست افزایش موجودی کیف پول شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+            "به‌محض تأیید، موجودی کیف پول شما شارژ خواهد شد. 👛"
+        )
+    else:
+        user_msg = (
+            "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+            "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+            "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀"
+        )
+
     await message.answer(
-        "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-        "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-        "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀",
+        user_msg,
         parse_mode="HTML",
         reply_markup=main_menu_keyboard(),
     )
 
     users_count = invoice.get("users_count", 1)
-    admin_text = (
-        f"🔔 <b>درخواست تأیید پرداخت (متنی)</b>\n\n"
-        f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-        f"👤 کاربر: <code>{message.from_user.id}</code>"
-    )
-    if message.from_user.username:
-        admin_text += f" (@{message.from_user.username})"
-    admin_text += (
-        f"\n\n📦 سفارش:\n"
-        f"⏱ مدت: {invoice['duration_days']} روز\n"
-        f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
-        f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
-        f"💰 مبلغ: {format_price(invoice['amount'])}\n\n"
-        f"📝 متن رسید:\n<code>{receipt_text}</code>"
-    )
+    if is_topup:
+        admin_text = (
+            f"👛 <b>درخواست افزایش موجودی کیف پول (متنی)</b>\n\n"
+            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
+            f"👤 کاربر: <code>{message.from_user.id}</code>"
+        )
+        if message.from_user.username:
+            admin_text += f" (@{message.from_user.username})"
+        admin_text += (
+            f"\n\n💰 <b>مبلغ افزایش موجودی:</b> {format_price(invoice['amount'])}\n\n"
+            f"📝 متن رسید:\n<code>{receipt_text}</code>"
+        )
+    else:
+        admin_text = (
+            f"🔔 <b>درخواست تأیید پرداخت اشتراک (متنی)</b>\n\n"
+            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
+            f"👤 کاربر: <code>{message.from_user.id}</code>"
+        )
+        if message.from_user.username:
+            admin_text += f" (@{message.from_user.username})"
+        admin_text += (
+            f"\n\n📦 <b>جزئیات سفارش:</b>\n"
+            f"⏱ مدت: {invoice['duration_days']} روز\n"
+            f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
+            f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
+            f"💰 مبلغ: {format_price(invoice['amount'])}\n\n"
+            f"📝 متن رسید:\n<code>{receipt_text}</code>"
+        )
 
     from db.models import get_all_admins, has_admin_permission
 

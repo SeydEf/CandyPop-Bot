@@ -346,7 +346,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
         return
 
     new_uuid = str(uuid.uuid4())
-    new_sub_id = str(uuid.uuid4())
+    new_sub_id = str(uuid.uuid4().hex[:16])
 
     update_data = dict(client)
     update_data["uuid"] = new_uuid
