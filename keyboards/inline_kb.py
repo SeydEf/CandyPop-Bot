@@ -6,47 +6,62 @@ from config import DURATION_OPTIONS, VOLUME_TIERS
 from utils.formatting import format_price, to_persian_digits
 
 
-def duration_keyboard() -> InlineKeyboardMarkup:
-    buttons = []
-    for days in DURATION_OPTIONS:
-        label = f"{days} روز"
-        buttons.append(
-            InlineKeyboardButton(text=label, callback_data=f"buy_dur_{days}")
+async def volume_keyboard() -> InlineKeyboardMarkup:
+    from services.pricing import calculate_data_price
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for gb, _ in VOLUME_TIERS.items():
+        data_price = await calculate_data_price(gb)
+        label = f"📊 {gb} گیگ ({format_price(data_price)})"
+        btn = InlineKeyboardButton(
+            text=label,
+            callback_data=f"buy_vol_{gb}",
         )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            buttons,
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel")],
+        rows.append([btn])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📝 حجم دلخواه",
+                callback_data="buy_vol_custom",
+            )
         ]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     dec_users = max(1, users - 1)
     inc_users = min(10, users + 1)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="➖", callback_data=f"buy_users_step_{duration}_{dec_users}"
+                    text="➖", callback_data=f"buy_users_step_{gb}_{dec_users}"
                 ),
                 InlineKeyboardButton(
                     text=f"👤 {to_persian_digits(users)} کاربر",
                     callback_data="buy_noop",
                 ),
                 InlineKeyboardButton(
-                    text="➕", callback_data=f"buy_users_step_{duration}_{inc_users}"
+                    text="➕", callback_data=f"buy_users_step_{gb}_{inc_users}"
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="✅ ادامه",
-                    callback_data=f"buy_users_confirm_{duration}_{users}",
+                    callback_data=f"buy_users_confirm_{gb}_{users}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت", callback_data="buy_back_duration"
+                    text="🔙 بازگشت به انتخاب حجم", callback_data="buy_back_volume"
                 ),
                 InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
             ],
@@ -54,36 +69,24 @@ def users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
     )
 
 
-async def volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    from services.pricing import calculate_total_price
-
+def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    row: list[InlineKeyboardButton] = []
-
-    for i, (gb, _) in enumerate(VOLUME_TIERS.items()):
-        total_price = await calculate_total_price(gb, duration, users)
-        label = f"{gb}GB — {format_price(total_price)}"
-        btn = InlineKeyboardButton(
-            text=label,
-            callback_data=f"buy_vol_{duration}_{users}_{gb}",
+    for days in DURATION_OPTIONS:
+        months = days // 30
+        label = f"⏱ {days} روز ({to_persian_digits(months)} ماهه)"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label, callback_data=f"buy_dur_{gb}_{users}_{days}"
+                )
+            ]
         )
-        row.append(btn)
-        if len(row) == 2 or i == len(VOLUME_TIERS) - 1:
-            rows.append(row)
-            row = []
 
     rows.append(
         [
             InlineKeyboardButton(
-                text="📝 حجم دلخواه",
-                callback_data=f"buy_vol_{duration}_{users}_custom",
-            )
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="🔙 بازگشت", callback_data=f"buy_back_users_{duration}_{users}"
+                text="🔙 بازگشت به انتخاب کاربر",
+                callback_data=f"buy_back_users_{gb}_{users}",
             ),
             InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
         ]
@@ -124,7 +127,7 @@ def payment_method_keyboard(
             [
                 InlineKeyboardButton(
                     text="🔙 بازگشت",
-                    callback_data=f"buy_back_volume_{duration}_{users}",
+                    callback_data=f"buy_back_duration_{gb}_{users}",
                 ),
                 InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
             ],
