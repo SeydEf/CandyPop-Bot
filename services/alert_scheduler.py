@@ -52,11 +52,51 @@ async def check_and_send_alerts(bot: Bot) -> None:
             used = up + down
             expiry_time = client.get("expiryTime", 0)
 
+            is_test_sub = email.endswith("_test") or "_test" in email
+
             # 1. Full Expiration Check (0 GB or Expiry Time Passed)
             is_volume_expired = total > 0 and used >= total
             is_time_expired = expiry_time > 0 and now_ms >= expiry_time
 
             if is_volume_expired or is_time_expired:
+                if is_test_sub:
+                    try:
+                        reason = (
+                            "اتمام حجم ترافیک تست"
+                            if is_volume_expired
+                            else "پایان مهلت زمانی تست"
+                        )
+                        text = (
+                            f"⛔️ <b>اشتراک تست رایگان شما به پایان رسید</b>\n\n"
+                            f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                            f"📌 <b>علت انقضا:</b> {reason}\n\n"
+                            f"مهلت استفاده از اشتراک تست به پایان رسیده و این سرویس از سرور حذف گردید. در صورت تمایل می‌توانید از بخش «🛒 خرید اشتراک» سرویس جدید تهیه کنید."
+                        )
+                        await bot.send_message(
+                            chat_id=tg_id,
+                            text=text,
+                            parse_mode="HTML",
+                        )
+                    except (TelegramForbiddenError, TelegramBadRequest):
+                        pass
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to send test sub expired notice to %s: %s", email, e
+                        )
+
+                    try:
+                        logger.info("Auto-deleting expired test client %s", email)
+                        await xui_api.delete_client(email)
+                        from db.models import clear_notified_alerts
+
+                        await clear_notified_alerts(email)
+                    except Exception as e:
+                        logger.error(
+                            "Failed to delete expired test client %s: %s", email, e
+                        )
+
+                    continue
+
                 if not await has_notified_alert(email, "expired_notice"):
                     try:
                         reason = (

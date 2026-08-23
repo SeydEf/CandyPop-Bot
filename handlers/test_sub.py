@@ -56,7 +56,7 @@ async def test_subscription(message: types.Message) -> None:
 
     try:
         username = message.from_user.username
-        email = generate_email(tg_id, username)
+        email = generate_email(tg_id, username, test=True)
         total_bytes = gb_to_bytes(test_gb)
         expiry_ms = int((time.time() + test_duration * 86400) * 1000)
 
