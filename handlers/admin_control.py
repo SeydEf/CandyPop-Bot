@@ -2798,9 +2798,6 @@ async def admin_bulk_gift_days_confirm(callback: types.CallbackQuery, bot: Bot) 
     await callback.answer()
 
 
-# ──────────────────────────── Admin Management System ────────────────────────────
-
-
 @router.callback_query(F.data == "admin_manage_admins_menu")
 async def admin_manage_admins_menu(
     callback: types.CallbackQuery, state: FSMContext

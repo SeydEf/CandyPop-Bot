@@ -54,7 +54,6 @@ async def check_and_send_alerts(bot: Bot) -> None:
 
             is_test_sub = email.endswith("_test") or "_test" in email
 
-            # 1. Full Expiration Check (0 GB or Expiry Time Passed)
             is_volume_expired = total > 0 and used >= total
             is_time_expired = expiry_time > 0 and now_ms >= expiry_time
 
@@ -137,7 +136,6 @@ async def check_and_send_alerts(bot: Bot) -> None:
                             "Failed to send expired_notice to %s: %s", email, e
                         )
 
-            # 2. Low Bandwidth Check (Per 1GB Milestones)
             if (
                 low_gb_enabled
                 and total > 0
@@ -197,7 +195,6 @@ async def check_and_send_alerts(bot: Bot) -> None:
                                 e,
                             )
 
-            # 3. Expiring Days Check (Daily Reminder Until Expiration)
             if (
                 expiring_days_enabled
                 and expiry_time > 0
@@ -252,7 +249,6 @@ async def check_and_send_alerts(bot: Bot) -> None:
                                 e,
                             )
 
-            # 4. Auto-Deletion for Expired Subscriptions (after auto_delete_days)
             if auto_delete_days > 0 and expiry_time > 0:
                 expired_ms = now_ms - expiry_time
                 if expired_ms > 0:

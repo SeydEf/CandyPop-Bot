@@ -708,18 +708,13 @@ async def set_ip_checker_config(
         await set_setting("ip_checker_interval_minutes", str(interval_minutes))
 
 
-# ──────────────────────────── Admin Role Management ────────────────────────────
-
-
 def is_owner(tg_id: int) -> bool:
-    """Check if tg_id belongs to the bot owner (ADMIN_CHAT_ID)."""
     from config import ADMIN_CHAT_ID
 
     return tg_id > 0 and tg_id == ADMIN_CHAT_ID
 
 
 async def is_admin(tg_id: int) -> bool:
-    """Check if tg_id is the bot owner or a registered secondary admin."""
     if is_owner(tg_id):
         return True
     if tg_id <= 0:
@@ -734,7 +729,6 @@ async def is_admin(tg_id: int) -> bool:
 
 
 async def get_all_admins() -> list[dict[str, Any]]:
-    """Fetch all registered secondary bot admins."""
     db = await get_db()
     async with db.execute(
         "SELECT tg_id, username, added_by, permissions, added_at FROM bot_admins ORDER BY added_at DESC"
@@ -744,7 +738,6 @@ async def get_all_admins() -> list[dict[str, Any]]:
 
 
 async def add_admin(tg_id: int, username: str = "", added_by: int = 0) -> bool:
-    """Register a new secondary bot admin."""
     if is_owner(tg_id):
         return False
     db = await get_db()
@@ -762,7 +755,6 @@ async def add_admin(tg_id: int, username: str = "", added_by: int = 0) -> bool:
 
 
 async def remove_admin(tg_id: int) -> bool:
-    """Remove a secondary bot admin."""
     if is_owner(tg_id):
         return False
     db = await get_db()
@@ -807,7 +799,6 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
 
 
 async def get_admin_permissions(tg_id: int) -> dict[str, bool]:
-    """Fetch granted permissions dict for a secondary admin."""
     if is_owner(tg_id):
         return {k: True for k in PERMISSION_TITLES}
 
@@ -829,7 +820,6 @@ async def get_admin_permissions(tg_id: int) -> dict[str, bool]:
 
 
 async def has_admin_permission(tg_id: int, perm_key: str) -> bool:
-    """Check if tg_id has a specific admin permission."""
     if is_owner(tg_id):
         return True
     if tg_id <= 0:
@@ -840,7 +830,6 @@ async def has_admin_permission(tg_id: int, perm_key: str) -> bool:
 
 
 async def toggle_admin_permission(tg_id: int, perm_key: str) -> dict[str, bool]:
-    """Toggle a permission key ON/OFF for a secondary admin."""
     if is_owner(tg_id) or perm_key not in PERMISSION_TITLES:
         return {k: True for k in PERMISSION_TITLES}
 
