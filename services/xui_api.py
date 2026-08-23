@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -374,6 +375,121 @@ async def delete_client_group(name: str) -> dict[str, Any]:
     payload = {"name": name}
     data = await _request("POST", "/panel/api/clients/groups/delete", json_data=payload)
     return data
+
+
+async def bulk_grant_volume(extra_gb: int, bot: Any | None = None) -> tuple[int, int]:
+    clients = await list_clients()
+    if not clients:
+        return 0, 0
+
+    success_count = 0
+    fail_count = 0
+    extra_bytes = extra_gb * (1024**3)
+
+    from db.models import resolve_client_tg_id
+    from utils.formatting import format_size_gb
+
+    for c in clients:
+        email = c.get("email", "")
+        if not email:
+            continue
+
+        try:
+            client_full = await get_client(email)
+            if not client_full:
+                fail_count += 1
+                continue
+
+            current_gb_bytes = client_full.get("totalGB", 0)
+            new_gb_bytes = current_gb_bytes + extra_bytes
+
+            update_data = dict(client_full)
+            update_data["totalGB"] = new_gb_bytes
+            await update_client(email, update_data)
+
+            success_count += 1
+
+            if bot:
+                tg_id = await resolve_client_tg_id(client_full)
+                if tg_id > 0:
+                    try:
+                        gift_msg = (
+                            f"🎁 <b>اطلاعیه هدیه ویژه مدیریت!</b>\n\n"
+                            f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                            f"📊 <b>حجم هدیه افزوده شده:</b> <b>+{format_size_gb(extra_gb)}</b>\n\n"
+                            f"اعتبار حجم جدید با موفقیت به سرویس شما اضافه شد."
+                        )
+                        await bot.send_message(
+                            chat_id=tg_id, text=gift_msg, parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("Failed to grant bulk volume to %s: %s", email, e)
+            fail_count += 1
+
+    return success_count, fail_count
+
+
+async def bulk_grant_duration(
+    extra_days: int, bot: Any | None = None
+) -> tuple[int, int]:
+    clients = await list_clients()
+    if not clients:
+        return 0, 0
+
+    success_count = 0
+    fail_count = 0
+    extra_ms = extra_days * 86400 * 1000
+
+    from db.models import resolve_client_tg_id
+    from utils.formatting import to_persian_digits
+
+    for c in clients:
+        email = c.get("email", "")
+        if not email:
+            continue
+
+        try:
+            client_full = await get_client(email)
+            if not client_full:
+                fail_count += 1
+                continue
+
+            current_expiry = client_full.get("expiryTime", 0)
+            now_ms = int(time.time() * 1000)
+
+            if current_expiry and current_expiry > now_ms:
+                new_expiry = current_expiry + extra_ms
+            else:
+                new_expiry = now_ms + extra_ms
+
+            update_data = dict(client_full)
+            update_data["expiryTime"] = new_expiry
+            await update_client(email, update_data)
+
+            success_count += 1
+
+            if bot:
+                tg_id = await resolve_client_tg_id(client_full)
+                if tg_id > 0:
+                    try:
+                        gift_msg = (
+                            f"🎁 <b>اطلاعیه هدیه ویژه مدیریت!</b>\n\n"
+                            f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                            f"⏱ <b>مدت تمدید هدیه:</b> <b>+{to_persian_digits(extra_days)} روز</b>\n\n"
+                            f"زمان اعتبار جدید با موفقیت به سرویس شما اضافه شد."
+                        )
+                        await bot.send_message(
+                            chat_id=tg_id, text=gift_msg, parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("Failed to grant bulk duration to %s: %s", email, e)
+            fail_count += 1
+
+    return success_count, fail_count
 
 
 async def close_client() -> None:

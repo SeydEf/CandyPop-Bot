@@ -207,6 +207,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="🎁 هدیه همگانی (حجم و زمان به همه کاربران)",
+                    callback_data="admin_bulk_gift_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🏷️ مدیریت کدهای تخفیف",
                     callback_data="admin_discounts_menu",
                 ),
@@ -2602,3 +2608,148 @@ async def admin_ip_edit_interval_save(
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+
+# ──────────────────────────── Bulk Gift System ────────────────────────────
+
+
+@router.callback_query(F.data == "admin_bulk_gift_menu")
+async def admin_bulk_gift_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from keyboards.inline_kb import bulk_gift_menu_keyboard
+
+    text = (
+        "🎁 <b>پنل هدیه همگانی (افزایش حجم و زمان همه کاربران)</b>\n\n"
+        "از این بخش می‌توانید به صورت دسته‌جمعی به تمامی اشتراک‌های فعال در سرور، حجم رایگان یا روزهای اضافی هدیه دهید.\n\n"
+        "گزینه مورد نظر جهت تنظیم مقدار هدیه را انتخاب کنید:"
+    )
+    await safe_edit_text(
+        callback.message,  # type: ignore[arg-type]
+        text,
+        reply_markup=bulk_gift_menu_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_bulk_gift_gb_start")
+@router.callback_query(F.data.startswith("admin_bulk_gift_gb_step_"))
+async def admin_bulk_gift_gb_stepper(callback: types.CallbackQuery) -> None:
+    if not _is_admin(callback):
+        return
+
+    if callback.data.startswith("admin_bulk_gift_gb_step_"):
+        gb = int(callback.data.split("_")[-1])
+    else:
+        gb = 1
+
+    from keyboards.inline_kb import bulk_gift_gb_stepper_keyboard
+
+    text = (
+        "📊 <b>تنظیم مقدار هدیه حجم همگانی</b>\n\n"
+        "میزان حجم هدیه مورد نظر جهت افزودن به کلیه اشتراک‌ها را تعیین کنید:\n\n"
+        "💡 <i>با کلیک روی دکمه‌های ➕ و ➖ مقدار هدیه را تنظیم کرده و سپس دکمه اعمال را بزنید.</i>"
+    )
+
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=bulk_gift_gb_stepper_keyboard(gb),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await callback.message.edit_reply_markup(
+            reply_markup=bulk_gift_gb_stepper_keyboard(gb)
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_bulk_gift_gb_confirm_"))
+async def admin_bulk_gift_gb_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(callback):
+        return
+    gb = int(callback.data.split("_")[-1])
+
+    await callback.message.edit_text(
+        f"⏳ <b>در حال اعمال هدیه +{format_size_gb(gb)} به تمامی اشتراک‌ها... لطفاً شکیبا باشید.</b>",
+        parse_mode="HTML",
+    )
+
+    from services.xui_api import bulk_grant_volume
+
+    success_cnt, fail_cnt = await bulk_grant_volume(gb, bot)
+
+    panel_text, keyboard = await _build_pricing_panel()
+    res_text = (
+        f"✅ <b>عملیات اهدای حجم همگانی با موفقیت انجام شد.</b>\n\n"
+        f"📊 <b>مقدار هدیه:</b> +{format_size_gb(gb)}\n"
+        f"🟢 <b>تعداد موفق:</b> {to_persian_digits(success_cnt)} اشتراک\n"
+        f"🔴 <b>تعداد ناموفق:</b> {to_persian_digits(fail_cnt)} اشتراک\n\n"
+        f"{panel_text}"
+    )
+    await callback.message.edit_text(res_text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_bulk_gift_days_start")
+@router.callback_query(F.data.startswith("admin_bulk_gift_days_step_"))
+async def admin_bulk_gift_days_stepper(callback: types.CallbackQuery) -> None:
+    if not _is_admin(callback):
+        return
+
+    if callback.data.startswith("admin_bulk_gift_days_step_"):
+        days = int(callback.data.split("_")[-1])
+    else:
+        days = 1
+
+    from keyboards.inline_kb import bulk_gift_days_stepper_keyboard
+
+    text = (
+        "⏱ <b>تنظیم مقدار هدیه تمدید زمان همگانی</b>\n\n"
+        "تعداد روزهای اضافه مورد نظر جهت تمدید اعتبار کلیه اشتراک‌ها را تعیین کنید:\n\n"
+        "💡 <i>با کلیک روی دکمه‌های ➕ و ➖ تعداد روزها را تنظیم کرده و سپس دکمه اعمال را بزنید.</i>"
+    )
+
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=bulk_gift_days_stepper_keyboard(days),
+            parse_mode="HTML",
+        )
+    except Exception:
+        await callback.message.edit_reply_markup(
+            reply_markup=bulk_gift_days_stepper_keyboard(days)
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_bulk_gift_days_confirm_"))
+async def admin_bulk_gift_days_confirm(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(callback):
+        return
+    days = int(callback.data.split("_")[-1])
+
+    await callback.message.edit_text(
+        f"⏳ <b>در حال تمدید هدیه +{to_persian_digits(days)} روز به تمامی اشتراک‌ها... لطفاً شکیبا باشید.</b>",
+        parse_mode="HTML",
+    )
+
+    from services.xui_api import bulk_grant_duration
+
+    success_cnt, fail_cnt = await bulk_grant_duration(days, bot)
+
+    panel_text, keyboard = await _build_pricing_panel()
+    res_text = (
+        f"✅ <b>عملیات تمدید زمان همگانی با موفقیت انجام شد.</b>\n\n"
+        f"⏱ <b>مقدار تمدید:</b> +{to_persian_digits(days)} روز\n"
+        f"🟢 <b>تعداد موفق:</b> {to_persian_digits(success_cnt)} اشتراک\n"
+        f"🔴 <b>تعداد ناموفق:</b> {to_persian_digits(fail_cnt)} اشتراک\n\n"
+        f"{panel_text}"
+    )
+    await callback.message.edit_text(res_text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()

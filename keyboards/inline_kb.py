@@ -581,3 +581,93 @@ def orders_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMar
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def bulk_gift_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 هدیه حجم عمومی (+GB)",
+                    callback_data="admin_bulk_gift_gb_start",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏱ هدیه تمدید زمان عمومی (+روز)",
+                    callback_data="admin_bulk_gift_days_start",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                )
+            ],
+        ]
+    )
+
+
+def bulk_gift_gb_stepper_keyboard(gb: int) -> InlineKeyboardMarkup:
+    dec_gb = max(1, gb - 1)
+    inc_gb = gb + 1
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕", callback_data=f"admin_bulk_gift_gb_step_{inc_gb}"
+                ),
+                InlineKeyboardButton(
+                    text=f"📊 هدیه: +{to_persian_digits(gb)} گیگ",
+                    callback_data="buy_noop",
+                ),
+                InlineKeyboardButton(
+                    text="➖", callback_data=f"admin_bulk_gift_gb_step_{dec_gb}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🚀 اعمال هدیه به همه کاربران",
+                    callback_data=f"admin_bulk_gift_gb_confirm_{gb}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به منوی هدیه",
+                    callback_data="admin_bulk_gift_menu",
+                )
+            ],
+        ]
+    )
+
+
+def bulk_gift_days_stepper_keyboard(days: int) -> InlineKeyboardMarkup:
+    dec_days = max(1, days - 1)
+    inc_days = days + 1
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕", callback_data=f"admin_bulk_gift_days_step_{inc_days}"
+                ),
+                InlineKeyboardButton(
+                    text=f"⏱ تمدید: +{to_persian_digits(days)} روز",
+                    callback_data="buy_noop",
+                ),
+                InlineKeyboardButton(
+                    text="➖", callback_data=f"admin_bulk_gift_days_step_{dec_days}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🚀 اعمال هدیه به همه کاربران",
+                    callback_data=f"admin_bulk_gift_days_confirm_{days}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به منوی هدیه",
+                    callback_data="admin_bulk_gift_menu",
+                )
+            ],
+        ]
+    )
