@@ -498,11 +498,13 @@ async def get_all_user_ids() -> list[int]:
     return [r["tg_id"] for r in rows]
 
 
-async def get_alert_config() -> dict[str, float | int]:
+async def get_alert_config() -> dict[str, Any]:
     gb_str = await get_setting("alert_min_gb", "2.0") or "2.0"
     days_str = await get_setting("alert_min_days", "3") or "3"
     del_days_str = await get_setting("auto_delete_expired_days", "3") or "3"
     interval_str = await get_setting("alert_poll_interval_minutes", "30") or "30"
+    low_gb_en_str = await get_setting("alert_low_gb_enabled", "1") or "1"
+    expiring_days_en_str = await get_setting("alert_expiring_days_enabled", "1") or "1"
     try:
         min_gb = float(gb_str)
     except ValueError:
@@ -519,11 +521,15 @@ async def get_alert_config() -> dict[str, float | int]:
         interval_minutes = int(interval_str)
     except ValueError:
         interval_minutes = 30
+    low_gb_enabled = low_gb_en_str == "1"
+    expiring_days_enabled = expiring_days_en_str == "1"
     return {
         "min_gb": min_gb,
         "min_days": min_days,
         "auto_delete_days": auto_delete_days,
         "interval_minutes": interval_minutes,
+        "low_gb_enabled": low_gb_enabled,
+        "expiring_days_enabled": expiring_days_enabled,
     }
 
 
@@ -532,6 +538,8 @@ async def set_alert_config(
     min_days: int | None = None,
     auto_delete_days: int | None = None,
     interval_minutes: int | None = None,
+    low_gb_enabled: bool | None = None,
+    expiring_days_enabled: bool | None = None,
 ) -> None:
     if min_gb is not None:
         await set_setting("alert_min_gb", str(min_gb))
@@ -541,6 +549,12 @@ async def set_alert_config(
         await set_setting("auto_delete_expired_days", str(auto_delete_days))
     if interval_minutes is not None:
         await set_setting("alert_poll_interval_minutes", str(interval_minutes))
+    if low_gb_enabled is not None:
+        await set_setting("alert_low_gb_enabled", "1" if low_gb_enabled else "0")
+    if expiring_days_enabled is not None:
+        await set_setting(
+            "alert_expiring_days_enabled", "1" if expiring_days_enabled else "0"
+        )
 
 
 async def has_notified_alert(email: str, alert_type: str) -> bool:

@@ -85,6 +85,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     min_days_alert = int(alert_config["min_days"])
     auto_delete_days = int(alert_config["auto_delete_days"])
     interval_minutes = int(alert_config.get("interval_minutes", 30))
+    low_gb_enabled = bool(alert_config.get("low_gb_enabled", True))
+    expiring_days_enabled = bool(alert_config.get("expiring_days_enabled", True))
 
     base_rate = config["base_gb_rate"]
     user_surcharge = config["user_surcharge"]
@@ -127,10 +129,13 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         else "🔴 غیرفعال"
     )
 
+    low_gb_status = "🟢 فعال" if low_gb_enabled else "🔴 غیرفعال"
+    exp_days_status = "🟢 فعال" if expiring_days_enabled else "🔴 غیرفعال"
+
     alert_text = (
         f"  • فاصله زمان بررسی (پایش): هر {to_persian_digits(interval_minutes)} دقیقه\n"
-        f"  • هشدار ترافیک: کمتر از {format_size_gb(min_gb_alert)}\n"
-        f"  • هشدار انقضا: کمتر از {to_persian_digits(min_days_alert)} روز\n"
+        f"  • هشدار پله‌ای حجم (۱ گیگی): {low_gb_status} (کمتر از {format_size_gb(min_gb_alert)})\n"
+        f"  • یادآور روزانه زمان: {exp_days_status} (کمتر از {to_persian_digits(min_days_alert)} روز)\n"
         f"  • حذف منقضی‌شده‌ها: {del_days_str}\n"
     )
 
@@ -1938,6 +1943,8 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     min_days = int(alert_config["min_days"])
     auto_delete_days = int(alert_config["auto_delete_days"])
     interval_minutes = int(alert_config.get("interval_minutes", 30))
+    low_gb_enabled = bool(alert_config.get("low_gb_enabled", True))
+    expiring_days_enabled = bool(alert_config.get("expiring_days_enabled", True))
 
     del_str = (
         f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
@@ -1945,18 +1952,42 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         else "<b>🔴 غیرفعال (بدون حذف)</b>"
     )
 
+    low_gb_btn_text = (
+        "🟢 هشدار پله‌ای حجم (فعال)"
+        if low_gb_enabled
+        else "🔴 هشدار پله‌ای حجم (غیرفعال)"
+    )
+    exp_days_btn_text = (
+        "🟢 یادآور روزانه زمان (فعال)"
+        if expiring_days_enabled
+        else "🔴 یادآور روزانه زمان (غیرفعال)"
+    )
+
     text = (
         f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاكسازی اشتراك‌ها</b>\n\n"
-        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس از طریق دکمه «🔄 تمدید اشتراک» آگاه می‌سازد.\n\n"
+        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس یا در لحظه انقضا آگاه می‌سازد.\n\n"
         f"⏳ <b>فاصله زمان بررسی پایش:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
-        f"📊 <b>حدآستانه هشدار ترافیک فعلی:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
-        f"⏱ <b>حدآستانه هشدار انقضا فعلی:</b> کمتر از <b>{to_persian_digits(min_days)} روز</b>\n"
+        f"📊 <b>هشدار پله‌ای حجم (هر ۱ گیگ):</b> {low_gb_btn_text}\n"
+        f"⏱ <b>حدآستانه هشدار ترافیک:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
+        f"📅 <b>یادآور روزانه اتمام زمان:</b> {exp_days_btn_text}\n"
+        f"⏱ <b>حدآستانه هشدار انقضا:</b> کمتر از <b>{to_persian_digits(min_days)} روز</b>\n"
         f"🗑 <b>مهلت حذف اشتراک‌های منقضی‌شده:</b> {del_str}\n\n"
-        f"لطفاً یکی از گزینه‌های زیر را برای تغییر انتخاب کنید:"
+        f"لطفاً یکی از گزینه‌های زیر را جهت تغییر انتخاب کنید:"
     )
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=low_gb_btn_text, callback_data="admin_alert_toggle_low_gb"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=exp_days_btn_text,
+                    callback_data="admin_alert_toggle_expiring_days",
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     text="⏳ تغییر فاصله زمانی بررسی (دقیقه)",
@@ -2187,3 +2218,33 @@ async def admin_alert_edit_interval_save(
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data == "admin_alert_toggle_low_gb")
+async def admin_alert_toggle_low_gb(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import get_alert_config, set_alert_config
+
+    cfg = await get_alert_config()
+    curr = bool(cfg.get("low_gb_enabled", True))
+    await set_alert_config(low_gb_enabled=not curr)
+    await admin_alert_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_alert_toggle_expiring_days")
+async def admin_alert_toggle_expiring_days(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    from db.models import get_alert_config, set_alert_config
+
+    cfg = await get_alert_config()
+    curr = bool(cfg.get("expiring_days_enabled", True))
+    await set_alert_config(expiring_days_enabled=not curr)
+    await admin_alert_menu(callback, state)

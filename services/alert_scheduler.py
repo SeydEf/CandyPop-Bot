@@ -26,6 +26,8 @@ async def check_and_send_alerts(bot: Bot) -> None:
         min_gb = float(config["min_gb"])
         min_days = int(config["min_days"])
         auto_delete_days = int(config["auto_delete_days"])
+        low_gb_enabled = bool(config.get("low_gb_enabled", True))
+        expiring_days_enabled = bool(config.get("expiring_days_enabled", True))
 
         clients = await xui_api.list_clients()
         if not clients:
@@ -48,17 +50,74 @@ async def check_and_send_alerts(bot: Bot) -> None:
             up = client.get("up", 0)
             down = client.get("down", 0)
             used = up + down
+            expiry_time = client.get("expiryTime", 0)
 
-            if total > 0:
+            # 1. Full Expiration Check (0 GB or Expiry Time Passed)
+            is_volume_expired = total > 0 and used >= total
+            is_time_expired = expiry_time > 0 and now_ms >= expiry_time
+
+            if is_volume_expired or is_time_expired:
+                if not await has_notified_alert(email, "expired_notice"):
+                    try:
+                        reason = (
+                            "اتمام کامل حجم ترافیک"
+                            if is_volume_expired
+                            else "پایان مهلت زمانی اعتبار"
+                        )
+                        text = (
+                            f"⛔️ <b>اشتراک شما غیرفعال و منقضی گردید!</b>\n\n"
+                            f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                            f"📌 <b>علت انقضا:</b> {reason}\n\n"
+                            f"اتصال سرویس شما قطع شده است. جهت اتصال مجدد و تمدید فوری اشتراک روی دکمه زیر کلیک کنید:"
+                        )
+                        keyboard = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [
+                                    InlineKeyboardButton(
+                                        text="🔄 تمدید اشتراک",
+                                        callback_data=f"sub_renew_{email}",
+                                    )
+                                ]
+                            ]
+                        )
+                        await bot.send_message(
+                            chat_id=tg_id,
+                            text=text,
+                            reply_markup=keyboard,
+                            parse_mode="HTML",
+                        )
+                        await record_notified_alert(email, "expired_notice")
+                        logger.info(
+                            "Sent expired_notice alert to %s (%s)", email, tg_id
+                        )
+                    except (TelegramForbiddenError, TelegramBadRequest):
+                        pass
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to send expired_notice to %s: %s", email, e
+                        )
+
+            # 2. Low Bandwidth Check (Per 1GB Milestones)
+            if low_gb_enabled and total > 0 and not is_volume_expired:
                 rem_bytes = max(0, total - used)
                 rem_gb = rem_bytes / (1024**3)
 
-                if 0 <= rem_gb <= min_gb:
-                    if not await has_notified_alert(email, "low_gb"):
+                if 0 < rem_gb <= min_gb:
+                    import math
+
+                    step_gb = int(math.floor(rem_gb))
+                    alert_key = f"low_gb_{step_gb}"
+
+                    if not await has_notified_alert(email, alert_key):
                         try:
                             rem_gb_str = format_size_gb(rem_gb)
+                            step_title = (
+                                f"کمتر از {to_persian_digits(step_gb + 1)} گیگ"
+                                if step_gb > 0
+                                else "کمتر از ۱ گیگ"
+                            )
                             text = (
-                                f"⚠️ <b>هشدار اتمام حجم ترافیک اشتراک</b>\n\n"
+                                f"⚠️ <b>هشدار اتمام حجم ترافیک ({step_title})</b>\n\n"
                                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                                 f"📊 <b>حجم باقی‌مانده:</b> <b>{rem_gb_str}</b>\n\n"
                                 f"ترافیک اشتراک شما روبه‌اتمام است. برای جلوگیری از قطعی سرویس، می‌توانید همین حالا آن را تمدید بفرمایید."
@@ -79,22 +138,28 @@ async def check_and_send_alerts(bot: Bot) -> None:
                                 reply_markup=keyboard,
                                 parse_mode="HTML",
                             )
-                            await record_notified_alert(email, "low_gb")
-                            logger.info("Sent low_gb alert to %s (%s)", email, tg_id)
+                            await record_notified_alert(email, alert_key)
+                            logger.info(
+                                "Sent %s alert to %s (%s)", alert_key, email, tg_id
+                            )
                         except (TelegramForbiddenError, TelegramBadRequest):
                             pass
                         except Exception as e:
                             logger.warning(
-                                "Failed to send low_gb alert to %s: %s", email, e
+                                "Failed to send %s alert to %s: %s",
+                                alert_key,
+                                email,
+                                e,
                             )
 
-            expiry_time = client.get("expiryTime", 0)
-            if expiry_time > 0:
+            # 3. Expiring Days Check (Daily Reminder Until Expiration)
+            if expiring_days_enabled and expiry_time > 0 and not is_time_expired:
                 rem_ms = expiry_time - now_ms
                 rem_days = int(rem_ms / (86400 * 1000))
 
                 if 0 <= rem_days <= min_days:
-                    if not await has_notified_alert(email, "expiring_days"):
+                    alert_key = f"expiring_day_{rem_days}"
+                    if not await has_notified_alert(email, alert_key):
                         try:
                             rem_days_str = (
                                 f"{to_persian_digits(rem_days)} روز"
@@ -102,7 +167,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
                                 else "کمتر از ۲۴ ساعت"
                             )
                             text = (
-                                f"⏳ <b>هشدار اتمام زمان اشتراک</b>\n\n"
+                                f"⏳ <b>یادآور روزانه اتمام زمان اشتراک</b>\n\n"
                                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                                 f"⏱ <b>زمان باقی‌مانده:</b> <b>{rem_days_str}</b>\n\n"
                                 f"مدت اعتبار اشتراک شما به زودی به پایان می‌رسد. جهت تمدید سرویس روی دکمه زیر کلیک نمایید."
@@ -123,17 +188,21 @@ async def check_and_send_alerts(bot: Bot) -> None:
                                 reply_markup=keyboard,
                                 parse_mode="HTML",
                             )
-                            await record_notified_alert(email, "expiring_days")
+                            await record_notified_alert(email, alert_key)
                             logger.info(
-                                "Sent expiring_days alert to %s (%s)", email, tg_id
+                                "Sent %s alert to %s (%s)", alert_key, email, tg_id
                             )
                         except (TelegramForbiddenError, TelegramBadRequest):
                             pass
                         except Exception as e:
                             logger.warning(
-                                "Failed to send expiring_days alert to %s: %s", email, e
+                                "Failed to send %s alert to %s: %s",
+                                alert_key,
+                                email,
+                                e,
                             )
 
+            # 4. Auto-Deletion for Expired Subscriptions (after auto_delete_days)
             if auto_delete_days > 0 and expiry_time > 0:
                 expired_ms = now_ms - expiry_time
                 if expired_ms > 0:
