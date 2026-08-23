@@ -169,7 +169,41 @@ async def _build_dashboard_info(
         f"💡 <i>از دکمه‌های زیر می‌توانید برای تمدید، تغییر نام و ... سرویس استفاده کنید.</i>"
     )
 
-    return text, subscription_manage_keyboard(email)
+    is_test_sub = email.endswith("_test") or "_test" in email
+
+    if is_test_sub:
+        show_renew = False
+    else:
+        import time
+        from db.models import get_alert_config
+
+        alert_config = await get_alert_config()
+        min_gb = float(alert_config.get("min_gb", 2.0))
+        min_days = int(alert_config.get("min_days", 3))
+
+        now_ms = int(time.time() * 1000)
+
+        is_low_gb = False
+        if total_bytes > 0:
+            rem_gb = (
+                max(0, total_bytes - used_traffic) / (1024**3)
+                if total_bytes > 0
+                else 999.0
+            )
+            if rem_gb <= min_gb:
+                is_low_gb = True
+
+        is_low_days = False
+        if expiry_ms > 0:
+            rem_days = (expiry_ms - now_ms) / (86400 * 1000)
+            if rem_days <= min_days:
+                is_low_days = True
+
+        show_renew = is_low_gb or is_low_days
+
+    return text, subscription_manage_keyboard(
+        email, show_renew=show_renew, is_test_sub=is_test_sub
+    )
 
 
 @router.callback_query(F.data == "sub_view_current")
@@ -203,6 +237,12 @@ async def view_subscription(callback: types.CallbackQuery, state: FSMContext) ->
 @router.callback_query(F.data.startswith("sub_rename_"))
 async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None:
     email = callback.data[len("sub_rename_") :]
+    if email.endswith("_test") or "_test" in email:
+        await callback.answer(
+            "❌ امکان تغییر نام اشتراک‌های تست وجود ندارد.", show_alert=True
+        )
+        return
+
     await state.set_state(SubStates.waiting_rename)
     await state.update_data(rename_email=email)
 
@@ -326,11 +366,14 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
             )
         else:
             new_link = _build_sub_link(new_sub_id)
+            is_test_sub = email.endswith("_test") or "_test" in email
             await callback.message.edit_text(
                 f"✅ <b>لینک اشتراک جدید با موفقیت صادر شد!</b>\n\n"
                 f"🔗 لینک هوشمند جدید:\n<code>{new_link}</code>\n\n"
                 "⚠️ لینک قبلی باطل گردید.",
-                reply_markup=subscription_manage_keyboard(email),
+                reply_markup=subscription_manage_keyboard(
+                    email, show_renew=False, is_test_sub=is_test_sub
+                ),
                 parse_mode="HTML",
             )
     except Exception as e:

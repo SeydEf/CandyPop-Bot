@@ -215,49 +215,65 @@ def subscriptions_list_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def subscription_manage_keyboard(email: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def subscription_manage_keyboard(
+    email: str, show_renew: bool = True, is_test_sub: bool = False
+) -> InlineKeyboardMarkup:
+    rows = []
+    if show_renew and not is_test_sub:
+        rows.append(
             [
                 InlineKeyboardButton(
                     text="🔄 تمدید اشتراک",
                     callback_data=f"sub_renew_{email}",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✏️ تغییر نام",
-                    callback_data=f"sub_rename_{email}",
-                ),
-                InlineKeyboardButton(
-                    text="🔄 تغییر لینک",
-                    callback_data=f"sub_regen_{email}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📱 QR Code",
-                    callback_data=f"sub_qr_{email}",
-                ),
-                InlineKeyboardButton(
-                    text="🔗 لینک‌های کانفیگ",
-                    callback_data=f"sub_links_{email}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🗑 حذف سرویس",
-                    callback_data=f"sub_delete_{email}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به لیست",
-                    callback_data="sub_back_list",
-                ),
-            ],
+            ]
+        )
+
+    second_row = []
+    if not is_test_sub:
+        second_row.append(
+            InlineKeyboardButton(
+                text="✏️ تغییر نام",
+                callback_data=f"sub_rename_{email}",
+            )
+        )
+    second_row.append(
+        InlineKeyboardButton(
+            text="🔄 تغییر لینک",
+            callback_data=f"sub_regen_{email}",
+        )
+    )
+    rows.append(second_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📱 QR Code",
+                callback_data=f"sub_qr_{email}",
+            ),
+            InlineKeyboardButton(
+                text="🔗 لینک‌های کانفیگ",
+                callback_data=f"sub_links_{email}",
+            ),
         ]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🗑 حذف سرویس",
+                callback_data=f"sub_delete_{email}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به لیست",
+                callback_data="sub_back_list",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def renew_options_keyboard() -> InlineKeyboardMarkup:
