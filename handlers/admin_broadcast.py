@@ -1,7 +1,3 @@
-"""
-Admin router for broadcasting announcements to all bot users.
-"""
-
 from __future__ import annotations
 
 import asyncio

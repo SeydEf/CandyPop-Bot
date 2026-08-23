@@ -78,6 +78,13 @@ async def init_db() -> None:
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS notified_alerts (
+            email       TEXT NOT NULL,
+            alert_type  TEXT NOT NULL,
+            notified_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (email, alert_type)
+        );
     """)
 
     await db.commit()

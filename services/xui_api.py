@@ -214,6 +214,13 @@ async def renew_client(
     except Exception:
         logger.exception("Failed to reset traffic stats for %s", email)
 
+    try:
+        from db.models import clear_notified_alerts
+
+        await clear_notified_alerts(email)
+    except Exception as e:
+        logger.warning("Failed to clear notified alerts for %s: %s", email, e)
+
     return res
 
 

@@ -28,6 +28,7 @@ from utils.formatting import (
     persian_to_english_digits,
     to_persian_digits,
 )
+from utils.helpers import safe_edit_text
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin_control")
@@ -58,6 +59,10 @@ class AdminControlStates(StatesGroup):
     waiting_card_number = State()
     waiting_card_holder = State()
 
+    waiting_alert_gb = State()
+    waiting_alert_days = State()
+    waiting_alert_delete_days = State()
+
 
 def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
     return event.from_user is not None and event.from_user.id == ADMIN_CHAT_ID
@@ -66,13 +71,18 @@ def _is_admin(event: types.CallbackQuery | types.Message) -> bool:
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     config = await get_pricing_config()
     test_config = await get_test_sub_config()
-    from db.models import get_card_config, get_referral_config
+    from db.models import get_alert_config, get_card_config, get_referral_config
 
     ref_config = await get_referral_config()
     card_config = await get_card_config()
+    alert_config = await get_alert_config()
 
     card_num = card_config["card_number"] or "تنظیم نشده"
     card_own = card_config["card_holder"] or "تنظیم نشده"
+
+    min_gb_alert = float(alert_config["min_gb"])
+    min_days_alert = int(alert_config["min_days"])
+    auto_delete_days = int(alert_config["auto_delete_days"])
 
     base_rate = config["base_gb_rate"]
     user_surcharge = config["user_surcharge"]
@@ -109,11 +119,24 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     ref_text = f"  • وضعیت: {ref_status}\n  • پورسانت پاداش: {ref_percent}٪\n"
 
+    del_days_str = (
+        f"{to_persian_digits(auto_delete_days)} روز پس از انقضا"
+        if auto_delete_days > 0
+        else "🔴 غیرفعال"
+    )
+
+    alert_text = (
+        f"  • هشدار ترافیک: کمتر از {format_size_gb(min_gb_alert)}\n"
+        f"  • هشدار انقضا: کمتر از {to_persian_digits(min_days_alert)} روز\n"
+        f"  • حذف منقضی‌شده‌ها: {del_days_str}\n"
+    )
+
     text = (
         f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"💳 <b>کارت جهت واریز:</b> <code>{card_num}</code> ({card_own})\n\n"
+        f"🔔 <b>حدآستانه هشدارهای اتمام سرویس:</b>\n{alert_text}\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
         f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
@@ -156,6 +179,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="🏷️ مدیریت کدهای تخفیف",
                     callback_data="admin_discounts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔔 تنظیمات هشدارهای اتمام حجم و زمان",
+                    callback_data="admin_alert_menu",
                 ),
             ],
             [
@@ -1888,6 +1917,214 @@ async def admin_card_edit_holder_save(
     panel_text, keyboard = await _build_pricing_panel()
     await message.answer(
         f"✅ نام صاحب کارت (<b>{holder_name}</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_alert_menu")
+async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback):
+        return
+    await state.clear()
+
+    from db.models import get_alert_config
+
+    alert_config = await get_alert_config()
+    min_gb = float(alert_config["min_gb"])
+    min_days = int(alert_config["min_days"])
+    auto_delete_days = int(alert_config["auto_delete_days"])
+
+    del_str = (
+        f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
+        if auto_delete_days > 0
+        else "<b>🔴 غیرفعال (بدون حذف)</b>"
+    )
+
+    text = (
+        f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاكسازی اشتراك‌ها</b>\n\n"
+        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس از طریق دکمه «🔄 تمدید اشتراک» آگاه می‌سازد.\n\n"
+        f"📊 <b>حدآستانه هشدار ترافیک فعلی:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
+        f"⏱ <b>حدآستانه هشدار انقضا فعلی:</b> کمتر از <b>{to_persian_digits(min_days)} روز</b>\n"
+        f"🗑 <b>مهلت حذف اشتراک‌های منقضی‌شده:</b> {del_str}\n\n"
+        f"لطفاً یکی از گزینه‌های زیر را برای تغییر انتخاب کنید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 تغییر حدآستانه حجم (گیگ)",
+                    callback_data="admin_alert_edit_gb",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏱ تغییر حدآستانه زمان (روز)",
+                    callback_data="admin_alert_edit_days",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 تغییر مهلت حذف منقضی‌شده‌ها (روز)",
+                    callback_data="admin_alert_edit_delete_days",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_alert_edit_gb")
+async def admin_alert_edit_gb_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_alert_gb)
+    await callback.message.edit_text(
+        "📊 <b>حدآستانه جدید هشدار ترافیک (به گیگابایت) را وارد کنید:</b>\n"
+        "مثال: <code>2.0</code> یا <code>1.5</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_alert_gb, F.text)
+async def admin_alert_edit_gb_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        gb_val = float(persian_to_english_digits(message.text.strip()))
+        if gb_val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد معتبر به گیگابایت وارد کنید.")
+        return
+
+    from db.models import set_alert_config
+
+    await set_alert_config(min_gb=gb_val)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ حدآستانه جدید ترافیک (<b>{format_size_gb(gb_val)}</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_alert_edit_days")
+async def admin_alert_edit_days_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_alert_days)
+    await callback.message.edit_text(
+        "⏱ <b>حدآستانه جدید هشدار انقضا (به روز) را وارد کنید:</b>\n"
+        "مثال: <code>3</code> یا <code>5</code>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_alert_days, F.text)
+async def admin_alert_edit_days_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        days_val = int(persian_to_english_digits(message.text.strip()))
+        if days_val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر به روز وارد کنید.")
+        return
+
+    from db.models import set_alert_config
+
+    await set_alert_config(min_days=days_val)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    await message.answer(
+        f"✅ حدآستانه جدید انقضا (<b>{to_persian_digits(days_val)} روز</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_alert_edit_delete_days")
+async def admin_alert_edit_delete_days_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_admin(callback):
+        return
+
+    await state.set_state(AdminControlStates.waiting_alert_delete_days)
+    await callback.message.edit_text(
+        "🗑 <b>مهلت حذف خودکار اشتراک‌های منقضی‌شده (به روز پس از انقضا) را وارد کنید:</b>\n"
+        "مثال: <code>3</code> (حذف پس از ۳ روز انقضا)\n"
+        "<i>برای غیرفعال‌سازی حذف خودکار عدد <code>0</code> را ارسال کنید.</i>\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_alert_delete_days, F.text)
+async def admin_alert_edit_delete_days_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        del_val = int(persian_to_english_digits(message.text.strip()))
+        if del_val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.")
+        return
+
+    from db.models import set_alert_config
+
+    await set_alert_config(auto_delete_days=del_val)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    res_str = (
+        f"<b>{to_persian_digits(del_val)} روز پس از انقضا</b>"
+        if del_val > 0
+        else "<b>غیرفعال</b>"
+    )
+    await message.answer(
+        f"✅ مهلت جدید حذف اشتراک‌های منقضی‌شده (<b>{res_str}</b>) با موفقیت ذخیره شد.\n\n{panel_text}",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
