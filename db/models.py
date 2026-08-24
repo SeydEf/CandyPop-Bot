@@ -590,6 +590,13 @@ async def has_notified_alert(email: str, alert_type: str) -> bool:
         return row is not None
 
 
+async def get_all_notified_alerts_set() -> set[tuple[str, str]]:
+    db = await get_db()
+    async with db.execute("SELECT email, alert_type FROM notified_alerts") as cursor:
+        rows = await cursor.fetchall()
+        return {(r["email"], r["alert_type"]) for r in rows}
+
+
 async def resolve_client_tg_id(client: dict[str, Any]) -> int:
     tg_id = client.get("tgId")
     if tg_id and isinstance(tg_id, int) and tg_id > 0:
