@@ -153,7 +153,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
 
                     if not await has_notified_alert(email, alert_key):
                         try:
-                            rem_gb_str = format_size_gb(rem_gb)
+                            rem_gb_str = format_size_gb(rem_bytes)
                             step_title = (
                                 f"کمتر از {to_persian_digits(step_gb + 1)} گیگ"
                                 if step_gb > 0
