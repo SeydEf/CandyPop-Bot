@@ -787,3 +787,22 @@ def admin_remove_admins_keyboard(admins: list[dict[str, Any]]) -> InlineKeyboard
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_stats_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 بروزرسانی آمار",
+                    callback_data="admin_stats_menu",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                )
+            ],
+        ]
+    )

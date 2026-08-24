@@ -210,6 +210,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="📊 آمار و گزارشات جامع ربات",
+                    callback_data="admin_stats_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🛒/🔄 وضعیت فروش و تمدید اشتراک",
                     callback_data="admin_shop_status_menu",
                 ),
@@ -2999,3 +3005,42 @@ async def admin_toggle_perm(callback: types.CallbackQuery, state: FSMContext) ->
         )
     except Exception:
         pass
+
+
+@router.callback_query(F.data == "admin_stats_menu")
+async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    await state.clear()
+
+    from db.models import get_bot_statistics
+    from keyboards.inline_kb import admin_stats_keyboard
+
+    stats = await get_bot_statistics()
+
+    text = (
+        f"📊 <b>آمار و گزارشات جامع ربات</b>\n\n"
+        f"👥 <b>آمار کاربران:</b>\n"
+        f"  • کل کاربران: <b>{to_persian_digits(stats['total_users'])}</b> نفر\n"
+        f"  • کاربر جدید امروز: <b>{to_persian_digits(stats['users_today'])}</b> نفر\n"
+        f"  • کاربر جدید ۷ روز اخیر: <b>{to_persian_digits(stats['users_week'])}</b> نفر\n"
+        f"  • کاربر جدید ۳۰ روز اخیر: <b>{to_persian_digits(stats['users_month'])}</b> نفر\n\n"
+        f"💰 <b>آمار مالی و فروش:</b>\n"
+        f"  • تراکنش‌های موفق: <b>{to_persian_digits(stats['total_paid_invoices'])}</b> فقره\n"
+        f"  • درآمد کل: <b>{format_price(stats['total_revenue'])}</b>\n"
+        f"  • فروش مستقیم اشتراک: <b>{to_persian_digits(stats['subs_sales_count'])}</b> فاکتور ({format_price(stats['subs_sales_revenue'])})\n"
+        f"  • شارژ کیف پول: <b>{to_persian_digits(stats['topups_count'])}</b> فاکتور ({format_price(stats['topups_revenue'])})\n\n"
+        f"⚙️ <b>زیرساخت و سرور:</b>\n"
+        f"  • اینباندهای فعال اختصاصی: <b>{to_persian_digits(stats['active_inbounds_count'])}</b> عدد\n"
+        f"  • اشتراک‌های مسدود (تخطی IP): <b>{to_persian_digits(stats['suspended_count'])}</b> عدد\n"
+        f"  • تعداد ادمین‌های ربات: <b>{to_persian_digits(stats['admins_count'])}</b> نفر\n\n"
+        f"💡 <i>اطلاعات فوق به صورت زنده از دیتابیس ربات محاسبه شده‌اند.</i>"
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=admin_stats_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()

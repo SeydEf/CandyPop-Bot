@@ -778,6 +778,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "referral": "تنظیمات زیرمجموعه‌گیری",
     "broadcast": "ارسال پیام همگانی",
     "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
+    "stats": "مشاهده آمار و گزارشات ربات",
 }
 
 DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
@@ -795,6 +796,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "referral": True,
     "broadcast": True,
     "reset_configs": False,
+    "stats": True,
 }
 
 
@@ -843,3 +845,79 @@ async def toggle_admin_permission(tg_id: int, perm_key: str) -> dict[str, bool]:
     )
     await db.commit()
     return current_perms
+
+
+async def get_bot_statistics() -> dict[str, Any]:
+    """Calculate and return comprehensive bot statistics."""
+    db = await get_db()
+
+    async with db.execute("SELECT COUNT(*) FROM users") as c:
+        row = await c.fetchone()
+        total_users = row[0] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*) FROM users WHERE date(joined_at) = date('now')"
+    ) as c:
+        row = await c.fetchone()
+        users_today = row[0] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*) FROM users WHERE joined_at >= datetime('now', '-7 days')"
+    ) as c:
+        row = await c.fetchone()
+        users_week = row[0] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*) FROM users WHERE joined_at >= datetime('now', '-30 days')"
+    ) as c:
+        row = await c.fetchone()
+        users_month = row[0] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid'"
+    ) as c:
+        row = await c.fetchone()
+        total_paid_invoices = row[0] if row else 0
+        total_revenue = row[1] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid' AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0))"
+    ) as c:
+        row = await c.fetchone()
+        topups_count = row[0] if row else 0
+        topups_revenue = row[1] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid' AND target_email != 'TOPUP' AND (duration_days > 0 OR data_gb > 0)"
+    ) as c:
+        row = await c.fetchone()
+        subs_sales_count = row[0] if row else 0
+        subs_sales_revenue = row[1] if row else 0
+
+    async with db.execute(
+        "SELECT COUNT(*) FROM ip_violations WHERE suspended = 1"
+    ) as c:
+        row = await c.fetchone()
+        suspended_count = row[0] if row else 0
+
+    async with db.execute("SELECT COUNT(*) FROM bot_admins") as c:
+        row = await c.fetchone()
+        admins_count = row[0] if row else 0
+
+    active_inbounds = await get_active_inbound_ids()
+
+    return {
+        "total_users": total_users,
+        "users_today": users_today,
+        "users_week": users_week,
+        "users_month": users_month,
+        "total_paid_invoices": total_paid_invoices,
+        "total_revenue": total_revenue,
+        "topups_count": topups_count,
+        "topups_revenue": topups_revenue,
+        "subs_sales_count": subs_sales_count,
+        "subs_sales_revenue": subs_sales_revenue,
+        "suspended_count": suspended_count,
+        "admins_count": admins_count,
+        "active_inbounds_count": len(active_inbounds),
+    }
