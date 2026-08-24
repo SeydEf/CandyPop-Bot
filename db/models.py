@@ -652,6 +652,15 @@ async def get_ip_violation(email: str) -> dict[str, Any] | None:
     return None
 
 
+async def get_all_ip_violations_dict() -> dict[str, dict[str, Any]]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT email, violation_count, total_incidents, last_violated_at, suspended FROM ip_violations"
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return {row["email"]: dict(row) for row in rows}
+
+
 async def record_ip_violation(email: str) -> tuple[int, int]:
     db = await get_db()
     rec = await get_ip_violation(email)
