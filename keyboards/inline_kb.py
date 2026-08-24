@@ -209,10 +209,12 @@ def subscriptions_list_keyboard(
     for sub in subs:
         email = sub["email"]
         name = sub["service_name"]
+        is_enable = sub.get("enable", True)
+        status_icon = "🟢" if is_enable else "🔴"
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"📦 {name}",
+                    text=f"{status_icon} {name}",
                     callback_data=f"sub_view_{email}",
                 )
             ]

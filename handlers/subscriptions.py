@@ -158,9 +158,23 @@ async def _build_dashboard_info(
 
     days_text = format_remaining_days(expiry_ms)
 
+    from db.models import get_ip_violation
+
+    is_enabled = bool(client.get("enable", True))
+    ip_rec = await get_ip_violation(email)
+    is_ip_suspended = bool(ip_rec.get("suspended", 0)) if ip_rec else False
+
+    if is_ip_suspended:
+        status_text = "⛔️ مسدودشده (تخطی از سقف اتصال IP)"
+    elif is_enabled:
+        status_text = "🟢 فعال"
+    else:
+        status_text = "🔴 غیرفعال"
+
     text = (
         f"<b>داشبورد مدیریت اشتراک</b>\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{client.get('email', email)}</code>\n"
+        f"⚡️ <b>وضعیت اشتراک:</b> {status_text}\n"
         f"👥 <b>ظرفیت کاربر:</b> {users_text}\n"
         f"📊 <b>میزان مصرف:</b> {usage_text}\n"
         f"🔋 <b>ترافیک باقیمانده:</b> {remaining_text}\n"
