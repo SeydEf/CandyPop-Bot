@@ -581,7 +581,11 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
     price = bd["total_price"]
 
     await state.update_data(
-        duration=duration, users=current_users, gb=current_gb, price=price
+        duration=duration,
+        users=current_users,
+        gb=current_gb,
+        price=price,
+        is_change_plan=False,
     )
 
     dur_str = (
@@ -604,7 +608,7 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
     )
     await callback.message.edit_text(
         text,
-        reply_markup=renew_payment_method_keyboard(),
+        reply_markup=renew_payment_method_keyboard(is_change_plan=False),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -612,14 +616,46 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(F.data == "renew_change")
 async def renew_change_plan(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(is_change_plan=True)
     data = await state.get_data()
     email = data.get("renew_email", "")
 
+    await callback.message.edit_text(
+        f"🔄 <b>تغییر پلن و تمدید سرویس «{email}»</b>\n\n"
+        f"<b>گام ۱ از ۳: انتخاب حجم ترافیک جدید</b>\n\n"
+        f"لطفاً میزان ترافیک مورد نظر خود را برای این سرویس انتخاب نمایید:",
+        reply_markup=await renew_volume_keyboard(duration=30, users=1),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("renew_users_step_"))
+async def renew_users_step(callback: types.CallbackQuery, state: FSMContext) -> None:
+    users = int(callback.data.split("_")[-1])
+    data = await state.get_data()
+    gb = data.get("gb", 30)
+
+    await callback.message.edit_reply_markup(
+        reply_markup=renew_users_keyboard(gb, users)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("renew_users_confirm_"))
+async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) -> None:
+    users = int(callback.data.split("_")[-1])
+    await state.update_data(users=users)
+
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    gb = data.get("gb", 30)
+
     from handlers.buy import _get_duration_step_text
 
-    text = await _get_duration_step_text()
+    text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن و تمدید سرویس «{email}»</b>\n\n{text}",
+        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
         reply_markup=renew_duration_keyboard(),
         parse_mode="HTML",
     )
@@ -635,118 +671,13 @@ async def renew_select_duration(
 
     data = await state.get_data()
     email = data.get("renew_email", "")
-
-    from handlers.buy import _get_users_step_text
-
-    text = await _get_users_step_text()
-    await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=renew_users_keyboard(duration, users=1),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("renew_users_step_"))
-async def renew_users_step(callback: types.CallbackQuery, state: FSMContext) -> None:
-    users = int(callback.data.split("_")[-1])
-    data = await state.get_data()
-    duration = data.get("duration", 30)
-
-    await callback.message.edit_reply_markup(
-        reply_markup=renew_users_keyboard(duration, users)
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("renew_users_confirm_"))
-async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) -> None:
-    users = int(callback.data.split("_")[-1])
-    await state.update_data(users=users)
-
-    data = await state.get_data()
-    email = data.get("renew_email", "")
-    duration = data.get("duration", 30)
-
-    from handlers.buy import _get_volume_step_text
-
-    text = await _get_volume_step_text(duration, users)
-    await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=await renew_volume_keyboard(duration, users),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("renew_back_users_"))
-async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    email = data.get("renew_email", "")
-    duration = data.get("duration", 30)
-    users = data.get("users", 1)
-
-    from handlers.buy import _get_users_step_text
-
-    text = await _get_users_step_text()
-    await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=renew_users_keyboard(duration, users),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "renew_back_volume")
-async def renew_back_to_volume(
-    callback: types.CallbackQuery, state: FSMContext
-) -> None:
-    data = await state.get_data()
-    email = data.get("renew_email", "")
-    duration = data.get("duration", 30)
-    users = data.get("users", 1)
-
-    from handlers.buy import _get_volume_step_text
-
-    text = await _get_volume_step_text(duration, users)
-    await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=await renew_volume_keyboard(duration, users),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "renew_vol_custom")
-async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    email = data.get("renew_email", "")
-
-    from handlers.buy import BuyStates
-
-    await state.set_state(BuyStates.waiting_custom_gb)
-    await callback.message.edit_text(
-        f"✍️ <b>ورود حجم دلخواه برای تمدید سرویس «{email}»</b>\n\n"
-        "لطفاً حجم ترافیک مورد نیاز خود را به <b>گیگابایت (عدد انگلیسی)</b> ارسال نمایید:\n"
-        "<i>(مثال: برای ۲۵ گیگابایت عدد <code>25</code> را ارسال کنید)</i>\n\n"
-        "💡 <i>جهت انصراف، دستور /cancel را بفرستید.</i>",
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("renew_vol_"))
-async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
-    gb = int(callback.data.split("_")[-1])
-    data = await state.get_data()
-    email = data.get("renew_email", "")
-    duration = data.get("duration", 30)
+    gb = data.get("gb", 30)
     users = data.get("users", 1)
 
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]
 
-    await state.update_data(gb=gb, price=price)
+    await state.update_data(price=price)
 
     dur_str = (
         f" (+{format_price(bd['duration_surcharge'])})"
@@ -766,9 +697,88 @@ async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) 
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
     )
+    from keyboards.inline_kb import renew_payment_method_keyboard
+
     await callback.message.edit_text(
         text,
-        reply_markup=renew_payment_method_keyboard(),
+        reply_markup=renew_payment_method_keyboard(is_change_plan=True),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "renew_back_to_duration")
+async def renew_back_to_duration(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    gb = data.get("gb", 30)
+    users = data.get("users", 1)
+
+    from handlers.buy import _get_duration_step_text
+    from keyboards.inline_kb import renew_duration_keyboard
+
+    text = await _get_duration_step_text(gb, users)
+    await callback.message.edit_text(
+        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+        reply_markup=renew_duration_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "renew_back_to_users")
+async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    gb = data.get("gb", 30)
+    users = data.get("users", 1)
+
+    from handlers.buy import _get_users_step_text
+
+    text = await _get_users_step_text(gb, users)
+    await callback.message.edit_text(
+        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+        reply_markup=renew_users_keyboard(gb, users),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "renew_vol_custom")
+async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+
+    from handlers.buy import BuyStates
+
+    await state.set_state(BuyStates.waiting_custom_gb)
+    await callback.message.edit_text(
+        f"✍️ <b>ورود حجم دلخواه برای تمدید سرویس «{email}»</b>\n\n"
+        "لطفاً حجم ترافیک مورد نیاز خود را به <b>گیگابایت (عدد انگلیسی)</b> ارسال نمایید:\n"
+        "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
+        "<i>(مثال: برای ۲۵ گیگابایت عدد <code>25</code> را ارسال کنید)</i>\n\n"
+        "💡 <i>جهت انصراف، دستور /cancel را بفرستید.</i>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("renew_vol_"))
+async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
+    gb = int(callback.data.split("_")[-1])
+    await state.update_data(gb=gb)
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    users = data.get("users", 1)
+
+    from handlers.buy import _get_users_step_text
+
+    text = await _get_users_step_text(gb, users)
+    await callback.message.edit_text(
+        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+        reply_markup=renew_users_keyboard(gb, users),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1048,9 +1058,12 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         f"💎 <b>مبلغ نهایی قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
         f"💳 روش پرداخت مورد نظر خود را انتخاب فرمایید:"
     )
+    is_change_plan = data.get("is_change_plan", False)
     await message.answer(
         text,
-        reply_markup=renew_payment_method_keyboard(has_discount=True),
+        reply_markup=renew_payment_method_keyboard(
+            is_change_plan=is_change_plan, has_discount=True
+        ),
         parse_mode="HTML",
     )
 
@@ -1091,9 +1104,12 @@ async def renew_discount_remove(
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
         f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
+    is_change_plan = data.get("is_change_plan", False)
     await callback.message.edit_text(
         text,
-        reply_markup=renew_payment_method_keyboard(has_discount=False),
+        reply_markup=renew_payment_method_keyboard(
+            is_change_plan=is_change_plan, has_discount=False
+        ),
         parse_mode="HTML",
     )
     await callback.answer("✅ کد تخفیف حذف گردید.")

@@ -163,7 +163,8 @@ async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) ->
     await callback.message.edit_text(
         "✍️ <b>حجم دلخواهت رو وارد کن:</b>\n\n"
         "میزان حجم رو به گیگابایت بصورت عددی ارسال کن.\n"
-        "🔸 مثال: <code>25</code>\n\n"
+        "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
+        "🔸 <b>مثال:</b> <code>25</code>\n\n"
         "<i>برای انصراف /cancel رو بفرست.</i>",
         parse_mode="HTML",
     )
@@ -186,26 +187,46 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         )
         clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
         gb = int(clean_text)
-        if gb < 1:
-            raise ValueError
+        if gb < 10:
+            await message.answer(
+                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت می‌باشد.</b>\n"
+                "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.",
+                parse_mode="HTML",
+            )
+            return
         if gb > 500:
             await message.answer("⚠️ حداکثر حجم قابل سفارش ۵۰۰ گیگابایت هست.")
             return
     except (ValueError, TypeError):
         await message.answer(
-            "⚠️ لطفاً فقط یک عدد انگلیسی یا فارسی معتبر وارد کنید.\n🔸 مثال: <code>25</code>",
+            "⚠️ لطفاً فقط یک عدد انگلیسی یا فارسی معتبر وارد کنید (حداقل ۱۰ گیگابایت).\n🔸 مثال: <code>25</code>",
             parse_mode="HTML",
         )
         return
 
-    await state.clear()
-    users = 1
-    text = await _get_users_step_text(gb, users)
-    await message.answer(
-        text,
-        reply_markup=users_keyboard(gb, users),
-        parse_mode="HTML",
-    )
+    await state.update_data(gb=gb)
+    data = await state.get_data()
+    renew_email = data.get("renew_email")
+
+    if renew_email:
+        email = renew_email
+        users = data.get("users", 1)
+        text = await _get_users_step_text(gb, users)
+        from keyboards.inline_kb import renew_users_keyboard
+
+        await message.answer(
+            f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+            reply_markup=renew_users_keyboard(gb, users),
+            parse_mode="HTML",
+        )
+    else:
+        users = 1
+        text = await _get_users_step_text(gb, users)
+        await message.answer(
+            text,
+            reply_markup=users_keyboard(gb, users),
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.regexp(r"^buy_users_step_\d+_\d+$"))

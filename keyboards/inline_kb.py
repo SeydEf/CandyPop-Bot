@@ -160,18 +160,18 @@ def card_payment_keyboard(
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📋 کپی شماره کارت",
-                    callback_data=f"copy_card_{invoice_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📋 کپی مبلغ",
-                    callback_data=f"copy_amount_{invoice_id}",
-                ),
-            ],
+            # [
+            #     InlineKeyboardButton(
+            #         text="📋 کپی شماره کارت",
+            #         callback_data=f"copy_card_{invoice_id}",
+            #     ),
+            # ],
+            # [
+            #     InlineKeyboardButton(
+            #         text="📋 کپی مبلغ",
+            #         callback_data=f"copy_amount_{invoice_id}",
+            #     ),
+            # ],
             [
                 InlineKeyboardButton(
                     text="✅ پرداخت کردم",
@@ -320,7 +320,7 @@ def renew_duration_keyboard() -> InlineKeyboardMarkup:
             buttons,
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت", callback_data="sub_renew_current"
+                    text="🔙 بازگشت", callback_data="renew_back_to_users"
                 ),
                 InlineKeyboardButton(
                     text="❌ انصراف", callback_data="sub_view_current"
@@ -330,7 +330,7 @@ def renew_duration_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def renew_users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
+def renew_users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     dec_users = max(1, users - 1)
     inc_users = min(10, users + 1)
     return InlineKeyboardMarkup(
@@ -365,23 +365,25 @@ def renew_users_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
     )
 
 
-async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMarkup:
-    from services.pricing import calculate_total_price
+async def renew_volume_keyboard(
+    duration: int = 30, users: int = 1
+) -> InlineKeyboardMarkup:
+    from services.pricing import calculate_data_price, get_pricing_config
+
+    config = await get_pricing_config()
+    volume_tiers = config["volume_tiers"]
 
     rows: list[list[InlineKeyboardButton]] = []
-    row: list[InlineKeyboardButton] = []
 
-    for i, (gb, _) in enumerate(VOLUME_TIERS.items()):
-        total_price = await calculate_total_price(gb, duration, users)
-        label = f"{gb}GB — {format_price(total_price)}"
+    for item in volume_tiers:
+        gb = item[0] if isinstance(item, (list, tuple)) else item
+        data_price = await calculate_data_price(gb)
+        label = f"📊 {gb} گیگ ({format_price(data_price)})"
         btn = InlineKeyboardButton(
             text=label,
             callback_data=f"renew_vol_{gb}",
         )
-        row.append(btn)
-        if len(row) == 2 or i == len(VOLUME_TIERS) - 1:
-            rows.append(row)
-            row = []
+        rows.append([btn])
 
     rows.append(
         [
@@ -395,7 +397,7 @@ async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMark
         [
             InlineKeyboardButton(
                 text="🔙 بازگشت",
-                callback_data=f"renew_back_users_{users}",
+                callback_data="sub_renew_current",
             ),
             InlineKeyboardButton(text="❌ انصراف", callback_data="sub_view_current"),
         ]
@@ -403,7 +405,9 @@ async def renew_volume_keyboard(duration: int, users: int) -> InlineKeyboardMark
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def renew_payment_method_keyboard(has_discount: bool = False) -> InlineKeyboardMarkup:
+def renew_payment_method_keyboard(
+    is_change_plan: bool = False, has_discount: bool = False
+) -> InlineKeyboardMarkup:
     discount_btn = (
         InlineKeyboardButton(
             text="❌ حذف کد تخفیف",
@@ -415,6 +419,8 @@ def renew_payment_method_keyboard(has_discount: bool = False) -> InlineKeyboardM
             callback_data="renew_discount_apply",
         )
     )
+
+    back_callback = "renew_back_to_duration" if is_change_plan else "sub_renew_current"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -434,7 +440,7 @@ def renew_payment_method_keyboard(has_discount: bool = False) -> InlineKeyboardM
             [
                 InlineKeyboardButton(
                     text="🔙 بازگشت",
-                    callback_data="renew_back_volume",
+                    callback_data=back_callback,
                 ),
                 InlineKeyboardButton(
                     text="❌ انصراف", callback_data="sub_view_current"
