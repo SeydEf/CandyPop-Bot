@@ -1127,11 +1127,15 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
     price = data.get("price", 0)
     discount_code = data.get("discount_code")
     original_price = data.get("original_price", price)
+    final_price = data.get("final_price", price)
+    payable_amount = (
+        final_price if (discount_code and final_price is not None) else price
+    )
     tg_id = callback.from_user.id
 
     invoice = await create_invoice(
         tg_id=tg_id,
-        amount=price,
+        amount=payable_amount,
         duration_days=duration,
         data_gb=gb,
         users_count=users,
@@ -1157,6 +1161,13 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
     card_number = card_config["card_number"]
     card_holder = card_config["card_holder"]
 
+    disc_info = ""
+    if discount_code:
+        disc_info = (
+            f"💵 <b>مبلغ اولیه:</b> <s>{format_price(original_price)}</s>\n"
+            f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
+        )
+
     text = (
         f"💳 <b>فاکتور پرداخت کارت به کارت (تمدید اشتراک)</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
@@ -1164,7 +1175,8 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
-        f"💎 <b>مبلغ نهایی جهت واریز:</b> <b>{format_price(price)}</b>\n\n"
+        f"{disc_info}"
+        f"💎 <b>مبلغ نهایی جهت واریز:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
@@ -1174,7 +1186,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
 
     await callback.message.edit_text(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, card_number, price),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, payable_amount),
         parse_mode="HTML",
     )
     await callback.answer()

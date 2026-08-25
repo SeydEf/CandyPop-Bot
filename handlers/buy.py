@@ -631,6 +631,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         discount_code=clean_code,
         discount_percent=percent,
         final_price=final_price,
+        price=final_price,
     )
 
     bd = await get_price_breakdown(gb, duration, users)
@@ -714,10 +715,15 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     data = await state.get_data()
     discount_code = data.get("discount_code")
     original_price = data.get("original_price", price)
+    final_price = data.get("final_price")
+
+    payable_amount = (
+        final_price if (discount_code and final_price is not None) else price
+    )
 
     invoice = await create_invoice(
         tg_id=tg_id,
-        amount=price,
+        amount=payable_amount,
         duration_days=duration,
         data_gb=gb,
         users_count=users,
@@ -741,13 +747,21 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     card_number = card_config["card_number"]
     card_holder = card_config["card_holder"]
 
+    disc_info = ""
+    if discount_code:
+        disc_info = (
+            f"💵 <b>مبلغ اولیه:</b> <s>{format_price(original_price)}</s>\n"
+            f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
+        )
+
     text = (
         f"💳 <b>سفارش شماره {invoice_id} ثبت شد!</b>\n\n"
         f"📋 <b>جزئیات سفارش شما:</b>\n"
         f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
-        f"💎 <b>مبلغ قابل پرداخت:</b> {format_price(price)}\n\n"
+        f"{disc_info}"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت: {to_persian_digits(INVOICE_EXPIRY_MINUTES)} دقیقه</b>\n\n"
@@ -756,7 +770,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
 
     await callback.message.edit_text(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, card_number, price),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, payable_amount),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -894,6 +908,15 @@ async def receive_receipt_photo(
             f"\n\n💰 <b>مبلغ افزایش موجودی:</b> {format_price(invoice['amount'])}\n"
         )
     else:
+        disc_code = invoice.get("discount_code")
+        orig_amount = invoice.get("original_amount") or invoice["amount"]
+        disc_info = ""
+        if disc_code and orig_amount > invoice["amount"]:
+            disc_info = (
+                f"🏷️ <b>کد تخفیف:</b> <code>{disc_code}</code>\n"
+                f"💵 <b>مبلغ اولیه:</b> <s>{format_price(orig_amount)}</s>\n"
+            )
+
         admin_text = (
             f"🔔 <b>درخواست تأیید پرداخت اشتراک (کارت به کارت)</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
@@ -906,7 +929,8 @@ async def receive_receipt_photo(
             f"⏱ مدت: {invoice['duration_days']} روز\n"
             f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
             f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
-            f"💰 مبلغ: {format_price(invoice['amount'])}\n"
+            f"{disc_info}"
+            f"💰 <b>مبلغ واریزی نهایی (تخفیف‌خورده):</b> <b>{format_price(invoice['amount'])}</b>\n"
         )
 
     from db.models import get_all_admins, has_admin_permission
