@@ -266,21 +266,25 @@ async def renew_client(
     import time
 
     now_ms = int(time.time() * 1000)
-    new_expiry_ms = now_ms + (duration_days * 86400 * 1000)
+    current_expiry = client.get("expiryTime", 0) or 0
+    added_ms = duration_days * 86400 * 1000
 
-    total_bytes = data_gb * 1024 * 1024 * 1024
+    if current_expiry > now_ms:
+        new_expiry_ms = current_expiry + added_ms
+    else:
+        new_expiry_ms = now_ms + added_ms
+
+    current_total_bytes = client.get("totalGB", 0) or 0
+    added_bytes = data_gb * 1024 * 1024 * 1024
+    new_total_bytes = current_total_bytes + added_bytes
 
     client["expiryTime"] = new_expiry_ms
-    client["totalGB"] = total_bytes
-    client["limitIp"] = users_count
+    client["totalGB"] = new_total_bytes
+    if users_count:
+        client["limitIp"] = users_count
     client["enable"] = True
 
     res = await update_client(email, client)
-
-    try:
-        await reset_client_traffic(email)
-    except Exception:
-        logger.exception("Failed to reset traffic stats for %s", email)
 
     try:
         from db.models import clear_notified_alerts
