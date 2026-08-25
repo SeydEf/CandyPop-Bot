@@ -389,6 +389,12 @@ async def _render_user_dashboard(
             ],
             [
                 InlineKeyboardButton(
+                    text="♻️ بازنشانی امکان اشتراک تست کاربر",
+                    callback_data=f"admin_user_reset_test_{tg_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔙 بازگشت به جستجو", callback_data="admin_search_back"
                 )
             ],
@@ -911,6 +917,26 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
         tg_id,
         state,
         notice=f"✅ <b>موجودی جدید کیف پول کاربر: {format_price(new_balance)}</b>",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_user_reset_test_"))
+async def admin_user_reset_test(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    tg_id = int(callback.data[len("admin_user_reset_test_") :])
+    from db.models import reset_user_test_sub
+
+    await reset_user_test_sub(tg_id)
+
+    await _render_user_dashboard(
+        callback,
+        tg_id,
+        state,
+        notice=f"✅ <b>امکان دریافت اشتراک تست برای کاربر {tg_id} با موفقیت بازنشانی شد.</b>",
     )
 
 

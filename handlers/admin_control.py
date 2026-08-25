@@ -43,6 +43,7 @@ class AdminControlStates(StatesGroup):
     waiting_test_gb = State()
     waiting_test_dur = State()
     waiting_test_cooldown = State()
+    waiting_test_reset_user = State()
 
     waiting_disc_manual_code = State()
     waiting_disc_auto_length = State()
@@ -320,6 +321,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="♻️ بازنشانی تست همه کاربران",
                     callback_data="admin_test_reset_all",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👤 بازنشانی تست یک کاربر مشخص",
+                    callback_data="admin_test_reset_user",
                 ),
             ],
             [
@@ -866,6 +873,63 @@ async def admin_test_reset_all(
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_test_reset_user")
+async def admin_test_reset_user_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reset_configs"):
+        return
+    await state.set_state(AdminControlStates.waiting_test_reset_user)
+    await safe_edit_text(
+        callback.message,
+        "👤 <b>لطفاً شناسه عددی تلگرام (Telegram ID) یا نام کاربری کاربر را جهت بازنشانی اشتراک تست وارد کنید:</b>\n\n"
+        "مثال: <code>123456789</code> یا <code>@username</code>\n\n"
+        "<i>برای انصراف /cancel را بزنید.</i>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_test_reset_user, F.text)
+async def admin_test_reset_user_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    query = message.text.strip()
+    from db.models import reset_user_test_sub, search_users
+
+    users = await search_users(query)
+    if not users:
+        await message.answer(
+            f"❌ هیچ کاربری با شناسه یا نام کاربری «<code>{query}</code>» در دیتابیس ربات یافت نشد.\n"
+            "لطفاً دوباره تلاش کنید یا /cancel را ارسال فرمایید.",
+            parse_mode="HTML",
+        )
+        return
+
+    target_user = users[0]
+    tg_id = target_user["tg_id"]
+
+    success = await reset_user_test_sub(tg_id)
+    await state.clear()
+
+    panel_text, keyboard = await _build_pricing_panel()
+    if success:
+        await message.answer(
+            f"✅ <b>امکان دریافت اشتراک تست برای کاربر (<code>{tg_id}</code>) با موفقیت بازنشانی شد.</b>\n\n{panel_text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(
+            f"⚠️ عملیات انجام شد اما تغییر در وضعیت کاربر <code>{tg_id}</code> اعمال نگردید.\n\n{panel_text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data == "admin_discounts_menu")

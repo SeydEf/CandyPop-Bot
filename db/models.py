@@ -126,6 +126,17 @@ async def reset_all_test_subs() -> int:
     return cursor.rowcount
 
 
+async def reset_user_test_sub(tg_id: int) -> bool:
+    """Reset test sub usage and cooldown for a single specific user."""
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE users SET test_used = 0, last_test_at = NULL WHERE tg_id = ?",
+        (tg_id,),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
 async def get_balance(tg_id: int) -> int:
     await ensure_user(tg_id)
     db = await get_db()
