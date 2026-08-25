@@ -806,3 +806,83 @@ def admin_stats_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def admin_users_list_keyboard(
+    users: list[dict[str, Any]],
+    current_page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for u in users:
+        tg_id = u["tg_id"]
+        username = u.get("username")
+        full_name = u.get("full_name") or "بدون نام"
+        display_name = f"@{username}" if username else full_name
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"👤 مدیریت کاربر {display_name} ({tg_id})",
+                    callback_data=f"admin_manage_user_{tg_id}",
+                )
+            ]
+        )
+
+    nav_row: list[InlineKeyboardButton] = []
+    if current_page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⬅️ قبلی",
+                callback_data=f"admin_users_list_{current_page - 1}",
+            )
+        )
+    else:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⛔️",
+                callback_data="admin_users_list_noop",
+            )
+        )
+
+    nav_row.append(
+        InlineKeyboardButton(
+            text=f"📄 {current_page + 1} / {total_pages}",
+            callback_data="admin_users_list_noop",
+        )
+    )
+
+    if current_page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="بعدی ➡️",
+                callback_data=f"admin_users_list_{current_page + 1}",
+            )
+        )
+    else:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⛔️",
+                callback_data="admin_users_list_noop",
+            )
+        )
+    rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔍 جستجوی کاربر",
+                callback_data="admin_search_start",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی",
+                callback_data="admin_price_main",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)

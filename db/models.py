@@ -488,6 +488,34 @@ async def search_users(query: str) -> list[dict[str, Any]]:
     return unique_users
 
 
+async def get_users_paginated(
+    page: int = 0, page_size: int = 5
+) -> tuple[list[dict[str, Any]], int, int]:
+    import math
+
+    db = await get_db()
+    async with db.execute("SELECT COUNT(*) FROM users") as c:
+        row = await c.fetchone()
+        total_users = row[0] if row else 0
+
+    total_pages = max(1, math.ceil(total_users / page_size)) if total_users > 0 else 1
+    safe_page = max(0, min(page, total_pages - 1))
+    offset = safe_page * page_size
+
+    rows = await db.execute_fetchall(
+        """
+        SELECT u.tg_id, u.username, u.full_name, u.joined_at, u.test_used, COALESCE(w.balance, 0) as balance
+        FROM users u
+        LEFT JOIN wallets w ON u.tg_id = w.tg_id
+        ORDER BY u.joined_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        (page_size, offset),
+    )
+
+    return [dict(r) for r in rows], total_users, total_pages
+
+
 async def get_card_config() -> dict[str, str]:
     card_number = await get_setting("card_number")
     card_holder = await get_setting("card_holder")

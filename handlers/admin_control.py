@@ -313,6 +313,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="👥 لیست و مدیریت تمام کاربران",
+                    callback_data="admin_users_list_0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="👥 مدیریت گروه‌های مشتری (Groups)",
                     callback_data="admin_groups_menu",
                 ),
@@ -3105,6 +3111,72 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         callback.message,
         text,
         reply_markup=admin_stats_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_users_list_noop")
+async def admin_users_list_noop(callback: types.CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_users_list_"))
+async def admin_users_list(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+
+    page_str = callback.data[len("admin_users_list_") :]
+    try:
+        page = int(page_str)
+    except ValueError:
+        page = 0
+
+    from db.models import get_users_paginated
+    from keyboards.inline_kb import admin_users_list_keyboard
+
+    page_size = 5
+    users, total_users, total_pages = await get_users_paginated(
+        page, page_size=page_size
+    )
+
+    if not users:
+        await safe_edit_text(
+            callback.message,
+            "📭 <b>هیچ کاربری در ربات یافت نشد.</b>",
+            reply_markup=admin_users_list_keyboard([], 0, 1),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    lines = [
+        f"👥 <b>لیست و مدیریت کاربران ربات</b> (کل: <b>{to_persian_digits(total_users)}</b> کاربر)\n"
+    ]
+
+    start_idx = page * page_size + 1
+    for idx, u in enumerate(users, start=start_idx):
+        tg_id = u["tg_id"]
+        username = u.get("username")
+        full_name = u.get("full_name") or "بدون نام"
+        username_str = f"@{username}" if username else "بدون نام‌کاربری"
+        bal_str = format_price(u.get("balance", 0))
+        joined_at = u.get("joined_at") or "نامشخص"
+
+        lines.append(
+            f"{to_persian_digits(idx)}️⃣ <b>{full_name}</b> ({username_str})\n"
+            f"   🆔 <code>{tg_id}</code> | 💰 کیف پول: {bal_str}\n"
+            f"   📅 ثبت‌نام: <code>{joined_at}</code>\n"
+        )
+
+    text = "\n".join(lines)
+    keyboard = admin_users_list_keyboard(users, page, total_pages)
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
         parse_mode="HTML",
     )
     await callback.answer()
