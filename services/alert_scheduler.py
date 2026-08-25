@@ -48,17 +48,12 @@ async def _process_single_client(
         if not tg_id:
             return
 
-        traffic = client.get("traffic") or {}
-        total = traffic.get("total") or client.get("totalGB", 0)
-        up = traffic.get("up", 0)
-        down = traffic.get("down", 0)
+        total = client.get("totalGB", 0)
+        up = client.get("up", 0)
+        down = client.get("down", 0)
         used = up + down
 
-        expiry_time = (
-            traffic["expiryTime"]
-            if traffic.get("expiryTime") is not None
-            else client.get("expiryTime", 0)
-        )
+        expiry_time = client.get("expiryTime", 0)
 
         is_test_sub = "_test" in email
 

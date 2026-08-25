@@ -28,6 +28,7 @@ CONCURRENCY_LIMIT = 10
 
 async def _process_client_ip_limit(
     client: dict[str, Any],
+    all_client_ips: dict[str, list[str]],
     violations_dict: dict[str, dict[str, Any]],
     bot: Bot,
     semaphore: asyncio.Semaphore,
@@ -44,7 +45,7 @@ async def _process_client_ip_limit(
         if rec and rec.get("suspended"):
             return
 
-        connected_ips = await xui_api.get_client_ips(email)
+        connected_ips = all_client_ips.get(email, [])
         ip_count = len(connected_ips)
 
         if ip_count > limit_ip:
@@ -173,12 +174,14 @@ async def check_and_process_ip_limits(bot: Bot) -> None:
         if not clients:
             return
 
+        all_client_ips = await xui_api.get_all_client_ips()
         violations_dict = await get_all_ip_violations_dict()
 
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
         tasks = [
             _process_client_ip_limit(
                 client=c,
+                all_client_ips=all_client_ips,
                 violations_dict=violations_dict,
                 bot=bot,
                 semaphore=semaphore,

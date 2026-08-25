@@ -51,63 +51,47 @@ async def list_inbounds() -> list[dict[str, Any]]:
 
 
 async def list_clients() -> list[dict[str, Any]]:
-    import json
-
-    clients_map: dict[str, dict[str, Any]] = {}
+    result: list[dict[str, Any]] = []
     try:
-        inbounds = await list_inbounds()
-        for ib in inbounds:
-            settings_raw = ib.get("settings", "")
-            clients_list = []
-            if isinstance(settings_raw, str) and settings_raw:
-                try:
-                    parsed = json.loads(settings_raw)
-                    clients_list = parsed.get("clients", [])
-                except Exception:
-                    pass
-            elif isinstance(settings_raw, dict):
-                clients_list = settings_raw.get("clients", [])
+        data = await _request("GET", "/panel/api/clients/list")
+        obj = data.get("obj")
+        if isinstance(obj, list):
+            for item in obj:
+                if not isinstance(item, dict):
+                    continue
+                email = item.get("email", "")
+                if not email:
+                    continue
 
-            for c in clients_list:
-                if isinstance(c, dict) and "email" in c:
-                    em = c["email"]
-                    if em not in clients_map:
-                        clients_map[em] = {
-                            "email": em,
-                            "tgId": c.get("tgId", 0),
-                            "total": c.get("totalGB", 0),
-                            "expiryTime": c.get("expiryTime", 0),
-                            "enable": c.get("enable", True),
-                            "up": 0,
-                            "down": 0,
-                        }
+                traffic = item.get("traffic") or {}
+                up = traffic.get("up", 0) if isinstance(traffic, dict) else 0
+                down = traffic.get("down", 0) if isinstance(traffic, dict) else 0
+                total_gb = item.get("totalGB", 0)
 
-            client_stats = ib.get("clientStats") or []
-            for cs in client_stats:
-                if isinstance(cs, dict) and "email" in cs:
-                    em = cs["email"]
-                    if em not in clients_map:
-                        clients_map[em] = {
-                            "email": em,
-                            "tgId": cs.get("tgId", 0),
-                            "total": cs.get("total", 0),
-                            "expiryTime": cs.get("expiryTime", 0),
-                            "enable": cs.get("enable", True),
-                            "up": cs.get("up", 0),
-                            "down": cs.get("down", 0),
-                        }
-                    else:
-                        clients_map[em]["up"] += cs.get("up", 0)
-                        clients_map[em]["down"] += cs.get("down", 0)
-                        if not clients_map[em]["total"] and cs.get("total"):
-                            clients_map[em]["total"] = cs.get("total")
-                        if not clients_map[em]["expiryTime"] and cs.get("expiryTime"):
-                            clients_map[em]["expiryTime"] = cs.get("expiryTime")
-
+                client_obj = {
+                    "id": item.get("id"),
+                    "email": email,
+                    "subId": item.get("subId", ""),
+                    "uuid": item.get("uuid", ""),
+                    "limitIp": item.get("limitIp", 0),
+                    "totalGB": total_gb,
+                    "expiryTime": item.get("expiryTime", 0),
+                    "enable": bool(item.get("enable", True)),
+                    "tgId": item.get("tgId", 0),
+                    "group": item.get("group", ""),
+                    "comment": item.get("comment", ""),
+                    "inboundIds": item.get("inboundIds", []),
+                    "up": up,
+                    "down": down,
+                }
+                result.append(client_obj)
     except Exception as e:
-        logger.error("Error listing clients from inbounds: %s", e)
+        logger.warning(
+            "Failed to fetch clients from /api/clients/list: %s. Falling back to inbounds parsing.",
+            e,
+        )
 
-    return list(clients_map.values())
+    return result
 
 
 async def get_inbound(inbound_id: int) -> dict[str, Any]:
@@ -337,32 +321,38 @@ async def get_client_links(email: str) -> list[str]:
         return []
 
 
-async def get_client_ips(email: str) -> list[str]:
-    try:
-        data = await _request("POST", f"/panel/api/inbounds/clientIps/{email}")
-        obj = data.get("obj")
-        if isinstance(obj, list):
-            return [str(ip).strip() for ip in obj if str(ip).strip()]
-        if isinstance(obj, str) and obj:
-            return [line.strip() for line in obj.splitlines() if line.strip()]
-    except Exception:
-        pass
-
+async def get_all_client_ips() -> dict[str, list[str]]:
+    ip_map: dict[str, list[str]] = {}
     try:
         data = await _request("GET", "/panel/api/server/clientIps")
         obj = data.get("obj")
         if isinstance(obj, list):
             for item in obj:
-                if isinstance(item, dict) and item.get("clientEmail") == email:
-                    ips = item.get("ips")
-                    if isinstance(ips, list):
-                        return [str(p).strip() for p in ips if str(p).strip()]
-                    if isinstance(ips, str) and ips:
-                        return [p.strip() for p in ips.split(",") if p.strip()]
-    except Exception:
-        pass
+                if not isinstance(item, dict):
+                    continue
+                email = item.get("clientEmail")
+                if not email:
+                    continue
 
-    return []
+                raw_ips = item.get("ips")
+                ip_list: list[str] = []
+
+                if isinstance(raw_ips, list):
+                    for entry in raw_ips:
+                        if isinstance(entry, dict):
+                            ip_val = entry.get("ip")
+                            if ip_val and str(ip_val).strip():
+                                ip_list.append(str(ip_val).strip())
+                        elif entry and str(entry).strip():
+                            ip_list.append(str(entry).strip())
+                elif isinstance(raw_ips, str) and raw_ips:
+                    ip_list = [p.strip() for p in raw_ips.split(",") if p.strip()]
+
+                ip_map[email] = ip_list
+    except Exception as e:
+        logger.warning("Failed to fetch all client IPs from X-UI: %s", e)
+
+    return ip_map
 
 
 async def set_inbound_enable(inbound_id: int, enable: bool) -> dict[str, Any]:
