@@ -373,6 +373,10 @@ async def _render_user_dashboard(
         f"👥 <b>معرفی‌کننده:</b> <code>{referrer}</code>"
     )
 
+    data = await state.get_data()
+    last_query = data.get("last_search_query")
+    back_btn_text = "🔙 بازگشت به جستجو" if last_query else "🔙 بازگشت به لیست کاربران"
+
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -395,7 +399,7 @@ async def _render_user_dashboard(
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به جستجو", callback_data="admin_search_back"
+                    text=back_btn_text, callback_data="admin_search_back"
                 )
             ],
         ]
@@ -1080,8 +1084,13 @@ async def admin_search_back(callback: types.CallbackQuery, state: FSMContext) ->
 
     data = await state.get_data()
     last_query = data.get("last_search_query")
+    list_page = data.get("current_list_page")
 
     if last_query:
         await _perform_search_and_render(callback, state, last_query)
     else:
-        await admin_search_start(callback, state)
+        page = list_page if list_page is not None else 0
+        from handlers.admin_control import admin_users_list
+
+        callback.data = f"admin_users_list_{page}"
+        await admin_users_list(callback, state)

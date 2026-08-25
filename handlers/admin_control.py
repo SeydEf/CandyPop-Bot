@@ -3125,13 +3125,13 @@ async def admin_users_list_noop(callback: types.CallbackQuery) -> None:
 async def admin_users_list(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not await _is_admin(callback):
         return
-    await state.clear()
-
     page_str = callback.data[len("admin_users_list_") :]
     try:
         page = int(page_str)
     except ValueError:
         page = 0
+
+    await state.update_data(current_list_page=page, last_search_query=None)
 
     from db.models import get_users_paginated
     from keyboards.inline_kb import admin_users_list_keyboard
