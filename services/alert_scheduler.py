@@ -179,7 +179,7 @@ async def _process_single_client(
                 alert_key = f"low_gb_{step_gb}"
 
                 if (email, alert_key) not in notified_set:
-                    rem_gb_str = format_size_gb(rem_bytes)
+                    rem_gb_str = format_size(rem_bytes)
                     step_title = (
                         f"کمتر از {to_persian_digits(step_gb + 1)} گیگ"
                         if step_gb > 0
