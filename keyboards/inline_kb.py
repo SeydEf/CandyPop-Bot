@@ -824,7 +824,7 @@ def admin_users_list_keyboard(
             [
                 InlineKeyboardButton(
                     text=f"👤 مدیریت کاربر {display_name} ({tg_id})",
-                    callback_data=f"admin_manage_user_{tg_id}",
+                    callback_data=f"admin_manage_user_{tg_id}_p{current_page}",
                 )
             ]
         )

@@ -3123,7 +3123,7 @@ async def admin_users_list_noop(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_users_list_"))
 async def admin_users_list(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not await _is_admin(callback):
+    if not await _require_permission(callback, "users_list"):
         return
     page_str = callback.data[len("admin_users_list_") :]
     try:

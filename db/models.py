@@ -820,6 +820,7 @@ async def remove_admin(tg_id: int) -> bool:
 
 PERMISSION_TITLES: dict[str, str] = {
     "manage_subs": "جستجو و مدیریت اشتراک‌ها",
+    "users_list": "مشاهده و مدیریت لیست کاربران",
     "create_sub": "ساخت اشتراک سفارشی",
     "approve_invoices": "تأیید و رد پرداخت فاکتورها",
     "pricing": "قیمت‌گذاری و تغییر نرخ‌ها",
@@ -838,6 +839,7 @@ PERMISSION_TITLES: dict[str, str] = {
 
 DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "manage_subs": True,
+    "users_list": True,
     "create_sub": True,
     "approve_invoices": True,
     "pricing": False,

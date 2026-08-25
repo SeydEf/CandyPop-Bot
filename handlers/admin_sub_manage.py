@@ -155,7 +155,7 @@ async def _perform_search_and_render(
                 [
                     InlineKeyboardButton(
                         text=f"👤 مدیریت کاربر {u_id}",
-                        callback_data=f"admin_manage_user_{u_id}",
+                        callback_data=f"admin_manage_user_{u_id}_search",
                     )
                 ]
             )
@@ -375,7 +375,15 @@ async def _render_user_dashboard(
 
     data = await state.get_data()
     last_query = data.get("last_search_query")
-    back_btn_text = "🔙 بازگشت به جستجو" if last_query else "🔙 بازگشت به لیست کاربران"
+    list_page = data.get("current_list_page")
+
+    if last_query:
+        back_btn_text = "🔙 بازگشت به جستجو"
+        back_btn_callback = "admin_search_back"
+    else:
+        back_btn_text = "🔙 بازگشت به لیست کاربران"
+        page_num = list_page if list_page is not None else 0
+        back_btn_callback = f"admin_users_list_{page_num}"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -397,11 +405,7 @@ async def _render_user_dashboard(
                     callback_data=f"admin_user_reset_test_{tg_id}",
                 )
             ],
-            [
-                InlineKeyboardButton(
-                    text=back_btn_text, callback_data="admin_search_back"
-                )
-            ],
+            [InlineKeyboardButton(text=back_btn_text, callback_data=back_btn_callback)],
         ]
     )
 
@@ -845,8 +849,25 @@ async def admin_manage_user_dashboard(
     if not await _is_admin(callback):
         return
 
-    u_id_str = callback.data[len("admin_manage_user_") :]
-    tg_id = int(u_id_str)
+    payload = callback.data[len("admin_manage_user_") :]
+    parts = payload.split("_")
+    tg_id = int(parts[0])
+
+    if len(parts) > 1:
+        ref_source = parts[1]
+        if ref_source.startswith("p"):
+            try:
+                page_num = int(ref_source[1:])
+                await state.update_data(
+                    current_list_page=page_num, last_search_query=None
+                )
+            except ValueError:
+                pass
+        elif ref_source == "search":
+            data = await state.get_data()
+            if not data.get("last_search_query"):
+                await state.update_data(last_search_query=str(tg_id))
+
     await _render_user_dashboard(callback, tg_id, state)
 
 
