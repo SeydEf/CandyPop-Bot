@@ -129,7 +129,6 @@ async def reset_all_test_subs() -> int:
 
 
 async def reset_user_test_sub(tg_id: int) -> bool:
-    """Reset test sub usage and cooldown for a single specific user."""
     db = await get_db()
     cursor = await db.execute(
         "UPDATE users SET test_used = 0, last_test_at = NULL WHERE tg_id = ?",
@@ -942,7 +941,6 @@ async def toggle_admin_permission(tg_id: int, perm_key: str) -> dict[str, bool]:
 
 
 async def get_bot_statistics() -> dict[str, Any]:
-    """Calculate and return comprehensive bot statistics including full financial overview."""
     db = await get_db()
 
     async with db.execute("SELECT COUNT(*) FROM users") as c:
@@ -1047,11 +1045,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         "admins_count": admins_count,
         "active_inbounds_count": len(active_inbounds),
     }
-
-
-# ----------------------------------------------------
-# DISCOUNT CODES MODEL & QUERIES
-# ----------------------------------------------------
 
 
 def generate_random_code(length: int = 8) -> str:
