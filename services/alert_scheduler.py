@@ -48,18 +48,25 @@ async def _process_single_client(
         if not tg_id:
             return
 
-        total = client.get("total", 0)
-        up = client.get("up", 0)
-        down = client.get("down", 0)
+        traffic = client.get("traffic") or {}
+        total = traffic.get("total") or client.get("totalGB", 0)
+        up = traffic.get("up", 0)
+        down = traffic.get("down", 0)
         used = up + down
-        expiry_time = client.get("expiryTime", 0)
 
-        is_test_sub = email.endswith("_test") or "_test" in email
+        expiry_time = (
+            traffic["expiryTime"]
+            if traffic.get("expiryTime") is not None
+            else client.get("expiryTime", 0)
+        )
+
+        is_test_sub = "_test" in email
 
         is_volume_expired = total > 0 and used >= total
         is_time_expired = expiry_time > 0 and now_ms >= expiry_time
+        is_expired = is_volume_expired or is_time_expired
 
-        if (is_volume_expired or is_time_expired) and is_test_sub:
+        if is_expired and is_test_sub:
             reason = (
                 "اتمام حجم ترافیک تست" if is_volume_expired else "پایان مهلت زمانی تست"
             )
@@ -67,7 +74,8 @@ async def _process_single_client(
                 f"⛔️ <b>اشتراک تست رایگان شما به پایان رسید</b>\n\n"
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                 f"📌 <b>علت انقضا:</b> {reason}\n\n"
-                f"مهلت استفاده از اشتراک تست به پایان رسیده و این سرویس از سرور حذف گردید. در صورت تمایل می‌توانید از بخش «🛒 خرید اشتراک» سرویس جدید تهیه کنید."
+                f"مهلت استفاده از اشتراک تست به پایان رسیده و این سرویس از سرور حذف گردید. "
+                f"در صورت تمایل می‌توانید از بخش «🛒 خرید اشتراک» سرویس جدید تهیه کنید."
             )
             try:
                 await bot.send_message(chat_id=tg_id, text=text, parse_mode="HTML")
@@ -87,7 +95,7 @@ async def _process_single_client(
 
             return
 
-        if is_volume_expired or is_time_expired:
+        if is_expired:
             if (email, "expired_notice") not in notified_set:
                 reason = (
                     "اتمام کامل حجم ترافیک"
@@ -125,12 +133,54 @@ async def _process_single_client(
                 except Exception as e:
                     logger.warning("Failed to send expired_notice to %s: %s", email, e)
 
-        if low_gb_enabled and total > 0 and not is_volume_expired and not is_test_sub:
+            if auto_delete_days > 0:
+                if is_time_expired and expiry_time > 0:
+                    expired_days = (now_ms - expiry_time) / (86400 * 1000)
+                elif is_volume_expired:
+                    expired_days = auto_delete_days
+                else:
+                    expired_days = 0
+
+                if (
+                    expired_days >= auto_delete_days
+                    and (email, "auto_deleted") not in notified_set
+                ):
+                    try:
+                        logger.info(
+                            "Auto-deleting expired client %s (expired %.1f days ago, threshold %d days)",
+                            email,
+                            expired_days,
+                            auto_delete_days,
+                        )
+                        await xui_api.delete_client(email)
+                        await clear_notified_alerts(email)
+
+                        try:
+                            del_text = (
+                                f"🗑 <b>اطلاعیه حذف اشتراک منقضی‌شده</b>\n\n"
+                                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
+                                f"اشتراک فوق به دلیل گذشت بیش از {to_persian_digits(auto_delete_days)} روز "
+                                f"از تاریخ انقضا، حذف گردید."
+                            )
+                            await bot.send_message(
+                                chat_id=tg_id, text=del_text, parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+
+                    except Exception as e:
+                        logger.error(
+                            "Failed to auto-delete expired client %s: %s", email, e
+                        )
+
+            return
+
+        if low_gb_enabled and total > 0 and not is_test_sub:
             rem_bytes = max(0, total - used)
             rem_gb = rem_bytes / (1024**3)
 
             if 0 < rem_gb <= min_gb:
-                step_gb = int(math.floor(rem_gb))
+                step_gb = int(math.ceil(rem_gb))
                 alert_key = f"low_gb_{step_gb}"
 
                 if (email, alert_key) not in notified_set:
@@ -173,17 +223,13 @@ async def _process_single_client(
                             "Failed to send %s alert to %s: %s", alert_key, email, e
                         )
 
-        if (
-            expiring_days_enabled
-            and expiry_time > 0
-            and not is_time_expired
-            and not is_test_sub
-        ):
+        if expiring_days_enabled and expiry_time > 0 and not is_test_sub:
             rem_ms = expiry_time - now_ms
             rem_days = int(rem_ms / (86400 * 1000))
 
             if 0 <= rem_days <= min_days:
                 alert_key = f"expiring_day_{rem_days}"
+
                 if (email, alert_key) not in notified_set:
                     rem_days_str = (
                         f"{to_persian_digits(rem_days)} روز"
@@ -221,38 +267,6 @@ async def _process_single_client(
                     except Exception as e:
                         logger.warning(
                             "Failed to send %s alert to %s: %s", alert_key, email, e
-                        )
-
-        if auto_delete_days > 0 and expiry_time > 0:
-            expired_ms = now_ms - expiry_time
-            if expired_ms > 0:
-                expired_days = expired_ms / (86400 * 1000)
-                if expired_days >= auto_delete_days:
-                    try:
-                        logger.info(
-                            "Auto-deleting expired client %s (expired %.1f days ago, threshold %d days)",
-                            email,
-                            expired_days,
-                            auto_delete_days,
-                        )
-                        await xui_api.delete_client(email)
-                        await clear_notified_alerts(email)
-
-                        if tg_id:
-                            try:
-                                del_text = (
-                                    f"🗑 <b>اطلاعیه حذف اشتراک منقضی‌شده</b>\n\n"
-                                    f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
-                                    f"اشتراک فوق به دلیل گذشت بیش از {to_persian_digits(auto_delete_days)} روز از تاریخ انقضا، حذف گردید."
-                                )
-                                await bot.send_message(
-                                    chat_id=tg_id, text=del_text, parse_mode="HTML"
-                                )
-                            except Exception:
-                                pass
-                    except Exception as e:
-                        logger.error(
-                            "Failed to auto-delete expired client %s: %s", email, e
                         )
 
 
