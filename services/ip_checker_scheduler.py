@@ -55,6 +55,13 @@ async def _process_client_ip_limit(
             if strikes < 3:
                 if tg_id > 0:
                     try:
+                        logger.info(
+                            "Sent IP limit warning (Strike %d) to %s (%s)",
+                            strikes,
+                            email,
+                            tg_id,
+                        )
+
                         text = (
                             f"⚠️ <b>هشدار تخلف از سقف اتصال همزمان (دستگاه/IP)</b>\n\n"
                             f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
@@ -63,14 +70,9 @@ async def _process_client_ip_limit(
                             f"🚨 <b>تعداد اخطار ثبت‌شده:</b> <b>{to_persian_digits(strikes)} از ۳ اخطار</b>\n\n"
                             f"تعداد اتصالات همزمان شما بیشتر از سقف مجاز است. لطفاً اتصالات اضافی را قطع کنید. در صورت دریافت ۳ اخطار، سرویس شما مسدود خواهد شد."
                         )
+
                         await bot.send_message(
                             chat_id=tg_id, text=text, parse_mode="HTML"
-                        )
-                        logger.info(
-                            "Sent IP limit warning (Strike %d) to %s (%s)",
-                            strikes,
-                            email,
-                            tg_id,
                         )
                     except (TelegramForbiddenError, TelegramBadRequest):
                         pass
