@@ -111,7 +111,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         if invoice.get("discount_code"):
             from db.discounts import increment_discount_usage
 
-            await increment_discount_usage(invoice["discount_code"])
+            await increment_discount_usage(invoice["discount_code"], tg_id)
 
         from db.models import process_referral_commission
 

@@ -460,7 +460,7 @@ async def buy_wallet_confirm(
     if discount_code:
         from db.discounts import increment_discount_usage
 
-        await increment_discount_usage(discount_code)
+        await increment_discount_usage(discount_code, tg_id)
 
     from db.models import process_referral_commission
 
@@ -612,7 +612,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         return
 
     code = message.text.strip()
-    is_valid, err_msg, dc = await validate_discount_code(code)
+    is_valid, err_msg, dc = await validate_discount_code(code, message.from_user.id)
 
     if not is_valid or not dc:
         await message.answer(

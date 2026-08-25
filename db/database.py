@@ -74,6 +74,13 @@ async def init_db() -> None:
             created_at       TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS discount_usage (
+            code        TEXT NOT NULL,
+            tg_id       INTEGER NOT NULL,
+            used_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (code, tg_id)
+        );
+
         CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
