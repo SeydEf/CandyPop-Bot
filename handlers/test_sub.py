@@ -29,6 +29,13 @@ async def test_subscription(message: types.Message) -> None:
 
     tg_id = message.from_user.id
     test_config = await get_test_sub_config()
+    if not test_config.get("enabled", True):
+        await message.answer(
+            "❌ <b>در حال حاضر امکان دریافت اشتراک تست رایگان غیرفعال می‌باشد.</b>",
+            parse_mode="HTML",
+        )
+        return
+
     test_gb = test_config["gb"]
     test_duration = test_config["duration_days"]
     cooldown_days = test_config["cooldown_days"]

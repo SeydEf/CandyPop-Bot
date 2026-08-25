@@ -2433,19 +2433,25 @@ async def admin_shop_status_menu(
     await state.clear()
 
     from db.models import get_shop_status
+    from services.test_sub_config import get_test_sub_config
 
     status = await get_shop_status()
+    test_config = await get_test_sub_config()
+
     pur_enabled = status["purchases_enabled"]
     ren_enabled = status["renewals_enabled"]
+    test_enabled = test_config.get("enabled", True)
 
     pur_text = "🟢 باز (فعال)" if pur_enabled else "🔴 بسته (موقتاً غیرفعال)"
     ren_text = "🟢 باز (فعال)" if ren_enabled else "🔴 بسته (موقتاً غیرفعال)"
+    test_text = "🟢 باز (فعال)" if test_enabled else "🔴 بسته (موقتاً غیرفعال)"
 
     text = (
-        f"🛒/🔄 <b>تنظیمات وضعیت فروش و تمدید اشتراک‌ها</b>\n\n"
-        f"از این بخش می‌توانید فروش اشتراک جدید و امکان تمدید سرویس‌های موجود را به صورت مستقل باز کرده یا ببندید.\n\n"
+        f"🛒/🔄 <b>تنظیمات وضعیت فروش، تمدید و اشتراک تست</b>\n\n"
+        f"از این بخش می‌توانید امکان خرید اشتراک جدید، تمدید و دریافت اشتراک تست رایگان را به صورت مستقل فعال یا غیرفعال کنید.\n\n"
         f"🛒 <b>وضعیت فروش اشتراک جدید:</b> <b>{pur_text}</b>\n"
-        f"🔄 <b>وضعیت تمدید اشتراک‌ها:</b> <b>{ren_text}</b>\n\n"
+        f"🔄 <b>وضعیت تمدید اشتراک‌ها:</b> <b>{ren_text}</b>\n"
+        f"🎁 <b>وضعیت دریافت اشتراک تست:</b> <b>{test_text}</b>\n\n"
         f"جهت تغییر وضعیت هر بخش، روی دکمه مربوطه کلیک کنید:"
     )
 
@@ -2459,6 +2465,11 @@ async def admin_shop_status_menu(
         if ren_enabled
         else "🔴 تمدید اشتراک: بسته (کلیک جهت بازکردن)"
     )
+    test_btn = (
+        "🟢 اشتراک تست: باز (کلیک جهت بستن)"
+        if test_enabled
+        else "🔴 اشتراک تست: بسته (کلیک جهت بازکردن)"
+    )
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -2470,6 +2481,11 @@ async def admin_shop_status_menu(
             [
                 InlineKeyboardButton(
                     text=ren_btn, callback_data="admin_toggle_renewals"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=test_btn, callback_data="admin_toggle_test_sub"
                 ),
             ],
             [
@@ -2514,6 +2530,21 @@ async def admin_toggle_renewals(
 
     status = await get_shop_status()
     await set_shop_status(renewals_enabled=not status["renewals_enabled"])
+    await admin_shop_status_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_toggle_test_sub")
+async def admin_toggle_test_sub(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from services.test_sub_config import get_test_sub_config, update_test_sub_config
+
+    test_config = await get_test_sub_config()
+    current_enabled = test_config.get("enabled", True)
+    await update_test_sub_config(enabled=not current_enabled)
     await admin_shop_status_menu(callback, state)
 
 
