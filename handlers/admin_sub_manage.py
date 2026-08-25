@@ -362,6 +362,14 @@ async def _render_user_dashboard(
     full_name = user.get("full_name") or "نامشخص"
     referrer = user.get("referrer_id") or "بدون معرفی‌کننده"
 
+    from db.models import get_user_financial_summary
+
+    fin_summary = await get_user_financial_summary(tg_id)
+    total_paid_str = format_price(fin_summary["total_paid"])
+    paid_count = fin_summary["paid_count"]
+    topups_str = format_price(fin_summary["topups_amount"])
+    subs_str = format_price(fin_summary["subs_amount"])
+
     notice_block = f"{notice}\n\n" if notice else ""
 
     text = (
@@ -370,6 +378,9 @@ async def _render_user_dashboard(
         f"نام و نام‌خانوادگی: <b>{full_name}</b>\n"
         f"یوزرنیم: <b>{username_str}</b>\n"
         f"💰 <b>موجودی کیف پول:</b> {format_price(bal)}\n"
+        f"💳 <b>کل پرداختی‌های موفق:</b> {total_paid_str} ({to_persian_digits(paid_count)} تراکنش)\n"
+        f"   ├ 🛍 خرید/تمدید مستقیم: {subs_str}\n"
+        f"   └ 💵 شارژ کیف پول: {topups_str}\n"
         f"👥 <b>معرفی‌کننده:</b> <code>{referrer}</code>"
     )
 
@@ -397,6 +408,12 @@ async def _render_user_dashboard(
                 InlineKeyboardButton(
                     text="💳 شارژ / تغییر موجودی کیف پول",
                     callback_data=f"admin_user_wallet_{tg_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📑 سابقه تراکنش‌های پرداختی کاربر",
+                    callback_data=f"admin_user_invoices_{tg_id}_0",
                 )
             ],
             [
@@ -1115,3 +1132,99 @@ async def admin_search_back(callback: types.CallbackQuery, state: FSMContext) ->
 
         callback.data = f"admin_users_list_{page}"
         await admin_users_list(callback, state)
+
+
+@router.callback_query(F.data.startswith("admin_user_invoices_"))
+async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split("_")
+    u_id = int(parts[3])
+    page = int(parts[4]) if len(parts) > 4 else 0
+    page_size = 5
+    offset = page * page_size
+
+    from db.models import get_user, get_user_invoices_paginated
+
+    user = await get_user(u_id)
+    full_name = user.get("full_name") or str(u_id) if user else str(u_id)
+
+    invoices, total_invoices = await get_user_invoices_paginated(
+        u_id, offset=offset, limit=page_size
+    )
+
+    if not invoices:
+        await callback.answer(
+            "📭 هیچ تراکنشی برای این کاربر ثبت نشده است.", show_alert=True
+        )
+        return
+
+    import math
+
+    total_pages = max(1, math.ceil(total_invoices / page_size))
+
+    lines = [
+        f"📑 <b>سابقه تراکنش‌ها و پرداختی‌های کاربر {full_name}</b> (<code>{u_id}</code>)\n"
+        f"کل فاکتورها: <b>{to_persian_digits(total_invoices)}</b> مورد\n"
+    ]
+
+    for inv in invoices:
+        inv_id = inv["id"]
+        amount = format_price(inv["amount"])
+        status = inv["status"]
+        status_str = (
+            "✅ موفق/تأییدشده"
+            if status in ("paid", "approved")
+            else ("⏳ در انتظار" if status == "pending" else "❌ ردشده/ناموفق")
+        )
+        pm = inv.get("payment_method") or "card"
+        pm_str = "💰 کیف پول" if pm == "wallet" else "💳 کارت به کارت"
+        created_at = inv.get("created_at") or ""
+
+        lines.append(
+            f"🔹 <b>فاکتور #{inv_id}</b> | {amount}\n"
+            f"   روش: {pm_str} | وضعیت: <b>{status_str}</b>\n"
+            f"   📅 تاریخ: <code>{created_at}</code>\n"
+        )
+
+    nav_btns = []
+    if page > 0:
+        nav_btns.append(
+            InlineKeyboardButton(
+                text="◀️ قبلی",
+                callback_data=f"admin_user_invoices_{u_id}_{page - 1}",
+            )
+        )
+    nav_btns.append(
+        InlineKeyboardButton(
+            text=f"صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}",
+            callback_data="admin_users_list_noop",
+        )
+    )
+    if page < total_pages - 1:
+        nav_btns.append(
+            InlineKeyboardButton(
+                text="بعدی ▶️",
+                callback_data=f"admin_user_invoices_{u_id}_{page + 1}",
+            )
+        )
+
+    data = await state.get_data()
+    list_page = data.get("current_list_page", 0)
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            nav_btns,
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به مدیریت کاربر",
+                    callback_data=f"admin_manage_user_{u_id}_p{list_page}",
+                )
+            ],
+        ]
+    )
+
+    text = "\n".join(lines)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()

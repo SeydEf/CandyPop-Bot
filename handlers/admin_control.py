@@ -3196,11 +3196,14 @@ async def admin_users_list(callback: types.CallbackQuery, state: FSMContext) -> 
         full_name = u.get("full_name") or "بدون نام"
         username_str = f"@{username}" if username else "بدون نام‌کاربری"
         bal_str = format_price(u.get("balance", 0))
+        total_paid_str = format_price(u.get("total_paid", 0))
+        paid_count = u.get("paid_count", 0)
         joined_at = u.get("joined_at") or "نامشخص"
 
         lines.append(
             f"{to_persian_digits(idx)}️⃣ <b>{full_name}</b> ({username_str})\n"
             f"   🆔 <code>{tg_id}</code> | 💰 کیف پول: {bal_str}\n"
+            f"   💳 کل پرداختی‌ها: <b>{total_paid_str}</b> ({to_persian_digits(paid_count)} موفق)\n"
             f"   📅 ثبت‌نام: <code>{joined_at}</code>\n"
         )
 

@@ -506,9 +506,19 @@ async def get_users_paginated(
 
     rows = await db.execute_fetchall(
         """
-        SELECT u.tg_id, u.username, u.full_name, u.joined_at, u.test_used, COALESCE(w.balance, 0) as balance
+        SELECT 
+            u.tg_id, 
+            u.username, 
+            u.full_name, 
+            u.joined_at, 
+            u.test_used, 
+            COALESCE(w.balance, 0) as balance,
+            COALESCE(SUM(CASE WHEN i.status IN ('paid', 'approved') THEN i.amount ELSE 0 END), 0) as total_paid,
+            COUNT(CASE WHEN i.status IN ('paid', 'approved') THEN 1 END) as paid_count
         FROM users u
         LEFT JOIN wallets w ON u.tg_id = w.tg_id
+        LEFT JOIN invoices i ON u.tg_id = i.tg_id
+        GROUP BY u.tg_id
         ORDER BY u.joined_at DESC
         LIMIT ? OFFSET ?
         """,
@@ -516,6 +526,31 @@ async def get_users_paginated(
     )
 
     return [dict(r) for r in rows], total_users, total_pages
+
+
+async def get_user_financial_summary(tg_id: int) -> dict[str, Any]:
+    db = await get_db()
+    async with db.execute(
+        """
+        SELECT 
+            COUNT(CASE WHEN status IN ('paid', 'approved') THEN 1 END) as paid_count,
+            COALESCE(SUM(CASE WHEN status IN ('paid', 'approved') THEN amount ELSE 0 END), 0) as total_paid,
+            COALESCE(SUM(CASE WHEN status IN ('paid', 'approved') AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0)) THEN amount ELSE 0 END), 0) as topups_amount,
+            COALESCE(SUM(CASE WHEN status IN ('paid', 'approved') AND target_email != 'TOPUP' AND (duration_days > 0 OR data_gb > 0) THEN amount ELSE 0 END), 0) as subs_amount
+        FROM invoices
+        WHERE tg_id = ?
+        """,
+        (tg_id,),
+    ) as c:
+        row = await c.fetchone()
+        if row:
+            return {
+                "paid_count": row[0] or 0,
+                "total_paid": row[1] or 0,
+                "topups_amount": row[2] or 0,
+                "subs_amount": row[3] or 0,
+            }
+        return {"paid_count": 0, "total_paid": 0, "topups_amount": 0, "subs_amount": 0}
 
 
 async def get_card_config() -> dict[str, str]:
@@ -932,7 +967,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         row = await c.fetchone()
         users_month = row[0] if row else 0
 
-    # Total Invoices (All Statuses)
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices"
     ) as c:
@@ -940,7 +974,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         total_invoices_count = row[0] if row else 0
         total_invoices_amount = row[1] if row else 0
 
-    # Paid Invoices
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid'"
     ) as c:
@@ -948,7 +981,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         paid_invoices_count = row[0] if row else 0
         paid_revenue = row[1] if row else 0
 
-    # Pending Invoices
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'pending'"
     ) as c:
@@ -956,7 +988,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         pending_invoices_count = row[0] if row else 0
         pending_amount = row[1] if row else 0
 
-    # Rejected Invoices
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'rejected'"
     ) as c:
@@ -964,7 +995,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         rejected_invoices_count = row[0] if row else 0
         rejected_amount = row[1] if row else 0
 
-    # Topup Invoices (Paid)
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid' AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0))"
     ) as c:
@@ -972,7 +1002,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         topups_count = row[0] if row else 0
         topups_revenue = row[1] if row else 0
 
-    # Direct Subscription Invoices (Paid)
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid' AND target_email != 'TOPUP' AND (duration_days > 0 OR data_gb > 0)"
     ) as c:
@@ -980,7 +1009,6 @@ async def get_bot_statistics() -> dict[str, Any]:
         subs_sales_count = row[0] if row else 0
         subs_sales_revenue = row[1] if row else 0
 
-    # Total User Wallet Balances
     async with db.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets") as c:
         row = await c.fetchone()
         total_wallets_balance = row[0] if row else 0
