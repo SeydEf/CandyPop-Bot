@@ -905,7 +905,7 @@ async def toggle_admin_permission(tg_id: int, perm_key: str) -> dict[str, bool]:
 
 
 async def get_bot_statistics() -> dict[str, Any]:
-    """Calculate and return comprehensive bot statistics."""
+    """Calculate and return comprehensive bot statistics including full financial overview."""
     db = await get_db()
 
     async with db.execute("SELECT COUNT(*) FROM users") as c:
@@ -930,13 +930,39 @@ async def get_bot_statistics() -> dict[str, Any]:
         row = await c.fetchone()
         users_month = row[0] if row else 0
 
+    # Total Invoices (All Statuses)
+    async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices"
+    ) as c:
+        row = await c.fetchone()
+        total_invoices_count = row[0] if row else 0
+        total_invoices_amount = row[1] if row else 0
+
+    # Paid Invoices
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid'"
     ) as c:
         row = await c.fetchone()
-        total_paid_invoices = row[0] if row else 0
-        total_revenue = row[1] if row else 0
+        paid_invoices_count = row[0] if row else 0
+        paid_revenue = row[1] if row else 0
 
+    # Pending Invoices
+    async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'pending'"
+    ) as c:
+        row = await c.fetchone()
+        pending_invoices_count = row[0] if row else 0
+        pending_amount = row[1] if row else 0
+
+    # Rejected Invoices
+    async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'rejected'"
+    ) as c:
+        row = await c.fetchone()
+        rejected_invoices_count = row[0] if row else 0
+        rejected_amount = row[1] if row else 0
+
+    # Topup Invoices (Paid)
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid' AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0))"
     ) as c:
@@ -944,12 +970,18 @@ async def get_bot_statistics() -> dict[str, Any]:
         topups_count = row[0] if row else 0
         topups_revenue = row[1] if row else 0
 
+    # Direct Subscription Invoices (Paid)
     async with db.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'paid' AND target_email != 'TOPUP' AND (duration_days > 0 OR data_gb > 0)"
     ) as c:
         row = await c.fetchone()
         subs_sales_count = row[0] if row else 0
         subs_sales_revenue = row[1] if row else 0
+
+    # Total User Wallet Balances
+    async with db.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets") as c:
+        row = await c.fetchone()
+        total_wallets_balance = row[0] if row else 0
 
     async with db.execute(
         "SELECT COUNT(*) FROM ip_violations WHERE suspended = 1"
@@ -968,12 +1000,19 @@ async def get_bot_statistics() -> dict[str, Any]:
         "users_today": users_today,
         "users_week": users_week,
         "users_month": users_month,
-        "total_paid_invoices": total_paid_invoices,
-        "total_revenue": total_revenue,
+        "total_invoices_count": total_invoices_count,
+        "total_invoices_amount": total_invoices_amount,
+        "paid_invoices_count": paid_invoices_count,
+        "paid_revenue": paid_revenue,
+        "pending_invoices_count": pending_invoices_count,
+        "pending_amount": pending_amount,
+        "rejected_invoices_count": rejected_invoices_count,
+        "rejected_amount": rejected_amount,
         "topups_count": topups_count,
         "topups_revenue": topups_revenue,
         "subs_sales_count": subs_sales_count,
         "subs_sales_revenue": subs_sales_revenue,
+        "total_wallets_balance": total_wallets_balance,
         "suspended_count": suspended_count,
         "admins_count": admins_count,
         "active_inbounds_count": len(active_inbounds),
