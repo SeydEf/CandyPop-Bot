@@ -5,6 +5,7 @@ import logging
 from aiogram import F, Router, types
 from aiogram.filters import Command
 
+from config import BOT_NAME
 from keyboards.reply_kb import BTN_PRICING
 from services.pricing import get_pricing_config
 from utils.formatting import format_price, to_persian_digits
@@ -48,7 +49,7 @@ async def build_pricing_text() -> str:
         f" • هر کاربر اضافه: فقط +{format_price(user_surcharge)}\n"
     )
     text = (
-        "💰 <b>تعرفه خدمات CandyPop</b>\n\n"
+        f"💰 <b>تعرفه خدمات {BOT_NAME}</b>\n\n"
         "📊 <b>هرچه حجم بیشتر، قیمت هر گیگ کمتر!</b>\n"
         f"{tiers_text}\n"
         "⏱ <b>مدت اشتراک را انتخاب کنید</b>\n"

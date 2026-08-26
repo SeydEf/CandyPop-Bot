@@ -4,12 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+BOT_NAME: str = os.getenv("BOT_NAME", "CandyPop")
 ADMIN_CHAT_ID: int = int(os.getenv("ADMIN_CHAT_ID", "0"))
 PROXY_URL: str | None = os.getenv("PROXY_URL") or None
 
 CHANNEL_ID: str = os.getenv("CHANNEL_ID", "")
 CHANNEL_LINK: str = os.getenv("CHANNEL_LINK", "")
 SUPPORT_HANDLE: str = os.getenv("SUPPORT_HANDLE", "@support")
+SUPPORT_LINK: str = os.getenv("SUPPORT_LINK", "https://t.me/candypop_v?direct")
 
 XUI_BASE_URL: str = os.getenv("XUI_BASE_URL", "").rstrip("/")
 XUI_API_TOKEN: str = os.getenv("XUI_API_TOKEN", "")

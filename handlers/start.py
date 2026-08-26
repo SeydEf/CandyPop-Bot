@@ -6,7 +6,8 @@ from typing import Any
 from aiogram import F, Router, types
 from aiogram.filters import Command, CommandStart
 
-from db.models import create_user, get_user, create_referral
+from config import BOT_NAME, SUPPORT_LINK
+from db.models import create_referral, create_user, get_user
 from keyboards.reply_kb import BTN_GUIDE, BTN_SUPPORT, main_menu_keyboard
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ router = Router(name="start")
 def get_welcome_text(user_name: str | None = None) -> str:
     name_str = f" <b>{user_name}</b>" if user_name else ""
     return (
-        f"سلام {name_str} عزیز، به ربات CandyPop خوش اومدی! 🍭✨\n\n"
+        f"سلام {name_str} عزیز، به ربات {BOT_NAME} خوش اومدی! 🍭✨\n\n"
         f"از طریق این ربات می‌تونی به‌صورت ۲۴ ساعته:\n"
         f"🛒 سرویس جدید بخری\n"
         f"📊 وضعیت و حجم سرویس‌های فعلی‌ت رو بررسی کنی\n"
@@ -101,7 +102,7 @@ async def send_welcome(
 @router.message(F.text == BTN_GUIDE)
 async def cmd_guide(message: types.Message) -> None:
     text = (
-        "📖 <b>راهنمای اتصال به سرویس‌های CandyPop</b>\n\n"
+        f"📖 <b>راهنمای اتصال به سرویس‌های {BOT_NAME}</b>\n\n"
         "برای استفاده از اشتراک خود در برنامه‌های مختلف، لینک ساب‌اسکریپشن دریافت شده را کپی کرده و طبق راهنمای زیر در برنامه وارد کنید:\n\n"
         "📱 <b>اندروید (Android):</b>\n"
         "برنامه‌های پیشنهادی: <b>v2rayNG</b> | <b>NekoBox</b> | <b>Streisand</b>\n"
@@ -122,9 +123,9 @@ async def cmd_guide(message: types.Message) -> None:
 async def cmd_support(message: types.Message) -> None:
     text = (
         "🆘 <b>پشتیبانی و ارتباط با ما</b>\n\n"
-        "تیم پشتیبانی CandyPop آماده پاسخگویی به سوالات، مشاوره و حل مشکلات شماست.\n\n"
+        f"تیم پشتیبانی {BOT_NAME} آماده پاسخگویی به سوالات، مشاوره و حل مشکلات شماست.\n\n"
         "جهت ارتباط مستقیم با پشتیبانی می‌توانید از آیدی زیر استفاده کنید:\n"
-        "👨‍💻 <b>آیدی پشتیبانی:</b> t.me/candypop_v?direct\n\n"
+        f"👨‍💻 <b>آیدی پشتیبانی:</b> {SUPPORT_LINK}\n\n"
         "⏱ <b>ساعات پاسخگویی:</b> همه روزه به صورت ۲۴ ساعته"
     )
     await message.answer(text, parse_mode="HTML")

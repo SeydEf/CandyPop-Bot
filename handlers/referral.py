@@ -7,6 +7,7 @@ from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from config import BOT_NAME
 from db.models import get_referral_config, get_referral_stats
 from keyboards.reply_kb import BTN_INVITE
 from utils.formatting import to_persian_digits
@@ -40,7 +41,7 @@ async def referral_menu(message: types.Message, bot: Bot) -> None:
         else "\n⚠️ <i>سیستم کسب درآمد الان موقتاً غیرفعاله، ولی زود برمی‌گرده!</i>\n"
     )
 
-    share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote('🍭 بیا CandyPop! اینترنت پرسرعت و بدون محدودیت 🚀')}"
+    share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(f'🍭 بیا {BOT_NAME}! اینترنت پرسرعت و بدون محدودیت 🚀')}"
 
     text = (
         f"💰 <b>با دعوت دوستات، درآمد کسب کن!</b>\n\n"

@@ -8,7 +8,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import ADMIN_CHAT_ID, SUPPORT_HANDLE
+from config import ADMIN_CHAT_ID, SUPPORT_LINK
 from db.models import (
     get_all_admins,
     get_all_ip_violations_dict,
@@ -102,7 +102,7 @@ async def _process_client_ip_limit(
                                 f"⛔️ <b>مسدودی سرویس به دلیل تخلف از سقف کاربران همزمان</b>\n\n"
                                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
                                 f"اشتراک شما به دلیل تخلف بیش از حد مجاز (۳ اخطار) در استفاده همزمان دستگاه‌ها مسدود گردید.\n"
-                                f"جهت بررسی و رفع مسدودی، لطفاً با پشتیبانی به شناسه {SUPPORT_HANDLE} در ارتباط باشید."
+                                f"جهت بررسی و رفع مسدودی، لطفاً با پشتیبانی به شناسه {SUPPORT_LINK} در ارتباط باشید."
                             )
                             await bot.send_message(
                                 chat_id=tg_id, text=susp_text, parse_mode="HTML"

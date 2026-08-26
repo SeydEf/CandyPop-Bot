@@ -6,7 +6,7 @@ import time
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 
-from config import SUB_BASE_URL
+from config import SUB_BASE_URL, SUPPORT_LINK
 from db.models import (
     get_invoice,
     get_user,
@@ -256,7 +256,7 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
             f"❌ <b>پرداخت شما تأیید نشد.</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n\n"
             "در صورت اطمینان از واریز، با پشتیبانی تماس بگیرید.\n"
-            "👨‍💻 <b>آیدی پشتیبانی:</b> t.me/candypop_v?direct"
+            f"👨‍💻 <b>آیدی پشتیبانی:</b> {SUPPORT_LINK}"
         ),
         parse_mode="HTML",
     )

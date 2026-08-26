@@ -8,7 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.client.session.aiohttp import AiohttpSession
 
-from config import BOT_TOKEN, PROXY_URL
+from config import BOT_NAME, BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
 from handlers import (
     admin,
@@ -107,7 +107,7 @@ async def main() -> None:
         admin_broadcast.router,
     )
 
-    logger.info("Starting CandyPop Bot...")
+    logger.info(f"Starting {BOT_NAME} Bot...")
     await dp.start_polling(bot)
 
 
