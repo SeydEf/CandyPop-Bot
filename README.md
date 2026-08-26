@@ -11,7 +11,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://aiogram.dev)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
-[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
+[![License](https://shields.io/badge/license-Apache%202-blue?style=for-the-badge)](LICENSE)
 
 > Sell VPN subscriptions 24/7 on autopilot. Manage pricing, users, payments, and panels — all from Telegram.
 
@@ -20,6 +20,11 @@
 ---
 
 ## ✨ Features
+
+### 🎨 Custom Branding
+| Feature | Description |
+|---|---|
+| **Custom Bot Name** | Easily change the bot name via `.env` to launch the entire bot under your own brand/alias |
 
 ### 🛒 For Users
 | Feature | Description |
