@@ -194,8 +194,8 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
                 parse_mode="HTML",
             )
             return
-        if gb > 500:
-            await message.answer("⚠️ حداکثر حجم قابل سفارش ۵۰۰ گیگابایت هست.")
+        if gb > 150:
+            await message.answer("⚠️ حداکثر حجم قابل سفارش 150 گیگابایت هست.")
             return
     except (ValueError, TypeError):
         await message.answer(
