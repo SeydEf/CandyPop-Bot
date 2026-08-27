@@ -69,6 +69,8 @@ class AdminControlStates(StatesGroup):
     waiting_start_msg_content = State()
     waiting_start_msg_button_title = State()
     waiting_start_msg_button_url = State()
+    waiting_pricing_content = State()
+    waiting_pricing_caption = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -122,6 +124,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         get_referral_config,
         get_shop_status,
         get_start_message_config,
+        get_pricing_display_config,
     )
 
     ref_config = await get_referral_config()
@@ -129,6 +132,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     alert_config = await get_alert_config()
     shop_status = await get_shop_status()
     start_msg_config = await get_start_message_config()
+    pricing_disp_config = await get_pricing_display_config()
 
     pur_status_str = (
         "🟢 باز (فعال)" if shop_status["purchases_enabled"] else "🔴 بسته (غیرفعال)"
@@ -199,6 +203,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     )
 
     start_msg_status = "🟢 فعال" if start_msg_config["enabled"] else "🔴 غیرفعال"
+    pricing_disp_status = "🟢 فعال" if pricing_disp_config["enabled"] else "🔴 غیرفعال"
 
     text = (
         f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
@@ -212,7 +217,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
         f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}\n"
-        f"📩 <b>پیام پس از استارت:</b> {start_msg_status}"
+        f"📩 <b>پیام پس از استارت:</b> {start_msg_status}\n"
+        f"💰 <b>بخش تعرفه‌ها:</b> {pricing_disp_status}"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -251,6 +257,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="📊 تغییر پله‌های تخفیف حجم",
                     callback_data="admin_price_tiers",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🖼️ تنظیم متن و تصویر تعرفه‌ها",
+                    callback_data="admin_pricing_disp_menu",
                 ),
             ],
             [
@@ -3758,5 +3770,546 @@ async def admin_start_msg_clear_btns(
         )
         await callback.message.answer(
             confirm_text, reply_markup=confirm_keyboard, parse_mode="HTML"
+        )
+    await callback.answer()
+
+
+# ==========================================
+# مدیریت نمایش و محتوای بخش تعرفه‌ها
+# ==========================================
+
+
+async def _build_pricing_display_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_pricing_display_config
+
+    config = await get_pricing_display_config()
+    is_enabled = config["enabled"]
+    mode = config.get("mode", "default")
+
+    status_str = "🟢 فعال" if is_enabled else "🔴 غیرفعال"
+
+    mode_titles = {
+        "default": "⚙️ متن خودکار سیستم (بدون تصویر)",
+        "photo_with_default_text": "🖼️ تصویر + متن خودکار سیستم",
+        "photo_with_custom_text": "🖼️ تصویر + متن سفارشی ادمین",
+        "custom_text_only": "📝 فقط متن سفارشی ادمین (بدون تصویر)",
+    }
+    mode_str = mode_titles.get(mode, "⚙️ متن خودکار سیستم")
+
+    text = (
+        "🖼️ <b>تنظیمات نمایش بخش تعرفه‌ها</b>\n\n"
+        "در این بخش می‌توانید فعال/غیرفعال بودن بخش تعرفه را مشخص کرده و تصویر یا متن دلخواه برای آن تنظیم کنید.\n\n"
+        f"⚙️ <b>وضعیت بخش تعرفه‌ها:</b> {status_str}\n"
+        f"📋 <b>حالت فعلی محتوا:</b> {mode_str}\n\n"
+        "جهت تغییر، گزینه‌ی مورد نظر را انتخاب نمایید:"
+    )
+
+    toggle_btn_text = (
+        "🔴 غیرفعال کردن بخش تعرفه" if is_enabled else "🟢 فعال کردن بخش تعرفه"
+    )
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=toggle_btn_text, callback_data="admin_pricing_disp_toggle"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="✏️ تنظیم متن یا تصویر جدید",
+                callback_data="admin_pricing_disp_set",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="👁 پیش‌نمایش نحوه نمایش به کاربر",
+                callback_data="admin_pricing_disp_preview",
+            ),
+        ],
+    ]
+
+    if mode != "default":
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی به متن خودکار پیش‌فرض",
+                    callback_data="admin_pricing_disp_reset",
+                ),
+            ]
+        )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+            ),
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+
+@router.callback_query(F.data == "admin_pricing_disp_menu")
+async def admin_pricing_disp_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    text, keyboard = await _build_pricing_display_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_pricing_disp_toggle")
+async def admin_pricing_disp_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from db.models import (
+        get_pricing_display_config,
+        set_pricing_display_config,
+    )
+
+    config = await get_pricing_display_config()
+    new_status = not config["enabled"]
+    await set_pricing_display_config(enabled=new_status)
+
+    text, keyboard = await _build_pricing_display_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    status_toast = "فعال شد 🟢" if new_status else "غیرفعال شد 🔴"
+    await callback.answer(f"بخش تعرفه‌ها {status_toast}")
+
+
+@router.callback_query(F.data == "admin_pricing_disp_reset")
+async def admin_pricing_disp_reset(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from db.models import reset_pricing_display_config
+
+    await reset_pricing_display_config()
+    await state.clear()
+    text, keyboard = await _build_pricing_display_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        "✅ بخش تعرفه به حالت متن خودکار سیستم بازنشانی شد.", show_alert=True
+    )
+
+
+@router.callback_query(F.data == "admin_pricing_disp_preview")
+async def admin_pricing_disp_preview(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from db.models import get_pricing_display_config
+    from handlers.pricing import build_pricing_text
+
+    config = await get_pricing_display_config()
+    mode = config.get("mode", "default")
+    photo_file_id = config.get("photo_file_id")
+    custom_text = config.get("custom_text")
+
+    await callback.answer("در حال ارسال پیش‌نمایش...")
+    if not callback.from_user:
+        return
+    chat_id = callback.from_user.id
+
+    if mode == "photo_with_default_text" and photo_file_id:
+        text = await build_pricing_text()
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo_file_id,
+            caption=text,
+            parse_mode="HTML",
+        )
+    elif mode == "photo_with_custom_text" and photo_file_id:
+        caption = custom_text or await build_pricing_text()
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo_file_id,
+            caption=caption,
+            parse_mode="HTML",
+        )
+    elif mode == "custom_text_only" and custom_text:
+        await bot.send_message(chat_id=chat_id, text=custom_text, parse_mode="HTML")
+    else:
+        text = await build_pricing_text()
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_pricing_disp_set")
+async def admin_pricing_disp_set(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    await state.set_state(AdminControlStates.waiting_pricing_content)
+
+    text = (
+        "🖼️ <b>تنظیم متن یا تصویر بخش تعرفه‌ها</b>\n\n"
+        "لطفاً یکی از موارد زیر را ارسال کنید:\n\n"
+        "1️⃣ <b>ارسال تصویر:</b>\n"
+        "• اگر تصویر را <u>بدون متن (کپشن)</u> بفرستید، می‌توانید انتخاب کنید که متن خودکار سیستم به عنوان کپشن زیر آن قرار گیرد یا کپشن دلخواه بنویسید.\n"
+        "• اگر تصویر را <u>همراه با کپشن</u> بفرستید، کپشن شما به عنوان توضیحات تعرفه قرار خواهد گرفت.\n\n"
+        "2️⃣ <b>ارسال متن دلخواه:</b>\n"
+        "• می‌توانید متن دلخواه خود را (با فرمت‌های HTML) بفرستید تا تعرفه به صورت متنی نمایش داده شود.\n\n"
+        "<i>جهت انصراف /cancel را ارسال کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_pricing_disp_menu"
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(
+    AdminControlStates.waiting_pricing_content,
+    F.content_type.in_({types.ContentType.TEXT, types.ContentType.PHOTO}),
+)
+async def admin_pricing_content_received(
+    message: types.Message, state: FSMContext, bot: Bot
+) -> None:
+    if not await _is_admin(message):
+        return
+    if not await _require_permission(message, "pricing"):
+        return
+
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_pricing_display_panel()
+        await message.answer(
+            f"❌ عملیات لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from handlers.pricing import build_pricing_text
+
+    if message.photo:
+        photo_id = message.photo[-1].file_id
+        if message.caption:
+            custom_caption = message.html_text
+            await state.update_data(
+                pricing_photo_id=photo_id,
+                pricing_custom_caption=custom_caption,
+            )
+
+            await message.answer(
+                "👇 <b>پیش‌نمایش تصویر و کپشن ارسالی شما:</b>",
+                parse_mode="HTML",
+            )
+            await bot.send_photo(
+                chat_id=message.chat.id,
+                photo=photo_id,
+                caption=custom_caption,
+                parse_mode="HTML",
+            )
+
+            confirm_text = (
+                "👆 <b>پیش‌نمایش تصویر به همراه کپشن سفارشی شما در بالا ارسال شد.</b>\n\n"
+                "آیا این پیام را به عنوان تعرفه ذخیره می‌کنید، یا مایلید متن خودکار سیستم به عنوان کپشن آن قرار گیرد؟"
+            )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🚀 تایید (تصویر + همین کپشن سفارشی)",
+                            callback_data="admin_pricing_disp_save_custom",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="🔄 تغییر به: تصویر + متن خودکار سیستم",
+                            callback_data="admin_pricing_disp_save_auto",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف",
+                            callback_data="admin_pricing_disp_menu",
+                        )
+                    ],
+                ]
+            )
+            await message.answer(confirm_text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await state.update_data(pricing_photo_id=photo_id)
+            auto_text = await build_pricing_text()
+
+            await message.answer(
+                "👇 <b>پیش‌نمایش تصویر به همراه متن خودکار سیستم:</b>",
+                parse_mode="HTML",
+            )
+            await bot.send_photo(
+                chat_id=message.chat.id,
+                photo=photo_id,
+                caption=auto_text,
+                parse_mode="HTML",
+            )
+
+            confirm_text = (
+                "👆 <b>پیش‌نمایش تصویر به همراه متن خودکار سیستم در بالا ارسال شد.</b>\n\n"
+                "تصویر شما بدون کپشن ارسال شد. مایلید همین تصویر به همراه متن خودکار سیستم ذخیره شود، یا می‌خواهید یک متن سفارشی برای آن بنویسید؟"
+            )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🚀 تایید (تصویر + متن خودکار سیستم)",
+                            callback_data="admin_pricing_disp_save_auto",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="✍️ نوشتن متن/کپشن سفارشی برای عکس",
+                            callback_data="admin_pricing_disp_write_caption",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف",
+                            callback_data="admin_pricing_disp_menu",
+                        )
+                    ],
+                ]
+            )
+            await message.answer(confirm_text, reply_markup=keyboard, parse_mode="HTML")
+    elif message.text:
+        custom_text = message.html_text
+        await state.update_data(pricing_custom_text=custom_text)
+
+        await message.answer(
+            "👇 <b>پیش‌نمایش متن سفارشی شما:</b>",
+            parse_mode="HTML",
+        )
+        await message.answer(custom_text, parse_mode="HTML")
+
+        confirm_text = (
+            "👆 <b>پیش‌نمایش متن در بالا ارسال شد.</b>\n\n"
+            "آیا این متن را به عنوان تعرفه ذخیره می‌کنید؟"
+        )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🚀 تایید و ذخیره متن سفارشی",
+                        callback_data="admin_pricing_disp_save_text",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف",
+                        callback_data="admin_pricing_disp_menu",
+                    )
+                ],
+            ]
+        )
+        await message.answer(confirm_text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_pricing_disp_write_caption")
+async def admin_pricing_disp_write_caption(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    data = await state.get_data()
+    if not data.get("pricing_photo_id"):
+        await callback.answer("عکسی در حافظه نیست.", show_alert=True)
+        return
+
+    await state.set_state(AdminControlStates.waiting_pricing_caption)
+    if callback.message:
+        await callback.message.answer(
+            "✍️ لطفاً <b>متن (کپشن) دلخواه</b> برای تصویر را ارسال کنید:\n\n"
+            "<i>جهت انصراف /cancel را ارسال کنید.</i>",
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_pricing_caption, F.text)
+async def admin_pricing_caption_received(
+    message: types.Message, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_pricing_display_panel()
+        await message.answer(
+            f"❌ عملیات لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    data = await state.get_data()
+    photo_id = data.get("pricing_photo_id")
+    if not photo_id:
+        await state.clear()
+        await message.answer("❌ تصویر یافت نشد.")
+        return
+
+    caption = message.html_text
+    await state.update_data(pricing_custom_caption=caption)
+
+    await message.answer(
+        "👇 <b>پیش‌نمایش تصویر به همراه کپشن جدید:</b>",
+        parse_mode="HTML",
+    )
+    await bot.send_photo(
+        chat_id=message.chat.id,
+        photo=photo_id,
+        caption=caption,
+        parse_mode="HTML",
+    )
+
+    confirm_text = (
+        "👆 <b>پیش‌نمایش جدید در بالا ارسال شد.</b>\n\n"
+        "آیا این تنظیمات را تایید و ذخیره می‌کنید؟"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 تایید و ذخیره نهایی",
+                    callback_data="admin_pricing_disp_save_custom",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data="admin_pricing_disp_menu",
+                )
+            ],
+        ]
+    )
+    await message.answer(confirm_text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_pricing_disp_save_auto")
+async def admin_pricing_disp_save_auto(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    data = await state.get_data()
+    photo_id = data.get("pricing_photo_id")
+    if not photo_id:
+        await callback.answer("تصویری یافت نشد.", show_alert=True)
+        return
+
+    from db.models import set_pricing_display_config
+
+    await set_pricing_display_config(
+        enabled=True,
+        mode="photo_with_default_text",
+        photo_file_id=photo_id,
+        custom_text="",
+    )
+    await state.clear()
+
+    text, keyboard = await _build_pricing_display_panel()
+    if callback.message:
+        await callback.message.answer(
+            f"✅ <b>بخش تعرفه‌ها با موفقیت تنظیم شد (تصویر + متن خودکار سیستم)!</b>\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_pricing_disp_save_custom")
+async def admin_pricing_disp_save_custom(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    data = await state.get_data()
+    photo_id = data.get("pricing_photo_id")
+    caption = data.get("pricing_custom_caption")
+    if not photo_id:
+        await callback.answer("تصویری یافت نشد.", show_alert=True)
+        return
+
+    from db.models import set_pricing_display_config
+
+    await set_pricing_display_config(
+        enabled=True,
+        mode="photo_with_custom_text",
+        photo_file_id=photo_id,
+        custom_text=caption or "",
+    )
+    await state.clear()
+
+    text, keyboard = await _build_pricing_display_panel()
+    if callback.message:
+        await callback.message.answer(
+            f"✅ <b>بخش تعرفه‌ها با موفقیت تنظیم شد (تصویر + متن سفارشی)!</b>\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_pricing_disp_save_text")
+async def admin_pricing_disp_save_text(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    data = await state.get_data()
+    custom_text = data.get("pricing_custom_text")
+    if not custom_text:
+        await callback.answer("متنی یافت نشد.", show_alert=True)
+        return
+
+    from db.models import set_pricing_display_config
+
+    await set_pricing_display_config(
+        enabled=True,
+        mode="custom_text_only",
+        custom_text=custom_text,
+        photo_file_id="",
+    )
+    await state.clear()
+
+    text, keyboard = await _build_pricing_display_panel()
+    if callback.message:
+        await callback.message.answer(
+            f"✅ <b>بخش تعرفه‌ها با موفقیت تنظیم شد (فقط متن سفارشی)!</b>\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
         )
     await callback.answer()

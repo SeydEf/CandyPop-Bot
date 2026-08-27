@@ -5,7 +5,8 @@ import logging
 from aiogram import F, Router, types
 from aiogram.filters import Command
 
-from config import BOT_NAME
+from config import BOT_NAME, SUPPORT_LINK
+from db.models import get_pricing_display_config
 from keyboards.reply_kb import BTN_PRICING
 from services.pricing import get_pricing_config
 from utils.formatting import format_price, to_persian_digits
@@ -64,6 +65,30 @@ async def build_pricing_text() -> str:
 @router.message(Command("pricing"))
 @router.message(F.text == BTN_PRICING)
 async def show_pricing(message: types.Message) -> None:
-    text = await build_pricing_text()
+    config = await get_pricing_display_config()
+    if not config["enabled"]:
+        disabled_text = (
+            "⚠️ <b>بخش تعرفه‌ها در حال حاضر موقتاً غیرفعال می‌باشد.</b>\n\n"
+            "جهت کسب اطلاعات بیشتر یا استعلام قیمت‌ها، لطفاً با پشتیبانی در ارتباط باشید:\n"
+            f"👨‍💻 {SUPPORT_LINK}"
+        )
+        await message.answer(disabled_text, parse_mode="HTML")
+        return
 
-    await message.answer(text, parse_mode="HTML")
+    mode = config.get("mode", "default")
+    photo_file_id = config.get("photo_file_id")
+    custom_text = config.get("custom_text")
+
+    if mode == "photo_with_default_text" and photo_file_id:
+        text = await build_pricing_text()
+        await message.answer_photo(photo=photo_file_id, caption=text, parse_mode="HTML")
+    elif mode == "photo_with_custom_text" and photo_file_id:
+        caption = custom_text or await build_pricing_text()
+        await message.answer_photo(
+            photo=photo_file_id, caption=caption, parse_mode="HTML"
+        )
+    elif mode == "custom_text_only" and custom_text:
+        await message.answer(custom_text, parse_mode="HTML")
+    else:
+        text = await build_pricing_text()
+        await message.answer(text, parse_mode="HTML")

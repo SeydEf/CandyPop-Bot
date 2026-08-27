@@ -386,6 +386,42 @@ async def delete_start_message() -> None:
     await set_setting("start_message_data", "")
 
 
+async def get_pricing_display_config() -> dict[str, Any]:
+    enabled_val = await get_setting("pricing_section_enabled", "1")
+    mode_val = await get_setting("pricing_display_mode", "default")
+    custom_text = await get_setting("pricing_custom_text", "")
+    photo_file_id = await get_setting("pricing_custom_photo", "")
+
+    return {
+        "enabled": enabled_val == "1",
+        "mode": mode_val,
+        "custom_text": custom_text,
+        "photo_file_id": photo_file_id,
+    }
+
+
+async def set_pricing_display_config(
+    enabled: bool | None = None,
+    mode: str | None = None,
+    custom_text: str | None = None,
+    photo_file_id: str | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("pricing_section_enabled", "1" if enabled else "0")
+    if mode is not None:
+        await set_setting("pricing_display_mode", mode)
+    if custom_text is not None:
+        await set_setting("pricing_custom_text", custom_text)
+    if photo_file_id is not None:
+        await set_setting("pricing_custom_photo", photo_file_id)
+
+
+async def reset_pricing_display_config() -> None:
+    await set_setting("pricing_display_mode", "default")
+    await set_setting("pricing_custom_text", "")
+    await set_setting("pricing_custom_photo", "")
+
+
 async def get_referral_config() -> dict[str, Any]:
     enabled_val = await get_setting("referral_enabled", "1")
     percent_val = await get_setting("referral_commission_percent", "10")

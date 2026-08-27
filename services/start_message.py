@@ -103,9 +103,7 @@ def build_keyboard_from_buttons(
         if row_btns:
             keyboard_rows.append(row_btns)
     return (
-        InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-        if keyboard_rows
-        else None
+        InlineKeyboardMarkup(inline_keyboard=keyboard_rows) if keyboard_rows else None
     )
 
 
@@ -205,7 +203,4 @@ async def send_post_start_message(
 
         await send_start_payload(bot, chat_id, msg_data)
     except Exception as e:
-        logger.warning(
-            "Failed to send post start message to %s: %s", chat_id, e
-        )
-
+        logger.warning("Failed to send post start message to %s: %s", chat_id, e)
