@@ -3784,9 +3784,11 @@ async def _build_pricing_display_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     config = await get_pricing_display_config()
     is_enabled = config["enabled"]
+    hide_button = config.get("hide_button", False)
     mode = config.get("mode", "default")
 
     status_str = "🟢 فعال" if is_enabled else "🔴 غیرفعال"
+    btn_status_str = "🙈 پنهان (مخفی)" if hide_button else "👁 نمایان (در منوی اصلی)"
 
     mode_titles = {
         "default": "⚙️ متن خودکار سیستم (بدون تصویر)",
@@ -3798,8 +3800,9 @@ async def _build_pricing_display_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     text = (
         "🖼️ <b>تنظیمات نمایش بخش تعرفه‌ها</b>\n\n"
-        "در این بخش می‌توانید فعال/غیرفعال بودن بخش تعرفه را مشخص کرده و تصویر یا متن دلخواه برای آن تنظیم کنید.\n\n"
+        "در این بخش می‌توانید فعال/غیرفعال بودن، پنهان یا نمایان بودن دکمه در منوی اصلی و تصویر یا متن دلخواه تعرفه را تنظیم کنید.\n\n"
         f"⚙️ <b>وضعیت بخش تعرفه‌ها:</b> {status_str}\n"
+        f"🔘 <b>دکمه در منوی اصلی:</b> {btn_status_str}\n"
         f"📋 <b>حالت فعلی محتوا:</b> {mode_str}\n\n"
         "جهت تغییر، گزینه‌ی مورد نظر را انتخاب نمایید:"
     )
@@ -3807,11 +3810,18 @@ async def _build_pricing_display_panel() -> tuple[str, InlineKeyboardMarkup]:
     toggle_btn_text = (
         "🔴 غیرفعال کردن بخش تعرفه" if is_enabled else "🟢 فعال کردن بخش تعرفه"
     )
+    toggle_hide_btn_text = (
+        "👁 نمایش دکمه در منو" if hide_button else "🙈 پنهان کردن دکمه در منو"
+    )
 
     keyboard_rows: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
                 text=toggle_btn_text, callback_data="admin_pricing_disp_toggle"
+            ),
+            InlineKeyboardButton(
+                text=toggle_hide_btn_text,
+                callback_data="admin_pricing_disp_toggle_btn",
             ),
         ],
         [
@@ -3890,6 +3900,36 @@ async def admin_pricing_disp_toggle(
     )
     status_toast = "فعال شد 🟢" if new_status else "غیرفعال شد 🔴"
     await callback.answer(f"بخش تعرفه‌ها {status_toast}")
+
+
+@router.callback_query(F.data == "admin_pricing_disp_toggle_btn")
+async def admin_pricing_disp_toggle_btn(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from db.models import (
+        get_pricing_display_config,
+        set_pricing_display_config,
+    )
+
+    config = await get_pricing_display_config()
+    new_hide = not config.get("hide_button", False)
+    await set_pricing_display_config(hide_button=new_hide)
+
+    text, keyboard = await _build_pricing_display_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    toast = (
+        "دکمه تعرفه از منوی اصلی پنهان شد 🙈"
+        if new_hide
+        else "دکمه تعرفه در منوی اصلی نمایش داده می‌شود 👁"
+    )
+    await callback.answer(toast)
 
 
 @router.callback_query(F.data == "admin_pricing_disp_reset")

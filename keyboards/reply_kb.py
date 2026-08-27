@@ -12,7 +12,28 @@ BTN_INVITE = "👥 دعوت از دوستان"
 # BTN_FAQ = "❓ سوالات متداول"
 
 
-def main_menu_keyboard() -> ReplyKeyboardMarkup:
+_pricing_button_hidden: bool = False
+
+
+def set_pricing_button_hidden_cache(hidden: bool) -> None:
+    global _pricing_button_hidden
+    _pricing_button_hidden = hidden
+
+
+def is_pricing_button_hidden() -> bool:
+    return _pricing_button_hidden
+
+
+def main_menu_keyboard(show_pricing: bool | None = None) -> ReplyKeyboardMarkup:
+    if show_pricing is None:
+        show_pricing = not _pricing_button_hidden
+
+    pricing_row = (
+        [KeyboardButton(text=BTN_PRICING), KeyboardButton(text=BTN_GUIDE)]
+        if show_pricing
+        else [KeyboardButton(text=BTN_GUIDE)]
+    )
+
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -26,10 +47,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text=BTN_PROFILE),
                 KeyboardButton(text=BTN_INCREASE_WALLET),
             ],
-            [
-                KeyboardButton(text=BTN_PRICING),
-                KeyboardButton(text=BTN_GUIDE),
-            ],
+            pricing_row,
             [
                 KeyboardButton(text=BTN_INVITE),
             ],

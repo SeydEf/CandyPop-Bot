@@ -57,6 +57,12 @@ async def global_error_handler(event: ErrorEvent) -> bool:
 
 async def on_startup(bot: Bot) -> None:
     await init_db()
+    from db.models import get_pricing_display_config
+    from keyboards.reply_kb import set_pricing_button_hidden_cache
+
+    pricing_cfg = await get_pricing_display_config()
+    set_pricing_button_hidden_cache(pricing_cfg.get("hide_button", False))
+
     me = await bot.get_me()
     logger.info("Bot started: @%s (%s)", me.username, me.full_name)
     asyncio.create_task(start_alert_scheduler(bot))

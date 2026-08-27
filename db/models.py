@@ -388,12 +388,14 @@ async def delete_start_message() -> None:
 
 async def get_pricing_display_config() -> dict[str, Any]:
     enabled_val = await get_setting("pricing_section_enabled", "1")
+    hide_btn_val = await get_setting("pricing_hide_button", "0")
     mode_val = await get_setting("pricing_display_mode", "default")
     custom_text = await get_setting("pricing_custom_text", "")
     photo_file_id = await get_setting("pricing_custom_photo", "")
 
     return {
         "enabled": enabled_val == "1",
+        "hide_button": hide_btn_val == "1",
         "mode": mode_val,
         "custom_text": custom_text,
         "photo_file_id": photo_file_id,
@@ -402,12 +404,21 @@ async def get_pricing_display_config() -> dict[str, Any]:
 
 async def set_pricing_display_config(
     enabled: bool | None = None,
+    hide_button: bool | None = None,
     mode: str | None = None,
     custom_text: str | None = None,
     photo_file_id: str | None = None,
 ) -> None:
     if enabled is not None:
         await set_setting("pricing_section_enabled", "1" if enabled else "0")
+    if hide_button is not None:
+        await set_setting("pricing_hide_button", "1" if hide_button else "0")
+        try:
+            from keyboards.reply_kb import set_pricing_button_hidden_cache
+
+            set_pricing_button_hidden_cache(hide_button)
+        except Exception:
+            pass
     if mode is not None:
         await set_setting("pricing_display_mode", mode)
     if custom_text is not None:
