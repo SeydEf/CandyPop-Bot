@@ -53,9 +53,8 @@ async def cmd_start(message: types.Message) -> None:
                 referrer_id = None
 
     existing = await get_user(tg_id)
-    if existing is None or (
-        referrer_id is not None and not existing.get("referrer_id")
-    ):
+    is_new_user = existing is None
+    if is_new_user or (referrer_id is not None and not existing.get("referrer_id")):
         await create_user(tg_id, username, full_name, referrer_id)
         if referrer_id is not None and referrer_id != tg_id:
             referrer = await get_user(referrer_id)
@@ -64,6 +63,11 @@ async def cmd_start(message: types.Message) -> None:
                 logger.info("Referral: %d referred by %d", tg_id, referrer_id)
 
     await send_welcome(message)
+
+    from services.start_message import send_post_start_message
+
+    if message.bot:
+        await send_post_start_message(message.bot, tg_id, is_new_user=is_new_user)
 
 
 async def send_welcome(

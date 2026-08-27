@@ -348,6 +348,44 @@ async def set_setting(key: str, value: str) -> None:
     await db.commit()
 
 
+async def get_start_message_config() -> dict[str, Any]:
+    enabled_val = await get_setting("start_message_enabled", "0")
+    target_val = await get_setting("start_message_target", "all")
+    msg_json = await get_setting("start_message_data", "")
+    message_data = None
+    if msg_json:
+        try:
+            message_data = json.loads(msg_json)
+        except Exception:
+            message_data = None
+
+    return {
+        "enabled": enabled_val == "1",
+        "target": target_val,
+        "message_data": message_data,
+    }
+
+
+async def set_start_message_config(
+    enabled: bool | None = None,
+    target: str | None = None,
+    message_data: dict[str, Any] | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("start_message_enabled", "1" if enabled else "0")
+    if target is not None:
+        await set_setting("start_message_target", target)
+    if message_data is not None:
+        await set_setting(
+            "start_message_data", json.dumps(message_data, ensure_ascii=False)
+        )
+
+
+async def delete_start_message() -> None:
+    await set_setting("start_message_enabled", "0")
+    await set_setting("start_message_data", "")
+
+
 async def get_referral_config() -> dict[str, Any]:
     enabled_val = await get_setting("referral_enabled", "1")
     percent_val = await get_setting("referral_commission_percent", "10")
@@ -869,6 +907,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "inbounds": "مدیریت اینباندهای سرور",
     "referral": "تنظیمات زیرمجموعه‌گیری",
     "broadcast": "ارسال پیام همگانی",
+    "start_message": "تنظیم پیام پس از استارت",
     "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
     "stats": "مشاهده آمار و گزارشات ربات",
 }
@@ -888,6 +927,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "inbounds": False,
     "referral": True,
     "broadcast": True,
+    "start_message": True,
     "reset_configs": False,
     "stats": True,
 }

@@ -66,6 +66,9 @@ class AdminControlStates(StatesGroup):
     waiting_alert_interval = State()
     waiting_ip_checker_interval = State()
     waiting_add_admin_id = State()
+    waiting_start_msg_content = State()
+    waiting_start_msg_button_title = State()
+    waiting_start_msg_button_url = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -118,12 +121,14 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         get_card_config,
         get_referral_config,
         get_shop_status,
+        get_start_message_config,
     )
 
     ref_config = await get_referral_config()
     card_config = await get_card_config()
     alert_config = await get_alert_config()
     shop_status = await get_shop_status()
+    start_msg_config = await get_start_message_config()
 
     pur_status_str = (
         "🟢 باز (فعال)" if shop_status["purchases_enabled"] else "🔴 بسته (غیرفعال)"
@@ -193,6 +198,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"  • حذف منقضی‌شده‌ها: {del_days_str}\n"
     )
 
+    start_msg_status = "🟢 فعال" if start_msg_config["enabled"] else "🔴 غیرفعال"
+
     text = (
         f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
         f"🛒 <b>فروش جدید:</b> {pur_status_str}\n"
@@ -204,7 +211,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
         f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
-        f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}"
+        f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}\n"
+        f"📩 <b>پیام پس از استارت:</b> {start_msg_status}"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -297,6 +305,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="📢 ارسال پیام همگانی (اطلاعیه)",
                     callback_data="admin_broadcast_start",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📩 تنظیم پیام پس از استارت",
+                    callback_data="admin_start_msg_menu",
                 ),
             ],
             [
@@ -3218,4 +3232,531 @@ async def admin_users_list(callback: types.CallbackQuery, state: FSMContext) -> 
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+    await callback.answer()
+
+
+async def _build_start_msg_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_start_message_config
+    from services.start_message import MESSAGE_TYPE_TITLES
+
+    config = await get_start_message_config()
+    is_enabled = config["enabled"]
+    target = config.get("target", "all")
+    msg_data = config.get("message_data")
+
+    status_str = "🟢 فعال" if is_enabled else "🔴 غیرفعال"
+    target_str = "👥 همه استارت‌ها" if target == "all" else "👤 فقط کاربران جدید"
+
+    if msg_data:
+        msg_type = msg_data.get("type", "text")
+        type_title = MESSAGE_TYPE_TITLES.get(msg_type, msg_type)
+        btns_count = len(msg_data.get("buttons") or [])
+        btns_info = (
+            f" (دارای {to_persian_digits(btns_count)} دکمه شیشه‌ای)"
+            if btns_count
+            else ""
+        )
+        msg_info = f"✅ تنظیم‌شده ({type_title}){btns_info}"
+    else:
+        msg_info = "❌ تنظیم‌نشده (هیچ پیامی ثبت نشده است)"
+
+    text = (
+        "📩 <b>مدیریت پیام پس از دستور /start</b>\n\n"
+        "این پیام بلافاصله پس از پیام خوش‌آمدگویی و منوی اصلی ربات برای کاربر ارسال می‌شود.\n\n"
+        f"⚙️ <b>وضعیت ارسال:</b> {status_str}\n"
+        f"🎯 <b>جامعه هدف:</b> {target_str}\n"
+        f"📦 <b>محتوای پیام:</b> {msg_info}\n\n"
+        "از دکمه‌های زیر جهت تغییر تنظیمات استفاده کنید:"
+    )
+
+    toggle_btn_text = "🔴 غیرفعال کردن" if is_enabled else "🟢 فعال کردن"
+    toggle_target_text = (
+        "🎯 ارسال به: فقط کاربران جدید"
+        if target == "all"
+        else "🎯 ارسال به: همه استارت‌ها"
+    )
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=toggle_btn_text, callback_data="admin_start_msg_toggle"
+            ),
+            InlineKeyboardButton(
+                text=toggle_target_text,
+                callback_data="admin_start_msg_toggle_target",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="✏️ تنظیم پیام جدید", callback_data="admin_start_msg_set"
+            ),
+        ],
+    ]
+
+    if msg_data:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="👁 پیش‌نمایش پیام فعلی",
+                    callback_data="admin_start_msg_preview",
+                ),
+                InlineKeyboardButton(
+                    text="🗑 حذف پیام", callback_data="admin_start_msg_delete"
+                ),
+            ]
+        )
+
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+
+@router.callback_query(F.data == "admin_start_msg_menu")
+async def admin_start_msg_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    await state.clear()
+    text, keyboard = await _build_start_msg_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_start_msg_toggle")
+async def admin_start_msg_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    from db.models import get_start_message_config, set_start_message_config
+
+    config = await get_start_message_config()
+    new_status = not config["enabled"]
+    if new_status and not config.get("message_data"):
+        await callback.answer(
+            "⚠️ ابتدا باید یک پیام تنظیم کنید، سپس می‌توانید آن را فعال نمایید.",
+            show_alert=True,
+        )
+        return
+
+    await set_start_message_config(enabled=new_status)
+    text, keyboard = await _build_start_msg_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    status_toast = "فعال شد 🟢" if new_status else "غیرفعال شد 🔴"
+    await callback.answer(f"پیام پس از استارت {status_toast}")
+
+
+@router.callback_query(F.data == "admin_start_msg_toggle_target")
+async def admin_start_msg_toggle_target(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    from db.models import get_start_message_config, set_start_message_config
+
+    config = await get_start_message_config()
+    current_target = config.get("target", "all")
+    new_target = "new_only" if current_target == "all" else "all"
+    await set_start_message_config(target=new_target)
+
+    text, keyboard = await _build_start_msg_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    target_toast = "فقط کاربران جدید" if new_target == "new_only" else "همه استارت‌ها"
+    await callback.answer(f"جامعه هدف به «{target_toast}» تغییر یافت.")
+
+
+@router.callback_query(F.data == "admin_start_msg_preview")
+async def admin_start_msg_preview(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    from db.models import get_start_message_config
+    from services.start_message import send_start_payload
+
+    config = await get_start_message_config()
+    msg_data = config.get("message_data")
+    if not msg_data:
+        await callback.answer("پیامی تنظیم نشده است.", show_alert=True)
+        return
+
+    await callback.answer("در حال ارسال پیش‌نمایش...")
+    if callback.from_user:
+        await send_start_payload(bot, callback.from_user.id, msg_data)
+
+
+@router.callback_query(F.data == "admin_start_msg_delete")
+async def admin_start_msg_delete(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    from db.models import delete_start_message
+
+    await delete_start_message()
+    await state.clear()
+    text, keyboard = await _build_start_msg_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer("🗑 پیام پس از استارت حذف گردید.", show_alert=True)
+
+
+@router.callback_query(F.data == "admin_start_msg_set")
+async def admin_start_msg_set(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    await state.clear()
+    await state.set_state(AdminControlStates.waiting_start_msg_content)
+
+    text = (
+        "📩 <b>تنظیم پیام جدید پس از استارت</b>\n\n"
+        "لطفاً پیام مدنظر خود را ارسال یا فوروارد کنید.\n\n"
+        "• پشتیبانی از: <b>متن ساده/فرمت‌دار، عکس با کپشن، ویدیو، انیمیشن (گیف)، وویس، فایل صوتی، داکیومنت و استیکر</b>.\n"
+        "• پس از ارسال، پیش‌نمایش به شما نشان داده می‌شود و می‌توانید دکمه‌های شیشه‌ای دلخواه نیز اضافه کنید.\n\n"
+        "<i>برای انصراف /cancel را ارسال کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_start_msg_menu"
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(
+    AdminControlStates.waiting_start_msg_content,
+    F.content_type.in_(
+        {
+            types.ContentType.TEXT,
+            types.ContentType.PHOTO,
+            types.ContentType.VIDEO,
+            types.ContentType.ANIMATION,
+            types.ContentType.DOCUMENT,
+            types.ContentType.AUDIO,
+            types.ContentType.VOICE,
+            types.ContentType.STICKER,
+        }
+    ),
+)
+async def admin_start_msg_content_received(
+    message: types.Message, state: FSMContext, bot: Bot
+) -> None:
+    if not await _is_admin(message):
+        return
+    if not await _require_permission(message, "start_message"):
+        return
+
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_start_msg_panel()
+        await message.answer(
+            f"❌ تنظیم پیام لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.start_message import extract_message_data, send_start_payload
+
+    msg_data = extract_message_data(message)
+    await state.update_data(draft_start_msg=msg_data)
+
+    await message.answer("👇 <b>پیش‌نمایش پیام ارسالی شما:</b>", parse_mode="HTML")
+    await send_start_payload(bot, message.chat.id, msg_data)
+
+    btns = msg_data.get("buttons") or []
+    btns_count = len(btns)
+
+    confirm_text = (
+        "👆 <b>پیش‌نمایش پیام در بالا ارسال شد.</b>\n\n"
+        f"🔘 <b>تعداد ردیف‌های دکمه شیشه‌ای:</b> {to_persian_digits(btns_count)}\n\n"
+        "آیا این پیام را برای ذخیره نهایی تأیید می‌کنید یا می‌خواهید دکمه شیشه‌ای اضافه کنید؟"
+    )
+
+    confirm_rows = [
+        [
+            InlineKeyboardButton(
+                text="🚀 تایید و ذخیره نهایی",
+                callback_data="admin_start_msg_save",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن دکمه شیشه‌ای (لینک)",
+                callback_data="admin_start_msg_add_btn",
+            )
+        ],
+    ]
+    if btns_count > 0:
+        confirm_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🗑 پاک کردن تمام دکمه‌ها",
+                    callback_data="admin_start_msg_clear_btns",
+                )
+            ]
+        )
+    confirm_rows.append(
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_start_msg_menu")]
+    )
+
+    await message.answer(
+        confirm_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=confirm_rows),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_start_msg_save")
+async def admin_start_msg_save(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+
+    data = await state.get_data()
+    draft = data.get("draft_start_msg")
+    if not draft:
+        await callback.answer("❌ اطلاعات پیام یافت نشد.", show_alert=True)
+        await state.clear()
+        return
+
+    from db.models import set_start_message_config
+
+    await set_start_message_config(enabled=True, message_data=draft)
+    await state.clear()
+
+    text, keyboard = await _build_start_msg_panel()
+    if callback.message:
+        await callback.message.answer(
+            f"✅ <b>پیام پس از استارت با موفقیت ذخیره و فعال شد!</b>\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_start_msg_add_btn")
+async def admin_start_msg_add_btn(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    data = await state.get_data()
+    if not data.get("draft_start_msg"):
+        await callback.answer("پیام معتبری در حافظه نیست.", show_alert=True)
+        return
+
+    await state.set_state(AdminControlStates.waiting_start_msg_button_title)
+    if callback.message:
+        await callback.message.answer(
+            "🔘 <b>افزودن دکمه شیشه‌ای جدید</b>\n\n"
+            "لطفاً <b>عنوان (متن روی دکمه)</b> را ارسال کنید:\n"
+            "مثال: <code>کانال اطلاع‌رسانی</code>\n\n"
+            "<i>برای انصراف /cancel را ارسال کنید.</i>",
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_start_msg_button_title, F.text)
+async def admin_start_msg_btn_title_received(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _require_permission(message, "start_message"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_start_msg_panel()
+        await message.answer(
+            f"❌ عملیات لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    title = message.text.strip()
+    await state.update_data(btn_title=title)
+    await state.set_state(AdminControlStates.waiting_start_msg_button_url)
+
+    await message.answer(
+        f"🔗 عنوان دکمه: <b>{title}</b>\n\n"
+        "حالا لطفاً <b>لینک دکمه (URL)</b> را ارسال کنید:\n"
+        "مثال: <code>https://t.me/your_channel</code>\n\n"
+        "<i>برای انصراف /cancel را ارسال کنید.</i>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminControlStates.waiting_start_msg_button_url, F.text)
+async def admin_start_msg_btn_url_received(
+    message: types.Message, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(message, "start_message"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_start_msg_panel()
+        await message.answer(
+            f"❌ عملیات لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    url = message.text.strip()
+    if not (
+        url.startswith("http://")
+        or url.startswith("https://")
+        or url.startswith("t.me/")
+        or url.startswith("tg://")
+    ):
+        await message.answer(
+            "❌ لینک نامعتبر است. لینک باید با <code>https://</code> یا <code>t.me/</code> شروع شود.\n"
+            "لطفاً مجدداً لینک صحیح را بفرستید:",
+            parse_mode="HTML",
+        )
+        return
+
+    if url.startswith("t.me/"):
+        url = f"https://{url}"
+
+    data = await state.get_data()
+    title = data.get("btn_title", "دکمه")
+    draft = data.get("draft_start_msg", {})
+
+    buttons = draft.get("buttons") or []
+    buttons.append([{"text": title, "url": url}])
+    draft["buttons"] = buttons
+
+    await state.update_data(draft_start_msg=draft)
+    await state.set_state(AdminControlStates.waiting_start_msg_content)
+
+    from services.start_message import send_start_payload
+
+    await message.answer(
+        "✅ <b>دکمه شیشه‌ای اضافه شد! پیش‌نمایش جدید:</b>", parse_mode="HTML"
+    )
+    await send_start_payload(bot, message.chat.id, draft)
+
+    btns_count = len(buttons)
+    confirm_text = (
+        "👆 <b>پیش‌نمایش بروزرسانی‌شده در بالا ارسال شد.</b>\n\n"
+        f"🔘 <b>تعداد ردیف‌های دکمه شیشه‌ای:</b> {to_persian_digits(btns_count)}\n\n"
+        "آیا تغییرات را تایید و ذخیره می‌کنید؟"
+    )
+    confirm_rows = [
+        [
+            InlineKeyboardButton(
+                text="🚀 تایید و ذخیره نهایی",
+                callback_data="admin_start_msg_save",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن دکمه شیشه‌ای دیگر",
+                callback_data="admin_start_msg_add_btn",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 پاک کردن تمام دکمه‌ها",
+                callback_data="admin_start_msg_clear_btns",
+            )
+        ],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_start_msg_menu")],
+    ]
+    await message.answer(
+        confirm_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=confirm_rows),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_start_msg_clear_btns")
+async def admin_start_msg_clear_btns(
+    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "start_message"):
+        return
+    data = await state.get_data()
+    draft = data.get("draft_start_msg")
+    if not draft:
+        await callback.answer("پیام نامعتبر است.", show_alert=True)
+        return
+
+    draft["buttons"] = []
+    await state.update_data(draft_start_msg=draft)
+
+    from services.start_message import send_start_payload
+
+    if callback.message and callback.from_user:
+        await callback.message.answer(
+            "🗑 <b>تمام دکمه‌ها پاک شدند. پیش‌نمایش جدید:</b>",
+            parse_mode="HTML",
+        )
+        await send_start_payload(bot, callback.from_user.id, draft)
+
+        confirm_text = (
+            "👆 <b>پیش‌نمایش بدون دکمه در بالا ارسال شد.</b>\n\n"
+            "آیا این پیام را ذخیره می‌کنید؟"
+        )
+        confirm_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🚀 تایید و ذخیره نهایی",
+                        callback_data="admin_start_msg_save",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="➕ افزودن دکمه شیشه‌ای",
+                        callback_data="admin_start_msg_add_btn",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_start_msg_menu"
+                    )
+                ],
+            ]
+        )
+        await callback.message.answer(
+            confirm_text, reply_markup=confirm_keyboard, parse_mode="HTML"
+        )
     await callback.answer()
