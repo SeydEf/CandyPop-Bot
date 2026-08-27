@@ -39,10 +39,11 @@ async def _process_single_client(
 ) -> None:
     async with semaphore:
         email = client.get("email", "")
-        enable = client.get("enable", True)
 
-        if not email or not enable:
+        if not email:
             return
+
+        is_test_sub = "_test" in email
 
         tg_id = await resolve_client_tg_id(client)
         if not tg_id:
@@ -54,8 +55,6 @@ async def _process_single_client(
         used = up + down
 
         expiry_time = client.get("expiryTime", 0)
-
-        is_test_sub = "_test" in email
 
         is_volume_expired = total > 0 and used >= total
         is_time_expired = expiry_time > 0 and now_ms >= expiry_time
