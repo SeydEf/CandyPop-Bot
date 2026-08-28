@@ -247,6 +247,9 @@ async def _render_sub_dashboard(
             if rem_days > 0
             else f"{expiry_str} (منقضی شده)"
         )
+    elif expiry_ms < 0:
+        initial_days = abs(expiry_ms) // (86400 * 1000)
+        time_str = f"⏳ در انتظار اولین اتصال ({to_persian_digits(initial_days)} روز اعتبار پس از اولین اتصال)"
     else:
         time_str = "بدون محدودیت زمانی"
 
@@ -594,7 +597,17 @@ async def admin_sub_days_save(message: types.Message, state: FSMContext) -> None
     now_ms = int(time.time() * 1000)
     current_expiry_ms = client.get("expiryTime", 0)
 
-    if is_set or current_expiry_ms < now_ms:
+    if is_set:
+        from db.models import get_start_first_use_config
+
+        start_first_use = await get_start_first_use_config()
+        if start_first_use and days_val > 0:
+            new_expiry_ms = -int(days_val * 86400 * 1000)
+        else:
+            new_expiry_ms = now_ms + (days_val * 86400 * 1000)
+    elif current_expiry_ms < 0:
+        new_expiry_ms = current_expiry_ms - (days_val * 86400 * 1000)
+    elif current_expiry_ms < now_ms:
         new_expiry_ms = now_ms + (days_val * 86400 * 1000)
     else:
         new_expiry_ms = current_expiry_ms + (days_val * 86400 * 1000)
@@ -1075,7 +1088,13 @@ async def admin_user_create_sub_dur_save(
     email = generate_email(tg_id, username)
 
     total_bytes = gb_to_bytes(gb_val)
-    expiry_ms = int((time.time() + dur_val * 86400) * 1000)
+    from db.models import get_start_first_use_config
+
+    start_first_use = await get_start_first_use_config()
+    if start_first_use and dur_val > 0:
+        expiry_ms = -int(dur_val * 86400 * 1000)
+    else:
+        expiry_ms = int((time.time() + dur_val * 86400) * 1000) if dur_val > 0 else 0
 
     active_inbound_ids = await get_active_inbound_ids()
     active_group = await get_active_client_group()

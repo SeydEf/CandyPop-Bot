@@ -37,8 +37,11 @@ def format_size_gb(gb: int | float) -> str:
 def format_remaining_days(expiry_ms: int) -> str:
     import time
 
-    if expiry_ms <= 0:
+    if expiry_ms == 0:
         return "نامحدود"
+    if expiry_ms < 0:
+        days = abs(expiry_ms) // (1000 * 60 * 60 * 24)
+        return f"{days} روز (پس از اتصال)"
     now_ms = int(time.time() * 1000)
     remaining_ms = expiry_ms - now_ms
     if remaining_ms <= 0:

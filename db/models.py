@@ -433,6 +433,15 @@ async def reset_pricing_display_config() -> None:
     await set_setting("pricing_custom_photo", "")
 
 
+async def get_start_first_use_config() -> bool:
+    val = await get_setting("start_first_use_enabled", "1")
+    return val == "1"
+
+
+async def set_start_first_use_config(enabled: bool) -> None:
+    await set_setting("start_first_use_enabled", "1" if enabled else "0")
+
+
 async def get_referral_config() -> dict[str, Any]:
     enabled_val = await get_setting("referral_enabled", "1")
     percent_val = await get_setting("referral_commission_percent", "10")

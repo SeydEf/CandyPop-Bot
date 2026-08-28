@@ -475,9 +475,20 @@ async def buy_wallet_confirm(
         username = callback.from_user.username
         email = generate_email(tg_id, username)
         total_bytes = gb_to_bytes(gb)
-        expiry_ms = int((time.time() + duration * 86400) * 1000)
 
-        from db.models import get_active_client_group, get_active_inbound_ids
+        from db.models import (
+            get_active_client_group,
+            get_active_inbound_ids,
+            get_start_first_use_config,
+        )
+
+        start_first_use = await get_start_first_use_config()
+        if start_first_use and duration > 0:
+            expiry_ms = -int(duration * 86400 * 1000)
+        else:
+            expiry_ms = (
+                int((time.time() + duration * 86400) * 1000) if duration > 0 else 0
+            )
 
         active_inbound_ids = await get_active_inbound_ids()
         active_group = await get_active_client_group()

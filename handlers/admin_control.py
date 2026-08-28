@@ -121,10 +121,11 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     from db.models import (
         get_alert_config,
         get_card_config,
+        get_pricing_display_config,
         get_referral_config,
         get_shop_status,
+        get_start_first_use_config,
         get_start_message_config,
-        get_pricing_display_config,
     )
 
     ref_config = await get_referral_config()
@@ -133,6 +134,10 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     shop_status = await get_shop_status()
     start_msg_config = await get_start_message_config()
     pricing_disp_config = await get_pricing_display_config()
+    start_first_use_enabled = await get_start_first_use_config()
+    start_first_use_str = (
+        "🟢 از اولین اتصال" if start_first_use_enabled else "🔴 از زمان خرید"
+    )
 
     pur_status_str = (
         "🟢 باز (فعال)" if shop_status["purchases_enabled"] else "🔴 بسته (غیرفعال)"
@@ -218,7 +223,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
         f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}\n"
         f"📩 <b>پیام پس از استارت:</b> {start_msg_status}\n"
-        f"💰 <b>بخش تعرفه‌ها:</b> {pricing_disp_status}"
+        f"💰 <b>بخش تعرفه‌ها:</b> {pricing_disp_status}\n"
+        f"⏳ <b>شروع اعتبار کانفیگ:</b> {start_first_use_str}"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -2458,11 +2464,12 @@ async def admin_shop_status_menu(
         return
     await state.clear()
 
-    from db.models import get_shop_status
+    from db.models import get_shop_status, get_start_first_use_config
     from services.test_sub_config import get_test_sub_config
 
     status = await get_shop_status()
     test_config = await get_test_sub_config()
+    start_first_use = await get_start_first_use_config()
 
     pur_enabled = status["purchases_enabled"]
     ren_enabled = status["renewals_enabled"]
@@ -2471,13 +2478,19 @@ async def admin_shop_status_menu(
     pur_text = "🟢 باز (فعال)" if pur_enabled else "🔴 بسته (موقتاً غیرفعال)"
     ren_text = "🟢 باز (فعال)" if ren_enabled else "🔴 بسته (موقتاً غیرفعال)"
     test_text = "🟢 باز (فعال)" if test_enabled else "🔴 بسته (موقتاً غیرفعال)"
+    start_first_use_text = (
+        "🟢 فعال (شروع از اولین اتصال)"
+        if start_first_use
+        else "🔴 غیرفعال (محاسبه از زمان ساخت)"
+    )
 
     text = (
-        f"🛒/🔄 <b>تنظیمات وضعیت فروش، تمدید و اشتراک تست</b>\n\n"
-        f"از این بخش می‌توانید امکان خرید اشتراک جدید، تمدید و دریافت اشتراک تست رایگان را به صورت مستقل فعال یا غیرفعال کنید.\n\n"
+        f"🛒/🔄 <b>تنظیمات وضعیت فروش، تمدید و شروع اعتبار</b>\n\n"
+        f"از این بخش می‌توانید امکان خرید اشتراک جدید، تمدید، دریافت اشتراک تست رایگان و نحوه محاسبه زمان اعتبار کانفیگ‌ها را مدیریت کنید.\n\n"
         f"🛒 <b>وضعیت فروش اشتراک جدید:</b> <b>{pur_text}</b>\n"
         f"🔄 <b>وضعیت تمدید اشتراک‌ها:</b> <b>{ren_text}</b>\n"
-        f"🎁 <b>وضعیت دریافت اشتراک تست:</b> <b>{test_text}</b>\n\n"
+        f"🎁 <b>وضعیت دریافت اشتراک تست:</b> <b>{test_text}</b>\n"
+        f"⏳ <b>شروع اعتبار از اولین اتصال:</b> <b>{start_first_use_text}</b>\n\n"
         f"جهت تغییر وضعیت هر بخش، روی دکمه مربوطه کلیک کنید:"
     )
 
@@ -2495,6 +2508,11 @@ async def admin_shop_status_menu(
         "🟢 اشتراک تست: باز (کلیک جهت بستن)"
         if test_enabled
         else "🔴 اشتراک تست: بسته (کلیک جهت بازکردن)"
+    )
+    start_first_use_btn = (
+        "🟢 شروع از اتصال: فعال (کلیک جهت غیرفعال‌سازی)"
+        if start_first_use
+        else "🔴 شروع از اتصال: غیرفعال (کلیک جهت فعال‌سازی)"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -2516,6 +2534,12 @@ async def admin_shop_status_menu(
             ],
             [
                 InlineKeyboardButton(
+                    text=start_first_use_btn,
+                    callback_data="admin_toggle_start_first_use",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
                 )
             ],
@@ -2529,6 +2553,26 @@ async def admin_shop_status_menu(
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_start_first_use")
+async def admin_toggle_start_first_use(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from db.models import (
+        get_start_first_use_config,
+        set_start_first_use_config,
+    )
+
+    curr = await get_start_first_use_config()
+    new_val = not curr
+    await set_start_first_use_config(new_val)
+    status_str = "فعال شد 🟢" if new_val else "غیرفعال شد 🔴"
+    await callback.answer(f"شروع اعتبار از اولین اتصال {status_str}")
+    await admin_shop_status_menu(callback, state)
 
 
 @router.callback_query(F.data == "admin_toggle_purchases")

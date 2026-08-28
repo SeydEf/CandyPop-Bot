@@ -835,8 +835,14 @@ async def admin_create_sub_execute(
     group_val = data.get("final_group", "")
     inbound_ids = data.get("final_inbound_ids") or await get_active_inbound_ids()
 
+    from db.models import get_start_first_use_config
+
+    start_first_use = await get_start_first_use_config()
     total_bytes = gb_to_bytes(gb_val) if gb_val > 0 else 0
-    expiry_ms = int((time.time() + dur_val * 86400) * 1000) if dur_val > 0 else 0
+    if start_first_use and dur_val > 0:
+        expiry_ms = -int(dur_val * 86400 * 1000)
+    else:
+        expiry_ms = int((time.time() + dur_val * 86400) * 1000) if dur_val > 0 else 0
 
     try:
         await xui_api.add_client(

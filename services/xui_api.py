@@ -269,7 +269,9 @@ async def renew_client(
     current_expiry = client.get("expiryTime", 0) or 0
     added_ms = duration_days * 86400 * 1000
 
-    if current_expiry > now_ms:
+    if current_expiry < 0:
+        new_expiry_ms = current_expiry - added_ms
+    elif current_expiry > now_ms:
         new_expiry_ms = current_expiry + added_ms
     else:
         new_expiry_ms = now_ms + added_ms
@@ -476,7 +478,9 @@ async def bulk_grant_duration(
             current_expiry = client_full.get("expiryTime", 0)
             now_ms = int(time.time() * 1000)
 
-            if current_expiry and current_expiry > now_ms:
+            if current_expiry and current_expiry < 0:
+                new_expiry = current_expiry - extra_ms
+            elif current_expiry and current_expiry > now_ms:
                 new_expiry = current_expiry + extra_ms
             else:
                 new_expiry = now_ms + extra_ms
