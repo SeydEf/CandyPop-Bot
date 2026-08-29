@@ -442,6 +442,51 @@ async def set_start_first_use_config(enabled: bool) -> None:
     await set_setting("start_first_use_enabled", "1" if enabled else "0")
 
 
+async def get_channel_lock_config() -> dict[str, Any]:
+    from config import CHANNEL_ID, CHANNEL_LINK
+
+    enabled_val = await get_setting("channel_lock_enabled", "1")
+    mode_val = await get_setting("channel_lock_mode", "on_start")
+    channel_id_val = await get_setting("channel_lock_id", "")
+    channel_link_val = await get_setting("channel_lock_link", "")
+
+    eff_id = channel_id_val.strip() if channel_id_val.strip() else CHANNEL_ID
+    eff_link = channel_link_val.strip() if channel_link_val.strip() else CHANNEL_LINK
+
+    return {
+        "enabled": enabled_val == "1" and bool(eff_id),
+        "raw_enabled": enabled_val == "1",
+        "mode": (mode_val if mode_val in ("on_start", "on_action") else "on_start"),
+        "channel_id": eff_id,
+        "channel_link": eff_link,
+        "custom_id": channel_id_val,
+        "custom_link": channel_link_val,
+    }
+
+
+async def set_channel_lock_config(
+    enabled: bool | None = None,
+    mode: str | None = None,
+    channel_id: str | None = None,
+    channel_link: str | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("channel_lock_enabled", "1" if enabled else "0")
+    if mode is not None:
+        await set_setting("channel_lock_mode", mode)
+    if channel_id is not None:
+        await set_setting("channel_lock_id", channel_id.strip())
+    if channel_link is not None:
+        await set_setting("channel_lock_link", channel_link.strip())
+
+
+async def reset_channel_lock_config() -> None:
+    await set_setting("channel_lock_enabled", "1")
+    await set_setting("channel_lock_mode", "on_start")
+    await set_setting("channel_lock_id", "")
+    await set_setting("channel_lock_link", "")
+
+
 async def get_referral_config() -> dict[str, Any]:
     enabled_val = await get_setting("referral_enabled", "1")
     percent_val = await get_setting("referral_commission_percent", "10")
@@ -964,6 +1009,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "referral": "تنظیمات زیرمجموعه‌گیری",
     "broadcast": "ارسال پیام همگانی",
     "start_message": "تنظیم پیام پس از استارت",
+    "channel_lock": "تنظیمات عضویت اجباری کانال",
     "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
     "stats": "مشاهده آمار و گزارشات ربات",
 }
@@ -984,6 +1030,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "referral": True,
     "broadcast": True,
     "start_message": True,
+    "channel_lock": True,
     "reset_configs": False,
     "stats": True,
 }

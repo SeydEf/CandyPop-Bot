@@ -12,29 +12,46 @@ from aiogram.types import (
     TelegramObject,
 )
 
-from config import CHANNEL_ID, CHANNEL_LINK
-
 logger = logging.getLogger(__name__)
 
 MEMBERSHIP_STATUSES = {"member", "administrator", "creator"}
 
 
-async def is_member(bot: Bot, user_id: int) -> bool:
+async def is_member(
+    bot: Bot, user_id: int, channel_id: str | int | None = None
+) -> bool:
+    if not channel_id:
+        from config import CHANNEL_ID
+
+        channel_id = CHANNEL_ID
+    if not channel_id:
+        return True
     try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        target_chat_id: str | int = channel_id
+        if isinstance(channel_id, str) and (
+            channel_id.startswith("-100")
+            or channel_id.isdigit()
+            or (channel_id.startswith("-") and channel_id[1:].isdigit())
+        ):
+            target_chat_id = int(channel_id)
+        member = await bot.get_chat_member(chat_id=target_chat_id, user_id=user_id)
         return member.status in MEMBERSHIP_STATUSES
     except Exception:
-        logger.exception("Failed to check channel membership for user %d", user_id)
+        logger.exception(
+            "Failed to check channel membership for user %d in %s",
+            user_id,
+            channel_id,
+        )
         return False
 
 
-def _join_keyboard() -> InlineKeyboardMarkup:
+def _join_keyboard(channel_link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="📢 عضویت در کانال",
-                    url=CHANNEL_LINK,
+                    url=channel_link,
                 ),
             ],
             [
@@ -48,8 +65,8 @@ def _join_keyboard() -> InlineKeyboardMarkup:
 
 
 _JOIN_TEXT = (
-    "⚠️ <b>برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید.</b>\n\n"
-    "پس از عضویت، دکمه «✅ عضو شدم» را بزنید."
+    "⚠️ <b>برای استفاده از امکانات ربات، ابتدا باید در کانال ما عضو شوید.</b>\n\n"
+    "پس از عضویت در کانال، روی دکمه «✅ عضو شدم» کلیک کنید."
 )
 
 
@@ -76,14 +93,30 @@ class ChannelCheckMiddleware(BaseMiddleware):
         if user_id is None:
             return await handler(event, data)
 
-        from db.models import ensure_user
+        from db.models import (
+            ensure_user,
+            get_channel_lock_config,
+            is_admin,
+            is_owner,
+        )
 
         username = user_obj.username if user_obj else None
         full_name = user_obj.full_name if user_obj else None
         await ensure_user(user_id, username, full_name)
 
+        if is_owner(user_id) or await is_admin(user_id):
+            return await handler(event, data)
+
+        lock_config = await get_channel_lock_config()
+        if not lock_config["enabled"] or not lock_config["channel_id"]:
+            return await handler(event, data)
+
+        channel_id = lock_config["channel_id"]
+        channel_link = lock_config["channel_link"]
+        mode = lock_config["mode"]
+
         if isinstance(event, CallbackQuery) and event.data == "check_membership":
-            if await is_member(bot, user_id):
+            if await is_member(bot, user_id, channel_id):
                 await event.answer("✅ عضویت شما تأیید شد!", show_alert=False)
                 if event.message:
                     try:
@@ -101,18 +134,40 @@ class ChannelCheckMiddleware(BaseMiddleware):
                 )
                 return
 
-        if not await is_member(bot, user_id):
+        is_user_member = await is_member(bot, user_id, channel_id)
+        if is_user_member:
+            return await handler(event, data)
+
+        if mode == "on_action":
+            if (
+                isinstance(event, Message)
+                and event.text
+                and event.text.strip().startswith("/start")
+            ):
+                return await handler(event, data)
+
             if isinstance(event, Message):
                 await event.answer(
                     _JOIN_TEXT,
-                    reply_markup=_join_keyboard(),
+                    reply_markup=_join_keyboard(channel_link),
                     parse_mode="HTML",
                 )
             elif isinstance(event, CallbackQuery):
                 await event.answer(
-                    "❌ ابتدا در کانال عضو شوید.",
+                    "⚠️ برای دسترسی به امکانات ربات، ابتدا باید در کانال عضو شوید.",
                     show_alert=True,
                 )
             return
 
-        return await handler(event, data)
+        if isinstance(event, Message):
+            await event.answer(
+                _JOIN_TEXT,
+                reply_markup=_join_keyboard(channel_link),
+                parse_mode="HTML",
+            )
+        elif isinstance(event, CallbackQuery):
+            await event.answer(
+                "❌ ابتدا در کانال عضو شوید.",
+                show_alert=True,
+            )
+        return

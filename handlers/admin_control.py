@@ -71,6 +71,8 @@ class AdminControlStates(StatesGroup):
     waiting_start_msg_button_url = State()
     waiting_pricing_content = State()
     waiting_pricing_caption = State()
+    waiting_channel_lock_id = State()
+    waiting_channel_lock_link = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -121,6 +123,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     from db.models import (
         get_alert_config,
         get_card_config,
+        get_channel_lock_config,
         get_pricing_display_config,
         get_referral_config,
         get_shop_status,
@@ -134,6 +137,10 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     shop_status = await get_shop_status()
     start_msg_config = await get_start_message_config()
     pricing_disp_config = await get_pricing_display_config()
+    channel_lock_config = await get_channel_lock_config()
+    channel_lock_status_str = (
+        "🟢 فعال" if channel_lock_config["enabled"] else "🔴 غیرفعال"
+    )
     start_first_use_enabled = await get_start_first_use_config()
     start_first_use_str = (
         "🟢 از اولین اتصال" if start_first_use_enabled else "🔴 از زمان خرید"
@@ -223,6 +230,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
         f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}\n"
         f"📩 <b>پیام پس از استارت:</b> {start_msg_status}\n"
+        f"📢 <b>عضویت اجباری کانال:</b> {channel_lock_status_str}\n"
         f"💰 <b>بخش تعرفه‌ها:</b> {pricing_disp_status}\n"
         f"⏳ <b>شروع اعتبار کانفیگ:</b> {start_first_use_str}"
     )
@@ -329,6 +337,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="📩 تنظیم پیام پس از استارت",
                     callback_data="admin_start_msg_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📢 تنظیمات عضویت اجباری کانال",
+                    callback_data="admin_channel_lock_menu",
                 ),
             ],
             [
@@ -4397,3 +4411,326 @@ async def admin_pricing_disp_save_text(
             parse_mode="HTML",
         )
     await callback.answer()
+
+
+async def _build_channel_lock_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_channel_lock_config
+
+    config = await get_channel_lock_config()
+    is_raw_enabled = config["raw_enabled"]
+    is_effective_enabled = config["enabled"]
+    mode = config["mode"]
+    channel_id = config["channel_id"] or "تنظیم نشده ⚠️"
+    channel_link = config["channel_link"] or "تنظیم نشده ⚠️"
+
+    status_str = "🟢 فعال" if is_effective_enabled else "🔴 غیرفعال"
+    if is_raw_enabled and not config["channel_id"]:
+        status_str = "⚠️ فعال ولی بدون آیدی کانال (غیرفعال)"
+
+    mode_str = (
+        "🛑 در لحظه استارت (قبل از ورود)"
+        if mode == "on_start"
+        else "⚡ پس از استارت (هنگام استفاده از امکانات)"
+    )
+
+    text = (
+        "📢 <b>تنظیمات عضویت اجباری در کانال (Channel Lock)</b>\n\n"
+        "در این بخش می‌توانید عضویت اجباری در کانال تلگرام را فعال/غیرفعال کرده، زمان بررسی عضویت را مشخص کنید و آیدی یا لینک کانال را تغییر دهید.\n\n"
+        f"⚙️ <b>وضعیت عضویت اجباری:</b> {status_str}\n"
+        f"🎯 <b>نحوه و زمان بررسی:</b> {mode_str}\n"
+        f"📢 <b>آیدی/یوزرنیم کانال:</b> <code>{channel_id}</code>\n"
+        f"🔗 <b>لینک عضویت کانال:</b> <code>{channel_link}</code>\n\n"
+        "جهت تغییر، از دکمه‌های زیر استفاده نمایید:"
+    )
+
+    toggle_btn_text = (
+        "🔴 غیرفعال کردن عضویت اجباری"
+        if is_raw_enabled
+        else "🟢 فعال کردن عضویت اجباری"
+    )
+    mode_btn_text = (
+        "🔄 تغییر حالت به: پس از استارت ⚡"
+        if mode == "on_start"
+        else "🔄 تغییر حالت به: در لحظه استارت 🛑"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text,
+                    callback_data="admin_channel_lock_toggle",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=mode_btn_text,
+                    callback_data="admin_channel_lock_toggle_mode",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ تغییر آیدی کانال",
+                    callback_data="admin_channel_lock_set_id",
+                ),
+                InlineKeyboardButton(
+                    text="✏️ تغییر لینک کانال",
+                    callback_data="admin_channel_lock_set_link",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👁 پیش‌نمایش پیام عضویت اجباری",
+                    callback_data="admin_channel_lock_preview",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی به پیش‌فرض .env",
+                    callback_data="admin_channel_lock_reset",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                ),
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_channel_lock_menu")
+async def admin_channel_lock_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    await state.clear()
+    text, keyboard = await _build_channel_lock_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_channel_lock_toggle")
+async def admin_channel_lock_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    from db.models import get_channel_lock_config, set_channel_lock_config
+
+    config = await get_channel_lock_config()
+    new_status = not config["raw_enabled"]
+    await set_channel_lock_config(enabled=new_status)
+
+    text, keyboard = await _build_channel_lock_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    status_toast = "فعال شد 🟢" if new_status else "غیرفعال شد 🔴"
+    await callback.answer(f"عضویت اجباری {status_toast}")
+
+
+@router.callback_query(F.data == "admin_channel_lock_toggle_mode")
+async def admin_channel_lock_toggle_mode(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    from db.models import get_channel_lock_config, set_channel_lock_config
+
+    config = await get_channel_lock_config()
+    curr_mode = config["mode"]
+    new_mode = "on_action" if curr_mode == "on_start" else "on_start"
+    await set_channel_lock_config(mode=new_mode)
+
+    text, keyboard = await _build_channel_lock_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    mode_toast = (
+        "حالت: پس از استارت ⚡"
+        if new_mode == "on_action"
+        else "حالت: در لحظه استارت 🛑"
+    )
+    await callback.answer(mode_toast)
+
+
+@router.callback_query(F.data == "admin_channel_lock_set_id")
+async def admin_channel_lock_set_id(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    await state.set_state(AdminControlStates.waiting_channel_lock_id)
+    text = (
+        "📢 <b>تنظیم آیدی/یوزرنیم کانال</b>\n\n"
+        "لطفاً آیدی عددی کانال (مثال: <code>-1001234567890</code>) یا یوزرنیم کانال (مثال: <code>@MyChannel</code>) را ارسال کنید:\n\n"
+        "<i>جهت انصراف /cancel را ارسال نمایید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_channel_lock_menu"
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_channel_lock_id, F.text)
+async def admin_channel_lock_id_received(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _is_admin(message):
+        return
+    if not await _require_permission(message, "channel_lock"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_channel_lock_panel()
+        await message.answer(
+            f"❌ عملیات لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    new_id = message.text.strip()
+    from db.models import set_channel_lock_config
+
+    await set_channel_lock_config(channel_id=new_id)
+    await state.clear()
+
+    text, keyboard = await _build_channel_lock_panel()
+    await message.answer(
+        f"✅ <b>آیدی کانال با موفقیت تنظیم شد:</b> <code>{new_id}</code>\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_channel_lock_set_link")
+async def admin_channel_lock_set_link(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    await state.set_state(AdminControlStates.waiting_channel_lock_link)
+    text = (
+        "🔗 <b>تنظیم لینک عضویت در کانال</b>\n\n"
+        "لطفاً لینک عضویت عمومی یا لینک خصوصی (Invite Link) کانال را ارسال کنید (مثال: <code>https://t.me/MyChannel</code> یا <code>https://t.me/+AbCdEf...</code>):\n\n"
+        "<i>جهت انصراف /cancel را ارسال نمایید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_channel_lock_menu"
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_channel_lock_link, F.text)
+async def admin_channel_lock_link_received(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _is_admin(message):
+        return
+    if not await _require_permission(message, "channel_lock"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_channel_lock_panel()
+        await message.answer(
+            f"❌ عملیات لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    new_link = message.text.strip()
+    from db.models import set_channel_lock_config
+
+    await set_channel_lock_config(channel_link=new_link)
+    await state.clear()
+
+    text, keyboard = await _build_channel_lock_panel()
+    await message.answer(
+        f"✅ <b>لینک کانال با موفقیت تنظیم شد:</b> <code>{new_link}</code>\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_channel_lock_preview")
+async def admin_channel_lock_preview(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    from db.models import get_channel_lock_config
+    from middlewares.channel_check import _JOIN_TEXT, _join_keyboard
+
+    config = await get_channel_lock_config()
+    link = config["channel_link"] or "https://t.me"
+
+    await callback.answer("در حال ارسال پیش‌نمایش...")
+    if callback.from_user:
+        await bot.send_message(
+            chat_id=callback.from_user.id,
+            text=f"👇 <b>پیش‌نمایش پیام عضویت اجباری برای کاربران:</b>\n\n{_JOIN_TEXT}",
+            reply_markup=_join_keyboard(link),
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data == "admin_channel_lock_reset")
+async def admin_channel_lock_reset(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "channel_lock"):
+        return
+    from db.models import reset_channel_lock_config
+
+    await reset_channel_lock_config()
+    await state.clear()
+    text, keyboard = await _build_channel_lock_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        "✅ تنظیمات عضویت اجباری به مقادیر پیش‌فرض .env بازنشانی شد.",
+        show_alert=True,
+    )
