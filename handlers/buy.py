@@ -63,20 +63,10 @@ class BuyStates(StatesGroup):
 
 
 async def _get_volume_step_text() -> str:
-    config = await get_pricing_config()
-    volume_tiers = config["volume_tiers"]
-    fallback_rate = config["fallback_gb_rate"]
-
-    tiers_info = ""
-    for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
-        tiers_info += f"  ▫️ تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
-    last_max = volume_tiers[-1][0] if volume_tiers else 100
-    tiers_info += f"  ▫️ بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} به ازای هر گیگ\n"
-
     return (
         "🚀 <b>گام ۱ از ۳: انتخاب حجم ترافیک اشتراک</b>\n\n"
         "لطفاً میزان حجم مورد نیاز خود را انتخاب کنید:\n\n"
-        f"🎁 <b>تعرفه‌ها و تخفیف‌های پلکانی:</b>\n{tiers_info}\n"
+        "💡 <i>برای اطلاع از تعرفه‌ها و نحوه محاسبه قیمت از طریق منو به بخش تعرفه‌ها مراجعه کنید.</i>\n\n"
         "حجم مورد نظرت رو از دکمه‌های زیر انتخاب کن یا حجم دلخواهت رو بنویس 👇"
     )
 
