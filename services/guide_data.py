@@ -206,6 +206,8 @@ def get_client_info(app_key: str, os_key: str | None = None) -> dict[str, Any] |
             info["direct_link"] = (
                 "https://github.com/hiddify/hiddify-next/releases/latest"
             )
+            info["store_link"] = None
+            info["store_name"] = None
     elif os_key == "macos":
         if app_key == "hiddify":
             info["direct_link"] = None
