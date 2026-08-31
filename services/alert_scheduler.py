@@ -13,7 +13,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from db.models import (
     clear_notified_alerts,
     get_alert_config,
-    get_all_notified_alerts_set,
+    get_all_notified_alerts_map,
     record_notified_alert,
     resolve_client_tg_id,
 )
@@ -34,6 +34,7 @@ async def _process_single_client(
     low_gb_enabled: bool,
     expiring_days_enabled: bool,
     notified_set: set[tuple[str, str]],
+    notified_map: dict[tuple[str, str], float],
     bot: Bot,
     semaphore: asyncio.Semaphore,
 ) -> None:
@@ -121,6 +122,7 @@ async def _process_single_client(
                     )
                     await record_notified_alert(email, "expired_notice")
                     notified_set.add((email, "expired_notice"))
+                    notified_map[(email, "expired_notice")] = time.time()
                     logger.info("Sent expired_notice alert to %s (%s)", email, tg_id)
                 except (TelegramForbiddenError, TelegramBadRequest):
                     pass
@@ -128,12 +130,18 @@ async def _process_single_client(
                     logger.warning("Failed to send expired_notice to %s: %s", email, e)
 
             if auto_delete_days > 0:
+                expired_days = 0.0
+
                 if is_time_expired and expiry_time > 0:
-                    expired_days = (now_ms - expiry_time) / (86400 * 1000)
-                elif is_volume_expired:
-                    expired_days = auto_delete_days
-                else:
-                    expired_days = 0
+                    time_days = (now_ms - expiry_time) / (86400 * 1000)
+                    expired_days = max(expired_days, time_days)
+
+                if is_volume_expired:
+                    notified_ts = notified_map.get((email, "expired_notice"))
+                    if notified_ts:
+                        now_sec = now_ms / 1000
+                        vol_days = (now_sec - notified_ts) / 86400
+                        expired_days = max(expired_days, vol_days)
 
                 if (
                     expired_days >= auto_delete_days
@@ -279,7 +287,8 @@ async def check_and_send_alerts(bot: Bot) -> None:
 
         now_ms = int(time.time() * 1000)
 
-        notified_set = await get_all_notified_alerts_set()
+        notified_map = await get_all_notified_alerts_map()
+        notified_set = set(notified_map.keys())
 
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
         tasks = [
@@ -292,6 +301,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
                 low_gb_enabled=low_gb_enabled,
                 expiring_days_enabled=expiring_days_enabled,
                 notified_set=notified_set,
+                notified_map=notified_map,
                 bot=bot,
                 semaphore=semaphore,
             )

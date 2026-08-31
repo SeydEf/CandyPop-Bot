@@ -804,11 +804,20 @@ async def has_notified_alert(email: str, alert_type: str) -> bool:
         return row is not None
 
 
-async def get_all_notified_alerts_set() -> set[tuple[str, str]]:
+async def get_all_notified_alerts_map() -> dict[tuple[str, str], float]:
     db = await get_db()
-    async with db.execute("SELECT email, alert_type FROM notified_alerts") as cursor:
+    async with db.execute(
+        "SELECT email, alert_type, strftime('%s', notified_at) AS epoch FROM notified_alerts"
+    ) as cursor:
         rows = await cursor.fetchall()
-        return {(r["email"], r["alert_type"]) for r in rows}
+        res: dict[tuple[str, str], float] = {}
+        for r in rows:
+            try:
+                epoch_val = float(r["epoch"]) if r["epoch"] is not None else 0.0
+            except (TypeError, ValueError):
+                epoch_val = 0.0
+            res[(r["email"], r["alert_type"])] = epoch_val
+        return res
 
 
 async def resolve_client_tg_id(client: dict[str, Any]) -> int:
