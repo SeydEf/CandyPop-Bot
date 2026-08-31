@@ -717,12 +717,19 @@ async def get_all_user_ids() -> list[int]:
 
 
 async def get_alert_config() -> dict[str, Any]:
+    enabled_str = await get_setting("alert_scheduler_enabled", "1") or "1"
     gb_str = await get_setting("alert_min_gb", "2.0") or "2.0"
     days_str = await get_setting("alert_min_days", "3") or "3"
     del_days_str = await get_setting("auto_delete_expired_days", "3") or "3"
     interval_str = await get_setting("alert_poll_interval_minutes", "30") or "30"
     low_gb_en_str = await get_setting("alert_low_gb_enabled", "1") or "1"
     expiring_days_en_str = await get_setting("alert_expiring_days_enabled", "1") or "1"
+    expired_notice_en_str = (
+        await get_setting("alert_expired_notice_enabled", "1") or "1"
+    )
+    auto_delete_en_str = await get_setting("alert_auto_delete_enabled", "1") or "1"
+
+    enabled = enabled_str == "1"
     try:
         min_gb = float(gb_str)
     except ValueError:
@@ -741,24 +748,35 @@ async def get_alert_config() -> dict[str, Any]:
         interval_minutes = 30
     low_gb_enabled = low_gb_en_str == "1"
     expiring_days_enabled = expiring_days_en_str == "1"
+    expired_notice_enabled = expired_notice_en_str == "1"
+    auto_delete_enabled = auto_delete_en_str == "1"
+
     return {
+        "enabled": enabled,
         "min_gb": min_gb,
         "min_days": min_days,
         "auto_delete_days": auto_delete_days,
         "interval_minutes": interval_minutes,
         "low_gb_enabled": low_gb_enabled,
         "expiring_days_enabled": expiring_days_enabled,
+        "expired_notice_enabled": expired_notice_enabled,
+        "auto_delete_enabled": auto_delete_enabled,
     }
 
 
 async def set_alert_config(
+    enabled: bool | None = None,
     min_gb: float | None = None,
     min_days: int | None = None,
     auto_delete_days: int | None = None,
     interval_minutes: int | None = None,
     low_gb_enabled: bool | None = None,
     expiring_days_enabled: bool | None = None,
+    expired_notice_enabled: bool | None = None,
+    auto_delete_enabled: bool | None = None,
 ) -> None:
+    if enabled is not None:
+        await set_setting("alert_scheduler_enabled", "1" if enabled else "0")
     if min_gb is not None:
         await set_setting("alert_min_gb", str(min_gb))
     if min_days is not None:
@@ -772,6 +790,14 @@ async def set_alert_config(
     if expiring_days_enabled is not None:
         await set_setting(
             "alert_expiring_days_enabled", "1" if expiring_days_enabled else "0"
+        )
+    if expired_notice_enabled is not None:
+        await set_setting(
+            "alert_expired_notice_enabled", "1" if expired_notice_enabled else "0"
+        )
+    if auto_delete_enabled is not None:
+        await set_setting(
+            "alert_auto_delete_enabled", "1" if auto_delete_enabled else "0"
         )
 
 

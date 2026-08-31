@@ -2139,6 +2139,7 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
 
     alert_config = await get_alert_config()
     ip_config = await get_ip_checker_config()
+    scheduler_enabled = bool(alert_config.get("enabled", True))
     min_gb = float(alert_config["min_gb"])
     min_days = int(alert_config["min_days"])
     auto_delete_days = int(alert_config["auto_delete_days"])
@@ -2146,14 +2147,21 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     ip_interval_minutes = int(ip_config.get("interval_minutes", 5))
     low_gb_enabled = bool(alert_config.get("low_gb_enabled", True))
     expiring_days_enabled = bool(alert_config.get("expiring_days_enabled", True))
+    expired_notice_enabled = bool(alert_config.get("expired_notice_enabled", True))
+    auto_delete_enabled = bool(alert_config.get("auto_delete_enabled", True))
     ip_checker_enabled = bool(ip_config.get("enabled", True))
 
     del_str = (
         f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
-        if auto_delete_days > 0
+        if auto_delete_days > 0 and auto_delete_enabled
         else "<b>🔴 غیرفعال (بدون حذف)</b>"
     )
 
+    scheduler_btn_text = (
+        "🟢 زمان‌بند هشدارهای خودکار (فعال)"
+        if scheduler_enabled
+        else "🔴 زمان‌بند هشدارهای خودکار (غیرفعال)"
+    )
     low_gb_btn_text = (
         "🟢 هشدار پله‌ای حجم (فعال)"
         if low_gb_enabled
@@ -2164,6 +2172,16 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         if expiring_days_enabled
         else "🔴 یادآور روزانه زمان (غیرفعال)"
     )
+    exp_notice_btn_text = (
+        "🟢 ارسال اخطار انقضا (فعال)"
+        if expired_notice_enabled
+        else "🔴 ارسال اخطار انقضا (غیرفعال)"
+    )
+    auto_del_btn_text = (
+        "🟢 حذف خودکار منقضی‌ها (فعال)"
+        if auto_delete_enabled
+        else "🔴 حذف خودکار منقضی‌ها (غیرفعال)"
+    )
     ip_btn_text = (
         "🟢 پایش سقف IP کاربر (فعال)"
         if ip_checker_enabled
@@ -2171,8 +2189,9 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     )
 
     text = (
-        f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاكسازی اشتراك‌ها</b>\n\n"
+        f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاکسازی اشتراک‌ها</b>\n\n"
         f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس یا در صورت تخلف IP آگاه می‌سازد.\n\n"
+        f"🔘 <b>وضعیت کلی زمان‌بند هشدارها:</b> {scheduler_btn_text}\n"
         f"⏳ <b>فاصله زمان بررسی پایش هشدارهای عمومی:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
         f"🛡 <b>فاصله زمان پایش سقف IP:</b> هر <b>{to_persian_digits(ip_interval_minutes)} دقیقه</b>\n"
         f"🛡 <b>وضعیت پایش سقف IP (تخلفات):</b> {ip_btn_text}\n"
@@ -2180,6 +2199,8 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         f"⏱ <b>حدآستانه هشدار ترافیک:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
         f"📅 <b>یادآور روزانه اتمام زمان:</b> {exp_days_btn_text}\n"
         f"⏱ <b>حدآستانه هشدار انقضا:</b> کمتر از <b>{to_persian_digits(min_days)} روز</b>\n"
+        f"⛔️ <b>ارسال اخطار انقضای سرویس:</b> {exp_notice_btn_text}\n"
+        f"🗑 <b>حذف خودکار سرویس‌های منقضی:</b> {auto_del_btn_text}\n"
         f"🗑 <b>مهلت حذف اشتراک‌های منقضی‌شده:</b> {del_str}\n\n"
         f"لطفاً یکی از گزینه‌های زیر را جهت تغییر انتخاب کنید:"
     )
@@ -2188,14 +2209,14 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=ip_btn_text, callback_data="admin_alert_toggle_ip_checker"
+                    text=scheduler_btn_text,
+                    callback_data="admin_alert_toggle_scheduler",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
-                    callback_data="admin_ip_edit_interval",
-                )
+                    text=ip_btn_text, callback_data="admin_alert_toggle_ip_checker"
+                ),
             ],
             [
                 InlineKeyboardButton(
@@ -2210,8 +2231,26 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
             ],
             [
                 InlineKeyboardButton(
+                    text=exp_notice_btn_text,
+                    callback_data="admin_alert_toggle_expired_notice",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=auto_del_btn_text,
+                    callback_data="admin_alert_toggle_auto_delete",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="⏳ تغییر فاصله عمومی بررسی (دقیقه)",
                     callback_data="admin_alert_edit_interval",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
+                    callback_data="admin_ip_edit_interval",
                 )
             ],
             [
@@ -2440,6 +2479,21 @@ async def admin_alert_edit_interval_save(
     )
 
 
+@router.callback_query(F.data == "admin_alert_toggle_scheduler")
+async def admin_alert_toggle_scheduler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from db.models import get_alert_config, set_alert_config
+
+    cfg = await get_alert_config()
+    curr = bool(cfg.get("enabled", True))
+    await set_alert_config(enabled=not curr)
+    await admin_alert_menu(callback, state)
+
+
 @router.callback_query(F.data == "admin_alert_toggle_low_gb")
 async def admin_alert_toggle_low_gb(
     callback: types.CallbackQuery, state: FSMContext
@@ -2467,6 +2521,36 @@ async def admin_alert_toggle_expiring_days(
     cfg = await get_alert_config()
     curr = bool(cfg.get("expiring_days_enabled", True))
     await set_alert_config(expiring_days_enabled=not curr)
+    await admin_alert_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_alert_toggle_expired_notice")
+async def admin_alert_toggle_expired_notice(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from db.models import get_alert_config, set_alert_config
+
+    cfg = await get_alert_config()
+    curr = bool(cfg.get("expired_notice_enabled", True))
+    await set_alert_config(expired_notice_enabled=not curr)
+    await admin_alert_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_alert_toggle_auto_delete")
+async def admin_alert_toggle_auto_delete(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from db.models import get_alert_config, set_alert_config
+
+    cfg = await get_alert_config()
+    curr = bool(cfg.get("auto_delete_enabled", True))
+    await set_alert_config(auto_delete_enabled=not curr)
     await admin_alert_menu(callback, state)
 
 

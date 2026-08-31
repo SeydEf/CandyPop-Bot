@@ -33,6 +33,8 @@ async def _process_single_client(
     auto_delete_days: int,
     low_gb_enabled: bool,
     expiring_days_enabled: bool,
+    expired_notice_enabled: bool,
+    auto_delete_enabled: bool,
     notified_set: set[tuple[str, str]],
     notified_map: dict[tuple[str, str], float],
     bot: Bot,
@@ -61,21 +63,30 @@ async def _process_single_client(
         is_time_expired = expiry_time > 0 and now_ms >= expiry_time
         is_expired = is_volume_expired or is_time_expired
 
-        if is_expired and is_test_sub:
-            reason = (
-                "اتمام حجم ترافیک تست" if is_volume_expired else "پایان مهلت زمانی تست"
-            )
+        if is_test_sub and is_expired:
             text = (
-                f"⛔️ <b>اشتراک تست رایگان شما به پایان رسید</b>\n\n"
-                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-                f"📌 <b>علت انقضا:</b> {reason}\n\n"
-                f"مهلت استفاده از اشتراک تست به پایان رسیده و این سرویس از سرور حذف گردید. "
-                f"در صورت تمایل می‌توانید از بخش «🛒 خرید اشتراک» سرویس جدید تهیه کنید."
+                f"⌛️ <b>اشتراک تست رایگان شما به پایان رسید!</b>\n\n"
+                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
+                f"امیدواریم از کیفیت و سرعت سرویس رضایت داشته باشید. "
+                f"برای ادامه استفاده، می‌توانید همین حالا از بخش «🛒 خرید اشتراک» سرویس اختصاصی خود را تهیه کنید."
+            )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🛒 خرید اشتراک جدید",
+                            callback_data="buy_start",
+                        )
+                    ]
+                ]
             )
             try:
-                await bot.send_message(chat_id=tg_id, text=text, parse_mode="HTML")
-            except (TelegramForbiddenError, TelegramBadRequest):
-                pass
+                await bot.send_message(
+                    chat_id=tg_id,
+                    text=text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
             except Exception as e:
                 logger.warning(
                     "Failed to send test sub expired notice to %s: %s", email, e
@@ -91,7 +102,7 @@ async def _process_single_client(
             return
 
         if is_expired:
-            if (email, "expired_notice") not in notified_set:
+            if expired_notice_enabled and (email, "expired_notice") not in notified_set:
                 reason = (
                     "اتمام کامل حجم ترافیک"
                     if is_volume_expired
@@ -129,7 +140,7 @@ async def _process_single_client(
                 except Exception as e:
                     logger.warning("Failed to send expired_notice to %s: %s", email, e)
 
-            if auto_delete_days > 0:
+            if auto_delete_enabled and auto_delete_days > 0:
                 expired_days = 0.0
 
                 if is_time_expired and expiry_time > 0:
@@ -275,11 +286,17 @@ async def _process_single_client(
 async def check_and_send_alerts(bot: Bot) -> None:
     try:
         config = await get_alert_config()
+        if not config.get("enabled", True):
+            logger.debug("Alert scheduler is disabled in config.")
+            return
+
         min_gb = float(config["min_gb"])
         min_days = int(config["min_days"])
         auto_delete_days = int(config["auto_delete_days"])
         low_gb_enabled = bool(config.get("low_gb_enabled", True))
         expiring_days_enabled = bool(config.get("expiring_days_enabled", True))
+        expired_notice_enabled = bool(config.get("expired_notice_enabled", True))
+        auto_delete_enabled = bool(config.get("auto_delete_enabled", True))
 
         clients = await xui_api.list_clients()
         if not clients:
@@ -300,6 +317,8 @@ async def check_and_send_alerts(bot: Bot) -> None:
                 auto_delete_days=auto_delete_days,
                 low_gb_enabled=low_gb_enabled,
                 expiring_days_enabled=expiring_days_enabled,
+                expired_notice_enabled=expired_notice_enabled,
+                auto_delete_enabled=auto_delete_enabled,
                 notified_set=notified_set,
                 notified_map=notified_map,
                 bot=bot,
@@ -319,7 +338,11 @@ async def start_alert_scheduler(bot: Bot) -> None:
 
     while True:
         try:
-            await check_and_send_alerts(bot)
+            config = await get_alert_config()
+            if config.get("enabled", True):
+                await check_and_send_alerts(bot)
+            else:
+                logger.debug("Alert scheduler cycle skipped (disabled).")
         except Exception as e:
             logger.error("Unexpected error in alert scheduler loop: %s", e)
 
