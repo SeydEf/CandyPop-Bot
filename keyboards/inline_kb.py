@@ -247,16 +247,16 @@ def subscription_manage_keyboard(
                 callback_data=f"sub_qr_{email}",
             ),
             InlineKeyboardButton(
-                text="🔗 لینک‌های کانفیگ",
-                callback_data=f"sub_links_{email}",
+                text="🗑 حذف سرویس",
+                callback_data=f"sub_delete_{email}",
             ),
         ]
     )
     rows.append(
         [
             InlineKeyboardButton(
-                text="🗑 حذف سرویس",
-                callback_data=f"sub_delete_{email}",
+                text="🔗 دریافت لینک تکی کانفیگ‌ها",
+                callback_data=f"sub_links_{email}",
             ),
         ]
     )
@@ -495,7 +495,7 @@ def sub_config_links_keyboard(email: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔗 دریافت کانفیگ‌ها",
+                    text="🔗 دریافت لینک تکی کانفیگ‌ها",
                     callback_data=f"sub_links_{email}",
                 )
             ],

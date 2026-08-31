@@ -5,7 +5,7 @@ import uuid
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -223,6 +223,7 @@ async def _build_dashboard_info(
 @router.callback_query(F.data == "sub_view_current")
 @router.callback_query(F.data.startswith("sub_view_"))
 async def view_subscription(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
     if callback.data == "sub_view_current":
         await sub_view_current(callback, state)
         return
@@ -260,10 +261,22 @@ async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None
     await state.set_state(SubStates.waiting_rename)
     await state.update_data(rename_email=email)
 
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت به داشبورد",
+                    callback_data=f"sub_view_{email}",
+                )
+            ]
+        ]
+    )
+
     await callback.message.edit_text(
         f"✏️ <b>تغییر نام سرویس «{email}»</b>\n\n"
         "لطفاً نام جدید و دلخواه خود را ارسال کنید (حداکثر ۵۰ کاراکتر):\n\n"
-        "💡 <i>جهت انصراف، دستور /cancel را بفرستید.</i>",
+        "💡 <i>جهت انصراف، دکمه زیر را لمس کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -274,13 +287,23 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
     if not message.text:
         return
 
-    if message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("❌ عملیات تغییر نام لغو شد.")
-        return
-
     data = await state.get_data()
     old_email = data.get("rename_email")
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        if old_email:
+            info = await _build_dashboard_info(old_email)
+            if info:
+                text, keyboard = info
+                await message.answer(
+                    f"❌ <b>عملیات تغییر نام لغو شد.</b>\n\n{text}",
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
+                return
+        await message.answer("❌ عملیات تغییر نام لغو شد.")
+        return
     if not old_email:
         await state.clear()
         return
