@@ -3832,11 +3832,6 @@ async def admin_start_msg_clear_btns(
     await callback.answer()
 
 
-# ==========================================
-# مدیریت نمایش و محتوای بخش تعرفه‌ها
-# ==========================================
-
-
 async def _build_pricing_display_panel() -> tuple[str, InlineKeyboardMarkup]:
     from db.models import get_pricing_display_config
 

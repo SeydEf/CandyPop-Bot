@@ -17,6 +17,7 @@ from handlers import (
     admin_create_sub,
     admin_sub_manage,
     buy,
+    guide,
     pricing,
     profile,
     referral,
@@ -99,6 +100,7 @@ async def main() -> None:
 
     dp.include_routers(
         start.router,
+        guide.router,
         profile.router,
         pricing.router,
         buy.router,

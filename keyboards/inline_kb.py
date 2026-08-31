@@ -160,18 +160,6 @@ def card_payment_keyboard(
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            # [
-            #     InlineKeyboardButton(
-            #         text="📋 کپی شماره کارت",
-            #         callback_data=f"copy_card_{invoice_id}",
-            #     ),
-            # ],
-            # [
-            #     InlineKeyboardButton(
-            #         text="📋 کپی مبلغ",
-            #         callback_data=f"copy_amount_{invoice_id}",
-            #     ),
-            # ],
             [
                 InlineKeyboardButton(
                     text="✅ پرداخت کردم",
@@ -510,7 +498,13 @@ def sub_config_links_keyboard(email: str) -> InlineKeyboardMarkup:
                     text="🔗 دریافت کانفیگ‌ها",
                     callback_data=f"sub_links_{email}",
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📖 راهنمای اتصال",
+                    callback_data="guide_back_os",
+                )
+            ],
         ]
     )
 

@@ -8,7 +8,7 @@ from aiogram.filters import Command, CommandStart
 
 from config import BOT_NAME, SUPPORT_LINK
 from db.models import create_referral, create_user, get_user
-from keyboards.reply_kb import BTN_GUIDE, BTN_SUPPORT, main_menu_keyboard
+from keyboards.reply_kb import BTN_SUPPORT, main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name="start")
@@ -100,26 +100,6 @@ async def send_welcome(
                     reply_markup=main_menu_keyboard(),
                     parse_mode="HTML",
                 )
-
-
-@router.message(Command("help"))
-@router.message(F.text == BTN_GUIDE)
-async def cmd_guide(message: types.Message) -> None:
-    text = (
-        f"📖 <b>راهنمای اتصال به سرویس‌های {BOT_NAME}</b>\n\n"
-        "برای استفاده از اشتراک خود در برنامه‌های مختلف، لینک ساب‌اسکریپشن دریافت شده را کپی کرده و طبق راهنمای زیر در برنامه وارد کنید:\n\n"
-        "📱 <b>اندروید (Android):</b>\n"
-        "برنامه‌های پیشنهادی: <b>v2rayNG</b> | <b>NekoBox</b> | <b>Streisand</b>\n"
-        "• برنامه را باز کنید ⬅️ منو / علامت + ⬅️ گزینه <i>Import config from clipboard</i> یا افزودن ساب‌اسکریپشن.\n\n"
-        "🍏 <b>آیفون (iOS):</b>\n"
-        "برنامه‌های پیشنهادی: <b>v2box</b> | <b>Streisand</b> | <b>Shadowrocket</b>\n"
-        "• برنامه را باز کرده ⬅️ بخش Subscriptions ⬅️ دکمه + ⬅️ لینک ساب‌اسکریپشن را وارد و ذخیره کنید.\n\n"
-        "💻 <b>ویندوز (Windows):</b>\n"
-        "برنامه‌های پیشنهادی: <b>v2rayN</b> | <b>NekoRay</b>\n"
-        "• برنامه را باز کرده ⬅️ گزینه Subscription Group ⬅️ افزودن لینک ⬅️ دکمه Update Subscription.\n\n"
-        "💡 <i>در صورت نیاز به راهنمایی بیشتر، از بخش «🆘 پشتیبانی» با ما در ارتباط باشید.</i>"
-    )
-    await message.answer(text, parse_mode="HTML")
 
 
 @router.message(Command("support"))
