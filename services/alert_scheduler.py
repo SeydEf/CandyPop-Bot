@@ -15,6 +15,7 @@ from db.models import (
     get_alert_config,
     get_all_notified_alerts_map,
     record_notified_alert,
+    record_scheduler_run,
     resolve_client_tg_id,
 )
 from services import xui_api
@@ -70,7 +71,7 @@ async def _process_single_client(
                 f"امیدواریم از کیفیت و سرعت سرویس رضایت داشته باشید. "
                 f"برای ادامه استفاده، می‌توانید همین حالا از بخش «🛒 خرید اشتراک» سرویس اختصاصی خود را تهیه کنید."
             )
-            
+
             try:
                 await bot.send_message(
                     chat_id=tg_id,
@@ -317,6 +318,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
             for c in clients
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
+        await record_scheduler_run("alert_scheduler")
 
     except Exception as e:
         logger.error("Error in alert scheduler check: %s", e)

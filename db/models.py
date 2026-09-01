@@ -854,6 +854,20 @@ async def set_alert_config(
         )
 
 
+async def record_scheduler_run(scheduler_name: str) -> None:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await set_setting(f"last_{scheduler_name}_run", now_iso)
+
+
+async def get_schedulers_last_run() -> dict[str, str | None]:
+    alert_run = await get_setting("last_alert_scheduler_run")
+    ip_run = await get_setting("last_ip_checker_run")
+    return {
+        "alert_scheduler": alert_run,
+        "ip_checker": ip_run,
+    }
+
+
 async def get_shop_status() -> dict[str, bool]:
     purchases_str = await get_setting("shop_purchases_enabled", "1") or "1"
     renewals_str = await get_setting("shop_renewals_enabled", "1") or "1"

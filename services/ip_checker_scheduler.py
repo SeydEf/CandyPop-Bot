@@ -15,6 +15,7 @@ from db.models import (
     get_ip_checker_config,
     has_admin_permission,
     record_ip_violation,
+    record_scheduler_run,
     resolve_client_tg_id,
     set_ip_suspended,
 )
@@ -191,6 +192,7 @@ async def check_and_process_ip_limits(bot: Bot) -> None:
             for c in clients
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
+        await record_scheduler_run("ip_checker")
 
     except Exception as e:
         logger.error("Error in IP limit checker scan: %s", e)

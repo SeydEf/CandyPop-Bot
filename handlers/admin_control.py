@@ -125,8 +125,10 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         get_alert_config,
         get_card_config,
         get_channel_lock_config,
+        get_ip_checker_config,
         get_pricing_display_config,
         get_referral_config,
+        get_schedulers_last_run,
         get_shop_status,
         get_start_first_use_config,
         get_start_message_config,
@@ -135,6 +137,8 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     ref_config = await get_referral_config()
     card_config = await get_card_config()
     alert_config = await get_alert_config()
+    ip_config = await get_ip_checker_config()
+    schedulers_last_run = await get_schedulers_last_run()
     shop_status = await get_shop_status()
     start_msg_config = await get_start_message_config()
     pricing_disp_config = await get_pricing_display_config()
@@ -156,6 +160,25 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     card_num = card_config["card_number"] or "تنظیم نشده"
     card_own = card_config["card_holder"] or "تنظیم نشده"
+
+    alert_sch_enabled = bool(alert_config.get("enabled", True))
+    ip_checker_enabled = bool(ip_config.get("enabled", True))
+
+    alert_sch_status = "🟢 فعال" if alert_sch_enabled else "🔴 غیرفعال"
+    ip_sch_status = "🟢 فعال" if ip_checker_enabled else "🔴 غیرفعال"
+
+    last_alert_raw = schedulers_last_run.get("alert_scheduler")
+    last_ip_raw = schedulers_last_run.get("ip_checker")
+
+    last_alert_time = (
+        format_datetime(last_alert_raw) if last_alert_raw else "هنوز اجرا نشده"
+    )
+    last_ip_time = format_datetime(last_ip_raw) if last_ip_raw else "هنوز اجرا نشده"
+
+    schedulers_text = (
+        f"  • 🔔 هشدارهای حجم و انقضا: {alert_sch_status} | آخرین پایش: <code>{last_alert_time}</code>\n"
+        f"  • 🛡 پایش سقف IP: {ip_sch_status} | آخرین پایش: <code>{last_ip_time}</code>\n"
+    )
 
     min_gb_alert = float(alert_config["min_gb"])
     min_days_alert = int(alert_config["min_days"])
@@ -225,6 +248,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
         f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
         f"💳 <b>کارت جهت واریز:</b> <code>{card_num}</code> ({card_own})\n\n"
+        f"🤖 <b>وضعیت و آخرین اجرای زمان‌بندها:</b>\n{schedulers_text}\n"
         f"🔔 <b>حدآستانه هشدارهای اتمام سرویس:</b>\n{alert_text}\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
         f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
