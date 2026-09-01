@@ -70,21 +70,11 @@ async def _process_single_client(
                 f"امیدواریم از کیفیت و سرعت سرویس رضایت داشته باشید. "
                 f"برای ادامه استفاده، می‌توانید همین حالا از بخش «🛒 خرید اشتراک» سرویس اختصاصی خود را تهیه کنید."
             )
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="🛒 خرید اشتراک جدید",
-                            callback_data="buy_start",
-                        )
-                    ]
-                ]
-            )
+            
             try:
                 await bot.send_message(
                     chat_id=tg_id,
                     text=text,
-                    reply_markup=keyboard,
                     parse_mode="HTML",
                 )
             except Exception as e:
