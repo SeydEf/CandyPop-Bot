@@ -23,6 +23,7 @@ from services.test_sub_config import (
     update_test_sub_config,
 )
 from utils.formatting import (
+    format_datetime,
     format_price,
     format_size_gb,
     persian_to_english_digits,
@@ -763,6 +764,12 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="📊 آمار و آخرین دریافت‌کنندگان تست",
+                    callback_data="admin_test_stats_report",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="📊 تغییر حجم تست (GB)", callback_data="admin_test_gb"
                 ),
                 InlineKeyboardButton(
@@ -783,6 +790,77 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
     )
 
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_test_stats_report")
+async def admin_test_stats_report(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "test_sub"):
+        return
+    await state.clear()
+
+    from db.models import get_recent_test_sub_users, get_test_sub_statistics
+    from utils.formatting import format_datetime
+
+    stats = await get_test_sub_statistics()
+    recent_users = await get_recent_test_sub_users(10)
+
+    stats_lines = [
+        "📊 <b>آمار و گزارش اشتراک‌های تست رایگان</b>\n",
+        "📈 <b>تعداد تست‌های دریافت شده در بازه‌های زمانی:</b>",
+        f"• ☀️ <b>امروز:</b> {to_persian_digits(stats['today'])} مورد",
+        f"• 🌙 <b>دیروز:</b> {to_persian_digits(stats['yesterday'])} مورد",
+        f"• 🗓 <b>۷ روز گذشته:</b> {to_persian_digits(stats['last_7_days'])} مورد",
+        f"• 📅 <b>۳۰ روز گذشته:</b> {to_persian_digits(stats['last_30_days'])} مورد",
+        f"• 🏆 <b>مجموع کل تست‌ها:</b> {to_persian_digits(stats['total_tests'])} بار ({to_persian_digits(stats['total_users'])} کاربر)",
+        "\n━━━━━━━━━━━━━━━━━━━━\n",
+        "👥 <b>۱۰ کاربر اخیر دریافت‌کننده اشتراک تست:</b>\n",
+    ]
+
+    if not recent_users:
+        stats_lines.append("<i>هنوز هیچ اشتراک تستی ثبت نشده است.</i>")
+    else:
+        for idx, u in enumerate(recent_users, 1):
+            tg_id = u["tg_id"]
+            username = u.get("username")
+            username_str = f"@{username}" if username else "نامشخص"
+            full_name = u.get("full_name") or "کاربر"
+            test_count = u.get("test_used", 1)
+            last_dt = format_datetime(u.get("last_test_at"))
+
+            stats_lines.append(
+                f"{to_persian_digits(idx)}️⃣ <b>{full_name}</b> ({username_str})\n"
+                f"   🆔 <code>{tg_id}</code> | 🔢 دفعات تست: {to_persian_digits(test_count)} بار\n"
+                f"   📅 آخرین دریافت: <code>{last_dt}</code>\n"
+            )
+
+    text = "\n".join(stats_lines)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 به‌روزرسانی گزارش",
+                    callback_data="admin_test_stats_report",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات تست",
+                    callback_data="admin_test_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
     await callback.answer()
 
 
@@ -3368,12 +3446,19 @@ async def admin_users_list(callback: types.CallbackQuery, state: FSMContext) -> 
         bal_str = format_price(u.get("balance", 0))
         total_paid_str = format_price(u.get("total_paid", 0))
         paid_count = u.get("paid_count", 0)
-        joined_at = u.get("joined_at") or "نامشخص"
+        joined_at_raw = u.get("joined_at")
+        joined_at = format_datetime(joined_at_raw) if joined_at_raw else "نامشخص"
+        test_used_val = u.get("test_used", 0)
+        test_badge = (
+            f"🎁 تست: دارد ({to_persian_digits(test_used_val)})"
+            if test_used_val > 0
+            else "🎁 تست: ندارد"
+        )
 
         lines.append(
             f"{to_persian_digits(idx)}️⃣ <b>{full_name}</b> ({username_str})\n"
             f"   🆔 <code>{tg_id}</code> | 💰 کیف پول: {bal_str}\n"
-            f"   💳 کل پرداختی‌ها: <b>{total_paid_str}</b> ({to_persian_digits(paid_count)} موفق)\n"
+            f"   💳 کل پرداختی‌ها: <b>{total_paid_str}</b> ({to_persian_digits(paid_count)} موفق) | {test_badge}\n"
             f"   📅 ثبت‌نام: <code>{joined_at}</code>\n"
         )
 

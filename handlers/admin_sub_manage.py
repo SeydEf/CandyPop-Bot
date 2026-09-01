@@ -373,6 +373,16 @@ async def _render_user_dashboard(
     topups_str = format_price(fin_summary["topups_amount"])
     subs_str = format_price(fin_summary["subs_amount"])
 
+    test_used_count = user.get("test_used", 0)
+    last_test_at_raw = user.get("last_test_at")
+    if test_used_count > 0 or last_test_at_raw:
+        last_test_str = (
+            format_datetime(last_test_at_raw) if last_test_at_raw else "نامشخص"
+        )
+        test_status_str = f"✅ دریافت کرده ({to_persian_digits(test_used_count)} بار | آخرین بار: <code>{last_test_str}</code>)"
+    else:
+        test_status_str = "❌ دریافت نکرده (مجاز به دریافت)"
+
     notice_block = f"{notice}\n\n" if notice else ""
 
     text = (
@@ -380,6 +390,7 @@ async def _render_user_dashboard(
         f"👤 <b>مدیریت کاربر:</b> <code>{tg_id}</code>\n\n"
         f"نام و نام‌خانوادگی: <b>{full_name}</b>\n"
         f"یوزرنیم: <b>{username_str}</b>\n"
+        f"🎁 <b>وضعیت اشتراک تست:</b> {test_status_str}\n"
         f"💰 <b>موجودی کیف پول:</b> {format_price(bal)}\n"
         f"💳 <b>کل پرداختی‌های موفق:</b> {total_paid_str} ({to_persian_digits(paid_count)} تراکنش)\n"
         f"   ├ 🛍 خرید/تمدید مستقیم: {subs_str}\n"

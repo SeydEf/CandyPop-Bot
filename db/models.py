@@ -65,7 +65,7 @@ async def set_test_used(tg_id: int) -> None:
     db = await get_db()
     now_iso = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE users SET test_used = 1, last_test_at = ? WHERE tg_id = ?",
+        "UPDATE users SET test_used = COALESCE(test_used, 0) + 1, last_test_at = ? WHERE tg_id = ?",
         (now_iso, tg_id),
     )
     await db.commit()
@@ -136,6 +136,59 @@ async def reset_user_test_sub(tg_id: int) -> bool:
     )
     await db.commit()
     return cursor.rowcount > 0
+
+
+async def get_test_sub_statistics() -> dict[str, int]:
+    db = await get_db()
+    row_sum = await db.execute_fetchall(
+        "SELECT COALESCE(SUM(test_used), 0) as total_tests, COUNT(*) as total_users FROM users WHERE test_used > 0"
+    )
+    total_tests = row_sum[0]["total_tests"] if row_sum else 0
+    total_users = row_sum[0]["total_users"] if row_sum else 0
+
+    row_today = await db.execute_fetchall(
+        "SELECT COUNT(*) as count FROM users WHERE last_test_at IS NOT NULL AND date(last_test_at) = date('now')"
+    )
+    today_count = row_today[0]["count"] if row_today else 0
+
+    row_yesterday = await db.execute_fetchall(
+        "SELECT COUNT(*) as count FROM users WHERE last_test_at IS NOT NULL AND date(last_test_at) = date('now', '-1 day')"
+    )
+    yesterday_count = row_yesterday[0]["count"] if row_yesterday else 0
+
+    row_7d = await db.execute_fetchall(
+        "SELECT COUNT(*) as count FROM users WHERE last_test_at IS NOT NULL AND last_test_at >= datetime('now', '-7 days')"
+    )
+    last_7d_count = row_7d[0]["count"] if row_7d else 0
+
+    row_30d = await db.execute_fetchall(
+        "SELECT COUNT(*) as count FROM users WHERE last_test_at IS NOT NULL AND last_test_at >= datetime('now', '-30 days')"
+    )
+    last_30d_count = row_30d[0]["count"] if row_30d else 0
+
+    return {
+        "today": today_count,
+        "yesterday": yesterday_count,
+        "last_7_days": last_7d_count,
+        "last_30_days": last_30d_count,
+        "total_tests": total_tests,
+        "total_users": total_users,
+    }
+
+
+async def get_recent_test_sub_users(limit: int = 10) -> list[dict[str, Any]]:
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        """
+        SELECT tg_id, username, full_name, test_used, last_test_at
+        FROM users
+        WHERE last_test_at IS NOT NULL
+        ORDER BY last_test_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    return [dict(r) for r in rows]
 
 
 async def get_balance(tg_id: int) -> int:
