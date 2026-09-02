@@ -375,6 +375,75 @@ async def expire_old_invoices() -> int:
     return cursor.rowcount
 
 
+async def get_all_invoices_paginated(
+    status_filter: str = "all", page: int = 0, page_size: int = 5
+) -> tuple[list[dict[str, Any]], int, int]:
+    import math
+
+    db = await get_db()
+    await expire_old_invoices()
+
+    where_clause = ""
+    params: list[Any] = []
+
+    if status_filter == "approved":
+        where_clause = "WHERE i.status IN ('approved', 'paid')"
+    elif status_filter in ("pending", "rejected", "expired"):
+        where_clause = "WHERE i.status = ?"
+        params.append(status_filter)
+
+    count_query = f"SELECT COUNT(*) as cnt FROM invoices i {where_clause}"
+    count_rows = await db.execute_fetchall(count_query, tuple(params))
+    total_invoices = count_rows[0]["cnt"] if count_rows else 0
+
+    total_pages = (
+        max(1, math.ceil(total_invoices / page_size)) if total_invoices > 0 else 1
+    )
+    safe_page = max(0, min(page, total_pages - 1))
+    offset = safe_page * page_size
+
+    select_query = f"""
+        SELECT 
+            i.*,
+            u.username,
+            u.full_name
+        FROM invoices i
+        LEFT JOIN users u ON i.tg_id = u.tg_id
+        {where_clause}
+        ORDER BY i.created_at DESC
+        LIMIT ? OFFSET ?
+    """
+    fetch_params = list(params) + [page_size, offset]
+    rows = await db.execute_fetchall(select_query, tuple(fetch_params))
+
+    return [dict(r) for r in rows], total_invoices, total_pages
+
+
+async def get_invoice_details(invoice_id: str) -> dict[str, Any] | None:
+    db = await get_db()
+    await expire_old_invoices()
+    rows = await db.execute_fetchall(
+        """
+        SELECT 
+            i.*,
+            u.username,
+            u.full_name
+        FROM invoices i
+        LEFT JOIN users u ON i.tg_id = u.tg_id
+        WHERE i.id = ?
+        """,
+        (invoice_id,),
+    )
+    return dict(rows[0]) if rows else None
+
+
+async def delete_invoice(invoice_id: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
 async def create_referral(referrer_tg_id: int, referred_tg_id: int) -> None:
     db = await get_db()
     await db.execute(
@@ -1099,7 +1168,9 @@ PERMISSION_TITLES: dict[str, str] = {
     "manage_subs": "جستجو و مدیریت اشتراک‌ها",
     "users_list": "مشاهده و مدیریت لیست کاربران",
     "create_sub": "ساخت اشتراک سفارشی",
+    "view_invoices": "مشاهده لیست فاکتورها",
     "approve_invoices": "تأیید و رد پرداخت فاکتورها",
+    "delete_invoices": "حذف فاکتورها از دیتابیس",
     "pricing": "قیمت‌گذاری و تغییر نرخ‌ها",
     "shop_status": "وضعیت فروش و تمدید",
     "discounts": "مدیریت کدهای تخفیف",
@@ -1120,7 +1191,9 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "manage_subs": True,
     "users_list": True,
     "create_sub": True,
+    "view_invoices": True,
     "approve_invoices": True,
+    "delete_invoices": False,
     "pricing": False,
     "shop_status": True,
     "discounts": True,

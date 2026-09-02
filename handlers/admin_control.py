@@ -391,6 +391,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
+                    text="🧾 مدیریت و لیست فاکتورها",
+                    callback_data="admin_invoices_all_0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="👥 مدیریت گروه‌های مشتری (Groups)",
                     callback_data="admin_groups_menu",
                 ),
@@ -3211,6 +3217,402 @@ async def admin_manage_admins_menu(
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+async def _render_invoices_list(
+    message: types.Message,
+    status_filter: str,
+    page: int,
+) -> None:
+    from db.models import get_all_invoices_paginated
+    from keyboards.inline_kb import admin_invoices_list_keyboard
+
+    page_size = 5
+    invoices, total_invoices, total_pages = await get_all_invoices_paginated(
+        status_filter=status_filter, page=page, page_size=page_size
+    )
+
+    if page >= total_pages and total_pages > 0:
+        page = total_pages - 1
+        invoices, total_invoices, total_pages = await get_all_invoices_paginated(
+            status_filter=status_filter, page=page, page_size=page_size
+        )
+
+    status_titles = {
+        "all": "همه وضعیت‌ها",
+        "approved": "پرداخت‌شده / تأییدشده 🟢",
+        "pending": "در انتظار تأیید 🟡",
+        "rejected": "رد شده 🔴",
+        "expired": "منقضی شده ⌛️",
+    }
+    status_title = status_titles.get(status_filter, status_filter)
+
+    status_badges = {
+        "approved": "🟢 تأییدشده",
+        "paid": "🟢 پرداخت‌شده",
+        "pending": "🟡 در انتظار",
+        "rejected": "🔴 ردشده",
+        "expired": "⌛️ منقضی",
+    }
+
+    if not invoices:
+        text = (
+            f"🧾 <b>مدیریت و آرشیو فاکتورها</b>\n"
+            f"🔍 فیلتر فعلی: <b>{status_title}</b>\n\n"
+            f"<i>هیچ فاکتوری با این وضعیت یافت نشد.</i>"
+        )
+    else:
+        lines = [
+            f"🧾 <b>مدیریت و آرشیو فاکتورها</b> (فیلتر: <b>{status_title}</b> | کل: <b>{to_persian_digits(total_invoices)}</b> فاکتور)\n"
+        ]
+        digit_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+        for idx, inv in enumerate(invoices):
+            emoji = digit_emojis[idx] if idx < len(digit_emojis) else f"{idx + 1}"
+            inv_id = inv["id"]
+            short_id = inv_id[:8] + "..." if len(inv_id) > 10 else inv_id
+            u_name = inv.get("full_name") or "کاربر"
+            username = inv.get("username")
+            u_str = f"@{username}" if username else "بدون نام‌کاربری"
+            amount_str = format_price(inv.get("amount", 0))
+            st = inv.get("status", "pending")
+            st_badge = status_badges.get(st, st)
+            method_str = (
+                "کارت به کارت 💳"
+                if inv.get("payment_method") == "card"
+                else "کیف پول 👛"
+            )
+            dt_str = (
+                format_datetime(inv.get("created_at"))
+                if inv.get("created_at")
+                else "نامشخص"
+            )
+
+            target_email = inv.get("target_email")
+            if target_email == "TOPUP" or (
+                inv.get("duration_days") == 0 and inv.get("data_gb") == 0
+            ):
+                service_desc = "💵 شارژ کیف پول"
+            elif target_email:
+                service_desc = f"🔄 تمدید اشتراک: <code>{target_email}</code>"
+            else:
+                gb = inv.get("data_gb", 0)
+                dur = inv.get("duration_days", 0)
+                service_desc = (
+                    f"🛍 خرید بسته: {format_size_gb(gb)} | {to_persian_digits(dur)} روز"
+                )
+
+            lines.append(
+                f"{emoji} <b>فاکتور:</b> <code>{short_id}</code> | {st_badge}\n"
+                f"   👤 کاربر: <b>{u_name}</b> ({u_str}) | 🆔 <code>{inv['tg_id']}</code>\n"
+                f"   📦 عملیات: {service_desc}\n"
+                f"   💰 مبلغ: <b>{amount_str}</b> ({method_str})\n"
+                f"   📅 تاریخ ثبت: <code>{dt_str}</code>\n"
+            )
+        text = "\n".join(lines)
+
+    keyboard = admin_invoices_list_keyboard(invoices, status_filter, page, total_pages)
+
+    await safe_edit_text(
+        message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_invoices_"))
+async def admin_invoices_list(callback: types.CallbackQuery, state: FSMContext) -> None:
+    from db.models import has_admin_permission
+
+    if not (
+        await has_admin_permission(callback.from_user.id, "view_invoices")
+        or await has_admin_permission(callback.from_user.id, "approve_invoices")
+    ):
+        await callback.answer(
+            "⛔️ شما دسترسی به بخش «مشاهده لیست فاکتورها» را ندارید.",
+            show_alert=True,
+        )
+        return
+    await state.clear()
+
+    # Callback format: admin_invoices_{status_filter}_{page}
+    parts = callback.data.split("_")
+    status_filter = parts[2] if len(parts) >= 3 else "all"
+    try:
+        page = int(parts[3]) if len(parts) >= 4 else 0
+    except ValueError:
+        page = 0
+
+    await _render_invoices_list(callback.message, status_filter, page)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inv_view_"))
+async def admin_invoice_view(callback: types.CallbackQuery, state: FSMContext) -> None:
+    from db.models import has_admin_permission
+
+    if not (
+        await has_admin_permission(callback.from_user.id, "view_invoices")
+        or await has_admin_permission(callback.from_user.id, "approve_invoices")
+    ):
+        await callback.answer(
+            "⛔️ شما دسترسی به بخش «مشاهده لیست فاکتورها» را ندارید.",
+            show_alert=True,
+        )
+        return
+    await state.clear()
+
+    # Callback format: admin_inv_view_{inv_id}_{status_filter}_{page}
+    parts = callback.data.split("_")
+    if len(parts) < 6:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[3]
+    status_filter = parts[4]
+    try:
+        page = int(parts[5])
+    except ValueError:
+        page = 0
+
+    from db.models import get_invoice_details
+    from keyboards.inline_kb import admin_invoice_detail_keyboard
+
+    inv = await get_invoice_details(inv_id)
+    if not inv:
+        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        return
+
+    status_badges = {
+        "approved": "🟢 تأییدشده",
+        "paid": "🟢 پرداخت‌شده",
+        "pending": "🟡 در انتظار تأیید",
+        "rejected": "🔴 ردشده",
+        "expired": "⌛️ منقضی‌شده",
+    }
+
+    tg_id = inv["tg_id"]
+    u_name = inv.get("full_name") or "نامشخص"
+    username = inv.get("username")
+    u_str = f"@{username}" if username else "بدون نام‌کاربری"
+    amount = inv.get("amount", 0)
+    orig_amount = inv.get("original_amount") or amount
+    discount_code = inv.get("discount_code") or "اعمال نشده"
+    st = inv.get("status", "pending")
+    st_badge = status_badges.get(st, st)
+    method_str = (
+        "کارت به کارت 💳" if inv.get("payment_method") == "card" else "کیف پول 👛"
+    )
+    created_at = (
+        format_datetime(inv.get("created_at")) if inv.get("created_at") else "نامشخص"
+    )
+    expires_at = (
+        format_datetime(inv.get("expires_at")) if inv.get("expires_at") else "نامشخص"
+    )
+
+    target_email = inv.get("target_email")
+    if target_email == "TOPUP" or (
+        inv.get("duration_days") == 0 and inv.get("data_gb") == 0
+    ):
+        type_str = "💵 افزایش موجودی / شارژ کیف پول"
+        spec_str = "شارژ مستقیم کیف پول کاربر"
+    elif target_email:
+        type_str = "🔄 تمدید اشتراک موجود"
+        spec_str = (
+            f"نام سرویس: <code>{target_email}</code>\n"
+            f"   • حجم: {format_size_gb(inv.get('data_gb', 0))} | مدت: {to_persian_digits(inv.get('duration_days', 0))} روز"
+        )
+    else:
+        type_str = "🛍 خرید اشتراک جدید"
+        spec_str = (
+            f"حجم: {format_size_gb(inv.get('data_gb', 0))} | "
+            f"مدت: {to_persian_digits(inv.get('duration_days', 0))} روز | "
+            f"تعداد کاربر: {to_persian_digits(inv.get('users_count', 1))} کاربر"
+        )
+
+    receipt_text = inv.get("receipt_text")
+    receipt_info = ""
+    if receipt_text:
+        receipt_info += (
+            f"\n📝 <b>توضیحات واریز کاربر:</b>\n<code>{receipt_text}</code>\n"
+        )
+    if inv.get("receipt_file_id"):
+        receipt_info += "\n📎 <i>این فاکتور دارای تصویر رسید واریزی است (با دکمه زیر قابل مشاهده است).</i>\n"
+
+    text = (
+        f"🧾 <b>جزئیات کامل فاکتور و تراکنش</b>\n\n"
+        f"🆔 <b>کد فاکتور:</b> <code>{inv_id}</code>\n"
+        f"🔘 <b>وضعیت فعلی:</b> {st_badge}\n"
+        f"📌 <b>نوع تراکنش:</b> {type_str}\n\n"
+        f"👤 <b>اطلاعات خریدار:</b>\n"
+        f"   • نام: <b>{u_name}</b>\n"
+        f"   • یوزرنیم: <b>{u_str}</b>\n"
+        f"   • شناسه عددی: <code>{tg_id}</code>\n\n"
+        f"📦 <b>مشخصات سرویس:</b>\n"
+        f"   • {spec_str}\n\n"
+        f"💰 <b>اطلاعات مالی:</b>\n"
+        f"   • مبلغ اولیه: {format_price(orig_amount)}\n"
+        f"   • کد تخفیف: <code>{discount_code}</code>\n"
+        f"   • مبلغ نهایی پرداختی: <b>{format_price(amount)}</b>\n"
+        f"   • روش پرداخت: <b>{method_str}</b>\n\n"
+        f"📅 <b>زمان‌بندی:</b>\n"
+        f"   • تاریخ ثبت: <code>{created_at}</code>\n"
+        f"   • مهلت پرداخت: <code>{expires_at}</code>"
+        f"{receipt_info}"
+    )
+
+    can_approve = await has_admin_permission(callback.from_user.id, "approve_invoices")
+    can_delete = await has_admin_permission(callback.from_user.id, "delete_invoices")
+
+    keyboard = admin_invoice_detail_keyboard(
+        inv,
+        status_filter,
+        page,
+        can_approve=can_approve,
+        can_delete=can_delete,
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inv_receipt_"))
+async def admin_invoice_receipt_view(callback: types.CallbackQuery, bot: Bot) -> None:
+    from db.models import has_admin_permission
+
+    if not (
+        await has_admin_permission(callback.from_user.id, "view_invoices")
+        or await has_admin_permission(callback.from_user.id, "approve_invoices")
+    ):
+        await callback.answer(
+            "⛔️ شما دسترسی به بخش «مشاهده لیست فاکتورها» را ندارید.",
+            show_alert=True,
+        )
+        return
+
+    # Callback format: admin_inv_receipt_{inv_id}_{status_filter}_{page}
+    parts = callback.data.split("_")
+    if len(parts) < 6:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[3]
+
+    from db.models import get_invoice_details
+
+    inv = await get_invoice_details(inv_id)
+    if not inv or not inv.get("receipt_file_id"):
+        await callback.answer(
+            "❌ تصویر رسیدی برای این فاکتور یافت نشد.", show_alert=True
+        )
+        return
+
+    photo_file_id = inv["receipt_file_id"]
+    receipt_text = inv.get("receipt_text") or ""
+    amount_str = format_price(inv.get("amount", 0))
+
+    caption = (
+        f"🧾 <b>تصویر رسید فاکتور:</b> <code>{inv_id}</code>\n"
+        f"💰 مبلغ: <b>{amount_str}</b>\n"
+        f"👤 کاربر: <code>{inv['tg_id']}</code>"
+    )
+    if receipt_text:
+        caption += f"\n📝 توضیحات: <code>{receipt_text}</code>"
+
+    await bot.send_photo(
+        chat_id=callback.from_user.id,
+        photo=photo_file_id,
+        caption=caption,
+        parse_mode="HTML",
+    )
+    await callback.answer("✅ تصویر فیش برای شما ارسال شد.", show_alert=False)
+
+
+@router.callback_query(F.data.startswith("admin_inv_del_ask_"))
+async def admin_invoice_delete_ask(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "delete_invoices"):
+        return
+    await state.clear()
+
+    # Callback format: admin_inv_del_ask_{inv_id}_{status_filter}_{page}
+    parts = callback.data.split("_")
+    if len(parts) < 7:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[4]
+    status_filter = parts[5]
+    try:
+        page = int(parts[6])
+    except ValueError:
+        page = 0
+
+    from db.models import get_invoice_details
+    from keyboards.inline_kb import admin_invoice_delete_confirm_keyboard
+
+    inv = await get_invoice_details(inv_id)
+    if not inv:
+        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        return
+
+    amount_str = format_price(inv.get("amount", 0))
+    u_name = inv.get("full_name") or "کاربر"
+
+    text = (
+        f"🗑 <b>تأیید حذف کامل فاکتور از دیتابیس</b>\n\n"
+        f"⚠️ <b>آیا از حذف دائمی این فاکتور اطمینان دارید؟</b>\n\n"
+        f"🆔 <b>کد فاکتور:</b> <code>{inv_id}</code>\n"
+        f"👤 <b>کاربر:</b> {u_name} (<code>{inv.get('tg_id')}</code>)\n"
+        f"💰 <b>مبلغ:</b> {amount_str}\n\n"
+        f"🚨 <b>هشدار:</b> این عملیات غیرقابل بازگشت است و تمام رکوردهای این فاکتور برای همیشه پاک خواهد شد."
+    )
+
+    keyboard = admin_invoice_delete_confirm_keyboard(inv_id, status_filter, page)
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inv_del_confirm_"))
+async def admin_invoice_delete_confirm(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "delete_invoices"):
+        return
+
+    # Callback format: admin_inv_del_confirm_{inv_id}_{status_filter}_{page}
+    parts = callback.data.split("_")
+    if len(parts) < 7:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[4]
+    status_filter = parts[5]
+    try:
+        page = int(parts[6])
+    except ValueError:
+        page = 0
+
+    from db.models import delete_invoice
+
+    success = await delete_invoice(inv_id)
+    alert_msg = (
+        "✅ فاکتور با موفقیت از دیتابیس حذف شد."
+        if success
+        else "⚠️ فاکتور یافت نشد یا قبلاً حذف شده است."
+    )
+
+    # Re-render the invoices list directly
+    await _render_invoices_list(callback.message, status_filter, page)
+    await callback.answer(alert_msg, show_alert=True)
 
 
 @router.callback_query(F.data == "admin_add_admin_start")

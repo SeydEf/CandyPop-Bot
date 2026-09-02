@@ -870,7 +870,7 @@ async def receive_receipt_photo(
 
     file_id = message.photo[-1].file_id
     await set_invoice_receipt(invoice_id, file_id=file_id)
-    await update_invoice_status(invoice_id, "paid")
+    await update_invoice_status(invoice_id, "pending")
     await state.clear()
 
     is_topup = invoice.get("target_email") == "TOPUP" or (
@@ -993,7 +993,7 @@ async def receive_receipt_text(
 
     receipt_text = message.text.strip()
     await set_invoice_receipt(invoice_id, text=receipt_text)
-    await update_invoice_status(invoice_id, "paid")
+    await update_invoice_status(invoice_id, "pending")
     await state.clear()
 
     is_topup = invoice.get("target_email") == "TOPUP" or (

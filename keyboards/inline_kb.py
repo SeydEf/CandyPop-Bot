@@ -886,3 +886,207 @@ def admin_users_list_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_invoices_list_keyboard(
+    invoices: list[dict[str, Any]],
+    status_filter: str,
+    current_page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    # 1. Filters row
+    all_badge = "🔘 همه" if status_filter == "all" else "همه"
+    approved_badge = (
+        "🔘 🟢 پرداخت‌شده" if status_filter == "approved" else "🟢 پرداخت‌شده"
+    )
+    pending_badge = "🔘 🟡 در انتظار" if status_filter == "pending" else "🟡 در انتظار"
+    rejected_badge = "🔘 🔴 رد شده" if status_filter == "rejected" else "🔴 رد شده"
+    expired_badge = "🔘 ⌛️ منقضی" if status_filter == "expired" else "⌛️ منقضی"
+
+    rows.append(
+        [
+            InlineKeyboardButton(text=all_badge, callback_data="admin_invoices_all_0"),
+            InlineKeyboardButton(
+                text=approved_badge, callback_data="admin_invoices_approved_0"
+            ),
+            InlineKeyboardButton(
+                text=pending_badge, callback_data="admin_invoices_pending_0"
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=rejected_badge, callback_data="admin_invoices_rejected_0"
+            ),
+            InlineKeyboardButton(
+                text=expired_badge, callback_data="admin_invoices_expired_0"
+            ),
+        ]
+    )
+
+    # 2. Detail selection buttons per invoice
+    digit_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+    detail_buttons: list[InlineKeyboardButton] = []
+    for idx, inv in enumerate(invoices):
+        emoji = digit_emojis[idx] if idx < len(digit_emojis) else f"{idx + 1}"
+        detail_buttons.append(
+            InlineKeyboardButton(
+                text=f"{emoji} جزئیات",
+                callback_data=f"admin_inv_view_{inv['id']}_{status_filter}_{current_page}",
+            )
+        )
+    if detail_buttons:
+        rows.append(detail_buttons)
+
+    # 3. Pagination controls
+    nav_row: list[InlineKeyboardButton] = []
+    if current_page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⬅️ قبلی",
+                callback_data=f"admin_invoices_{status_filter}_{current_page - 1}",
+            )
+        )
+    else:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⛔️",
+                callback_data="admin_users_list_noop",
+            )
+        )
+
+    nav_row.append(
+        InlineKeyboardButton(
+            text=f"📄 {current_page + 1} / {total_pages}",
+            callback_data="admin_users_list_noop",
+        )
+    )
+
+    if current_page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="بعدی ➡️",
+                callback_data=f"admin_invoices_{status_filter}_{current_page + 1}",
+            )
+        )
+    else:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⛔️",
+                callback_data="admin_users_list_noop",
+            )
+        )
+    rows.append(nav_row)
+
+    # 4. Refresh & Back
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔄 بروزرسانی لیست",
+                callback_data=f"admin_invoices_{status_filter}_{current_page}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی",
+                callback_data="admin_price_main",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_invoice_detail_keyboard(
+    invoice: dict[str, Any],
+    status_filter: str,
+    page: int,
+    can_approve: bool = False,
+    can_delete: bool = False,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    status = invoice.get("status")
+
+    if can_approve and status == "pending":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✅ تأیید پرداخت",
+                    callback_data=f"admin_approve_{invoice['id']}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ رد پرداخت",
+                    callback_data=f"admin_reject_{invoice['id']}",
+                ),
+            ]
+        )
+
+    if invoice.get("receipt_file_id"):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🖼 مشاهده تصویر رسید واریز",
+                    callback_data=f"admin_inv_receipt_{invoice['id']}_{status_filter}_{page}",
+                )
+            ]
+        )
+
+    tg_id = invoice.get("tg_id")
+    if tg_id:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="👤 مدیریت این کاربر",
+                    callback_data=f"admin_manage_user_{tg_id}_inv_{invoice['id']}_{status_filter}_{page}",
+                )
+            ]
+        )
+
+    if can_delete:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف فاکتور از دیتابیس",
+                    callback_data=f"admin_inv_del_ask_{invoice['id']}_{status_filter}_{page}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به لیست فاکتورها",
+                callback_data=f"admin_invoices_{status_filter}_{page}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_invoice_delete_confirm_keyboard(
+    invoice_id: str,
+    status_filter: str,
+    page: int,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚠️ بله، برای همیشه حذف شود",
+                    callback_data=f"admin_inv_del_confirm_{invoice_id}_{status_filter}_{page}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"admin_inv_view_{invoice_id}_{status_filter}_{page}",
+                )
+            ],
+        ]
+    )

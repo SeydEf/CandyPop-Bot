@@ -399,10 +399,14 @@ async def _render_user_dashboard(
     )
 
     data = await state.get_data()
+    inv_back = data.get("invoice_back_callback")
     last_query = data.get("last_search_query")
     list_page = data.get("current_list_page")
 
-    if last_query:
+    if inv_back:
+        back_btn_text = "🔙 بازگشت به جزئیات فاکتور"
+        back_btn_callback = inv_back
+    elif last_query:
         back_btn_text = "🔙 بازگشت به جستجو"
         back_btn_callback = "admin_search_back"
     else:
@@ -900,14 +904,29 @@ async def admin_manage_user_dashboard(
             try:
                 page_num = int(ref_source[1:])
                 await state.update_data(
-                    current_list_page=page_num, last_search_query=None
+                    current_list_page=page_num,
+                    last_search_query=None,
+                    invoice_back_callback=None,
                 )
             except ValueError:
                 pass
         elif ref_source == "search":
             data = await state.get_data()
             if not data.get("last_search_query"):
-                await state.update_data(last_search_query=str(tg_id))
+                await state.update_data(
+                    last_search_query=str(tg_id),
+                    invoice_back_callback=None,
+                )
+            else:
+                await state.update_data(invoice_back_callback=None)
+        elif ref_source == "inv" and len(parts) >= 5:
+            inv_id = parts[2]
+            status_filter = parts[3]
+            page_num = parts[4]
+            await state.update_data(
+                invoice_back_callback=f"admin_inv_view_{inv_id}_{status_filter}_{page_num}",
+                last_search_query=None,
+            )
 
     await _render_user_dashboard(callback, tg_id, state)
 

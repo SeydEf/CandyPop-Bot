@@ -51,7 +51,6 @@ async def list_inbounds() -> list[dict[str, Any]]:
 
 
 async def get_server_status() -> dict[str, Any]:
-    """دریافت وضعیت کامل سرور و ترافیک شبکه (netTraffic: sent, recv)."""
     try:
         data = await _request("GET", "/panel/api/server/status")
         return data.get("obj", {})
