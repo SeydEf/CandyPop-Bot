@@ -50,6 +50,16 @@ async def list_inbounds() -> list[dict[str, Any]]:
     return data.get("obj", [])
 
 
+async def get_server_status() -> dict[str, Any]:
+    """دریافت وضعیت کامل سرور و ترافیک شبکه (netTraffic: sent, recv)."""
+    try:
+        data = await _request("GET", "/panel/api/server/status")
+        return data.get("obj", {})
+    except Exception as e:
+        logger.warning("Failed to fetch server status from 3x-ui: %s", e)
+        return {}
+
+
 async def list_clients() -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     try:

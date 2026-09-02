@@ -25,6 +25,7 @@ from services.test_sub_config import (
 from utils.formatting import (
     format_datetime,
     format_price,
+    format_size,
     format_size_gb,
     persian_to_english_digits,
     to_persian_digits,
@@ -3386,8 +3387,23 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
 
     from db.models import get_bot_statistics
     from keyboards.inline_kb import admin_stats_keyboard
+    from services.xui_api import get_server_status
 
     stats = await get_bot_statistics()
+    server_status = await get_server_status()
+
+    net_traffic = server_status.get("netTraffic") or {}
+    sent_bytes = net_traffic.get("sent", 0) if isinstance(net_traffic, dict) else 0
+    recv_bytes = net_traffic.get("recv", 0) if isinstance(net_traffic, dict) else 0
+    total_traffic_bytes = sent_bytes + recv_bytes
+
+    traffic_text = ""
+    if sent_bytes > 0 or recv_bytes > 0:
+        traffic_text = (
+            f"  • 📥 دانلود کل سرور (Recv): <b>{format_size(recv_bytes)}</b>\n"
+            f"  • 📤 آپلود کل سرور (Sent): <b>{format_size(sent_bytes)}</b>\n"
+            f"  • 🌐 ترافیک کل مصرفی: <b>{format_size(total_traffic_bytes)}</b>\n"
+        )
 
     text = (
         f"📊 <b>آمار و گزارشات جامع ربات</b>\n\n"
@@ -3407,6 +3423,7 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         f"  • 🔴 ردشده: <b>{to_persian_digits(stats['rejected_invoices_count'])}</b> فقره ({format_price(stats['rejected_amount'])})\n"
         f"  • 💼 موجودی کیف پول کاربران: <b>{format_price(stats['total_wallets_balance'])}</b>\n\n"
         f"⚙️ <b>زیرساخت و سرور</b>\n"
+        f"{traffic_text}"
         f"  • اینباندهای فعال اختصاصی: <b>{to_persian_digits(stats['active_inbounds_count'])}</b> عدد\n"
         f"  • اشتراک‌های مسدود (تخطی IP): <b>{to_persian_digits(stats['suspended_count'])}</b> عدد\n"
         f"  • تعداد ادمین‌ها: <b>{to_persian_digits(stats['admins_count'])}</b> نفر\n\n"

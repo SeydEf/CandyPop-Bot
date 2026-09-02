@@ -16,9 +16,14 @@ def format_price(amount: int) -> str:
     return f"{formatted} تومان"
 
 
-def format_size(bytes_val: int) -> str:
+def format_size(bytes_val: int | float) -> str:
     if bytes_val <= 0:
         return "0GB"
+    tb = bytes_val / (1024**4)
+    if tb >= 1:
+        if tb == int(tb):
+            return f"{int(tb)}TB"
+        return f"{tb:.2f}TB"
     gb = bytes_val / (1024**3)
     if gb >= 1:
         if gb == int(gb):
