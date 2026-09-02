@@ -3335,7 +3335,6 @@ async def admin_invoices_list(callback: types.CallbackQuery, state: FSMContext) 
         return
     await state.clear()
 
-    # Callback format: admin_invoices_{status_filter}_{page}
     parts = callback.data.split("_")
     status_filter = parts[2] if len(parts) >= 3 else "all"
     try:
@@ -3362,7 +3361,6 @@ async def admin_invoice_view(callback: types.CallbackQuery, state: FSMContext) -
         return
     await state.clear()
 
-    # Callback format: admin_inv_view_{inv_id}_{status_filter}_{page}
     parts = callback.data.split("_")
     if len(parts) < 6:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
@@ -3495,7 +3493,6 @@ async def admin_invoice_receipt_view(callback: types.CallbackQuery, bot: Bot) ->
         )
         return
 
-    # Callback format: admin_inv_receipt_{inv_id}_{status_filter}_{page}
     parts = callback.data.split("_")
     if len(parts) < 6:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
@@ -3541,7 +3538,6 @@ async def admin_invoice_delete_ask(
         return
     await state.clear()
 
-    # Callback format: admin_inv_del_ask_{inv_id}_{status_filter}_{page}
     parts = callback.data.split("_")
     if len(parts) < 7:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
@@ -3588,7 +3584,6 @@ async def admin_invoice_delete_confirm(
     if not await _require_permission(callback, "delete_invoices"):
         return
 
-    # Callback format: admin_inv_del_confirm_{inv_id}_{status_filter}_{page}
     parts = callback.data.split("_")
     if len(parts) < 7:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
@@ -3610,7 +3605,6 @@ async def admin_invoice_delete_confirm(
         else "⚠️ فاکتور یافت نشد یا قبلاً حذف شده است."
     )
 
-    # Re-render the invoices list directly
     await _render_invoices_list(callback.message, status_filter, page)
     await callback.answer(alert_msg, show_alert=True)
 

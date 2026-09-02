@@ -9,8 +9,6 @@ BTN_PRICING = "💰 تعرفه‌ها"
 BTN_GUIDE = "📖 راهنمای اتصال"
 BTN_SUPPORT = "🆘 پشتیبانی"
 BTN_INVITE = "👥 دعوت از دوستان"
-# BTN_FAQ = "❓ سوالات متداول"
-
 
 _pricing_button_hidden: bool = False
 

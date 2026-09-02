@@ -896,7 +896,6 @@ def admin_invoices_list_keyboard(
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
-    # 1. Filters row
     all_badge = "🔘 همه" if status_filter == "all" else "همه"
     approved_badge = (
         "🔘 🟢 پرداخت‌شده" if status_filter == "approved" else "🟢 پرداخت‌شده"
@@ -927,7 +926,6 @@ def admin_invoices_list_keyboard(
         ]
     )
 
-    # 2. Detail selection buttons per invoice
     digit_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
     detail_buttons: list[InlineKeyboardButton] = []
     for idx, inv in enumerate(invoices):
@@ -941,7 +939,6 @@ def admin_invoices_list_keyboard(
     if detail_buttons:
         rows.append(detail_buttons)
 
-    # 3. Pagination controls
     nav_row: list[InlineKeyboardButton] = []
     if current_page > 0:
         nav_row.append(
@@ -981,7 +978,6 @@ def admin_invoices_list_keyboard(
         )
     rows.append(nav_row)
 
-    # 4. Refresh & Back
     rows.append(
         [
             InlineKeyboardButton(
