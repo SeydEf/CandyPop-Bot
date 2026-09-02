@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from aiogram import Bot, F, Router, types
@@ -56,6 +57,29 @@ async def admin_reset_tests(message: types.Message) -> None:
     )
 
 
+def _filter_invoice_keyboard(
+    reply_markup: types.InlineKeyboardMarkup | None,
+) -> types.InlineKeyboardMarkup | None:
+    if not reply_markup or not reply_markup.inline_keyboard:
+        return None
+    new_rows = []
+    for row in reply_markup.inline_keyboard:
+        new_row = [
+            btn
+            for btn in row
+            if not (
+                btn.callback_data
+                and (
+                    btn.callback_data.startswith("admin_approve_")
+                    or btn.callback_data.startswith("admin_reject_")
+                )
+            )
+        ]
+        if new_row:
+            new_rows.append(new_row)
+    return types.InlineKeyboardMarkup(inline_keyboard=new_rows) if new_rows else None
+
+
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     if not await _is_admin(callback):
@@ -80,8 +104,6 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
 
     await update_invoice_status(invoice_id, "approved")
 
-    await callback.message.edit_reply_markup(reply_markup=None)
-
     try:
         users_count = invoice.get("users_count", 1)
         target_email = invoice.get("target_email")
@@ -101,11 +123,25 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             await bot.send_message(chat_id=tg_id, text=user_text, parse_mode="HTML")
             from utils.helpers import safe_edit_text
 
+            admin_text = callback.message.text or callback.message.caption or ""
+            if "وضعیت فعلی:" in admin_text:
+                admin_text = re.sub(
+                    r"🔘 <b>وضعیت فعلی:</b> [^\n]+",
+                    "🔘 <b>وضعیت فعلی:</b> 🟢 تأییدشده",
+                    admin_text,
+                )
+                admin_text += f"\n\n✅ <b>تأیید شد — کیف پول کاربر شارژ گردید (+{format_price(amount)})</b>"
+            else:
+                admin_text = f"✅ فاکتور <code>{invoice_id}</code> (شارژ کیف پول به مبلغ {format_price(amount)}) با موفقیت تأیید شد."
+
+            new_kb = _filter_invoice_keyboard(callback.message.reply_markup)
             await safe_edit_text(
                 callback.message,
-                f"✅ فاکتور <code>{invoice_id}</code> (شارژ کیف پول به مبلغ {format_price(amount)}) با موفقیت تأیید شد.",
+                admin_text,
+                reply_markup=new_kb,
                 parse_mode="HTML",
             )
+            await callback.answer("✅ تأیید شد", show_alert=False)
             return
 
         if invoice.get("discount_code"):
@@ -196,20 +232,27 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             )
 
         admin_text = callback.message.text or callback.message.caption or ""
-        admin_text += f"\n\n✅ تأیید شد — سرویس ساخته شد: {email}"
-        try:
-            if callback.message.photo:
-                await callback.message.edit_caption(
-                    caption=admin_text,
-                    parse_mode="HTML",
-                )
-            else:
-                await callback.message.edit_text(
-                    text=admin_text,
-                    parse_mode="HTML",
-                )
-        except Exception:
-            pass
+        if "وضعیت فعلی:" in admin_text:
+            admin_text = re.sub(
+                r"🔘 <b>وضعیت فعلی:</b> [^\n]+",
+                "🔘 <b>وضعیت فعلی:</b> 🟢 تأییدشده",
+                admin_text,
+            )
+            admin_text += (
+                f"\n\n✅ <b>تأیید شد — سرویس فعال گردید:</b> <code>{email}</code>"
+            )
+        else:
+            admin_text += f"\n\n✅ تأیید شد — سرویس ساخته شد: {email}"
+
+        new_kb = _filter_invoice_keyboard(callback.message.reply_markup)
+        from utils.helpers import safe_edit_text
+
+        await safe_edit_text(
+            callback.message,
+            admin_text,
+            reply_markup=new_kb,
+            parse_mode="HTML",
+        )
 
     except Exception as e:
         logger.exception(
@@ -243,23 +286,26 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
 
     await update_invoice_status(invoice_id, "rejected")
 
-    await callback.message.edit_reply_markup(reply_markup=None)
-
     admin_text = callback.message.text or callback.message.caption or ""
-    admin_text += "\n\n❌ رد شد"
-    try:
-        if callback.message.photo:
-            await callback.message.edit_caption(
-                caption=admin_text,
-                parse_mode="HTML",
-            )
-        else:
-            await callback.message.edit_text(
-                text=admin_text,
-                parse_mode="HTML",
-            )
-    except Exception:
-        pass
+    if "وضعیت فعلی:" in admin_text:
+        admin_text = re.sub(
+            r"🔘 <b>وضعیت فعلی:</b> [^\n]+",
+            "🔘 <b>وضعیت فعلی:</b> 🔴 ردشده",
+            admin_text,
+        )
+        admin_text += "\n\n❌ <b>پرداخت توسط ادمین رد شد.</b>"
+    else:
+        admin_text += "\n\n❌ رد شد"
+
+    new_kb = _filter_invoice_keyboard(callback.message.reply_markup)
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
+        admin_text,
+        reply_markup=new_kb,
+        parse_mode="HTML",
+    )
 
     await bot.send_message(
         chat_id=tg_id,
