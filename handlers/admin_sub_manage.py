@@ -887,6 +887,20 @@ async def admin_sub_delete(callback: types.CallbackQuery, state: FSMContext) -> 
         await callback.message.edit_text("❌ اشتراک حذف شد.")
 
 
+async def _clear_fsm_keep_nav(state: FSMContext) -> None:
+    data = await state.get_data()
+    nav_keys = (
+        "invoice_back_callback",
+        "current_list_page",
+        "last_search_query",
+        "manage_user_id",
+    )
+    nav_data = {k: data[k] for k in nav_keys if k in data}
+    await state.clear()
+    if nav_data:
+        await state.set_data(nav_data)
+
+
 @router.callback_query(F.data.startswith("admin_manage_user_"))
 async def admin_manage_user_dashboard(
     callback: types.CallbackQuery, state: FSMContext
@@ -900,7 +914,9 @@ async def admin_manage_user_dashboard(
 
     if len(parts) > 1:
         ref_source = parts[1]
-        if ref_source.startswith("p"):
+        if ref_source == "back":
+            await _clear_fsm_keep_nav(state)
+        elif ref_source.startswith("p"):
             try:
                 page_num = int(ref_source[1:])
                 await state.update_data(
@@ -942,12 +958,24 @@ async def admin_user_wallet_prompt(
     await state.update_data(manage_user_id=tg_id)
     await state.set_state(AdminSearchStates.waiting_user_wallet)
 
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"admin_manage_user_{tg_id}_back",
+                )
+            ]
+        ]
+    )
+
     await callback.message.edit_text(
         f"💳 <b>شارژ یا تغییر موجودی کیف پول کاربر ({tg_id}):</b>\n\n"
         "مبلغ (به تومان) را وارد کنید:\n"
         "• برای <b>شارژ و افزودن به موجودی</b>، عدد مثبت وارد کنید (مثال: <code>50000</code>)\n"
         "• برای <b>تنظیم مستقیم موجودی</b>، عبارت <code>set:100000</code> را ارسال کنید.\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "<i>برای انصراف /cancel یا دکمه زیر را بزنید.</i>",
+        reply_markup=kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -959,7 +987,7 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
     tg_id = data.get("manage_user_id")
 
     if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
+        await _clear_fsm_keep_nav(state)
         if tg_id:
             await _render_user_dashboard(
                 message, tg_id, state, notice="❌ تغییر کیف پول لغو شد."
@@ -969,7 +997,7 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
         return
 
     if not tg_id:
-        await state.clear()
+        await _clear_fsm_keep_nav(state)
         return
 
     txt = message.text.strip()
@@ -996,7 +1024,7 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
     else:
         new_balance = await credit_wallet(tg_id, amount)
 
-    await state.clear()
+    await _clear_fsm_keep_nav(state)
     await _render_user_dashboard(
         message,
         tg_id,
@@ -1036,11 +1064,23 @@ async def admin_user_create_sub_start(
     await state.update_data(manage_user_id=tg_id)
     await state.set_state(AdminSearchStates.waiting_create_sub_gb)
 
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"admin_manage_user_{tg_id}_back",
+                )
+            ]
+        ]
+    )
+
     await callback.message.edit_text(
         f"➕ <b>ساخت اشتراک اختصاصی جدید برای کاربر {tg_id}:</b>\n\n"
         "<b>مرحله ۱:</b> لطفاً حجم اشتراک را به گیگابایت وارد کنید:\n"
         "مثال: <code>30</code>\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "<i>برای انصراف /cancel یا دکمه زیر را بزنید.</i>",
+        reply_markup=kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1054,7 +1094,7 @@ async def admin_user_create_sub_gb_save(
     tg_id = data.get("manage_user_id")
 
     if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
+        await _clear_fsm_keep_nav(state)
         if tg_id:
             await _render_user_dashboard(
                 message, tg_id, state, notice="❌ ساخت اشتراک لغو شد."
@@ -1090,7 +1130,7 @@ async def admin_user_create_sub_dur_save(
     tg_id = data.get("manage_user_id")
 
     if not message.text or message.text.strip() == "/cancel":
-        await state.clear()
+        await _clear_fsm_keep_nav(state)
         if tg_id:
             await _render_user_dashboard(
                 message, tg_id, state, notice="❌ ساخت اشتراک لغو شد."
@@ -1110,7 +1150,7 @@ async def admin_user_create_sub_dur_save(
     gb_val = data.get("new_sub_gb", 10.0)
 
     if not tg_id:
-        await state.clear()
+        await _clear_fsm_keep_nav(state)
         return
 
     user = await get_user(tg_id)
@@ -1143,7 +1183,7 @@ async def admin_user_create_sub_dur_save(
         sub_id = client.get("subId", "") if client else ""
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
-        await state.clear()
+        await _clear_fsm_keep_nav(state)
         await message.answer(
             f"🎉 <b>اشتراک جدید با موفقیت ایجاد شد!</b>\n\n"
             f"👤 کاربر: <code>{tg_id}</code>\n"
@@ -1259,16 +1299,13 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
             )
         )
 
-    data = await state.get_data()
-    list_page = data.get("current_list_page", 0)
-
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             nav_btns,
             [
                 InlineKeyboardButton(
                     text="🔙 بازگشت به مدیریت کاربر",
-                    callback_data=f"admin_manage_user_{u_id}_p{list_page}",
+                    callback_data=f"admin_manage_user_{u_id}_back",
                 )
             ],
         ]
