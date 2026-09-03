@@ -893,6 +893,7 @@ def admin_invoices_list_keyboard(
     status_filter: str,
     current_page: int,
     total_pages: int,
+    search_query: str | None = None,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -932,7 +933,7 @@ def admin_invoices_list_keyboard(
         emoji = digit_emojis[idx] if idx < len(digit_emojis) else f"{idx + 1}"
         detail_buttons.append(
             InlineKeyboardButton(
-                text=f"{emoji} جزئیات",
+                text=f"{emoji}",
                 callback_data=f"admin_inv_view_{inv['id']}_{status_filter}_{current_page}",
             )
         )
@@ -978,6 +979,33 @@ def admin_invoices_list_keyboard(
         )
     rows.append(nav_row)
 
+    if search_query:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="❌ لغو جستجو و نمایش همه فاکتورها",
+                    callback_data="admin_inv_search_clear",
+                )
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔍 جستجوی مجدد در فاکتورها",
+                    callback_data="admin_inv_search_start",
+                )
+            ]
+        )
+    else:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔍 جستجو در فاکتورها",
+                    callback_data="admin_inv_search_start",
+                )
+            ]
+        )
+
     rows.append(
         [
             InlineKeyboardButton(
@@ -996,6 +1024,21 @@ def admin_invoices_list_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_invoice_search_prompt_keyboard(
+    status_filter: str = "all", page: int = 0
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت به لیست فاکتورها",
+                    callback_data=f"admin_invoices_{status_filter}_{page}",
+                )
+            ]
+        ]
+    )
 
 
 def admin_invoice_detail_keyboard(

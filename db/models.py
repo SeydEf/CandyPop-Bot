@@ -376,23 +376,54 @@ async def expire_old_invoices() -> int:
 
 
 async def get_all_invoices_paginated(
-    status_filter: str = "all", page: int = 0, page_size: int = 5
+    status_filter: str = "all",
+    page: int = 0,
+    page_size: int = 5,
+    search_query: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     import math
 
     db = await get_db()
     await expire_old_invoices()
 
-    where_clause = ""
+    conditions: list[str] = []
     params: list[Any] = []
 
     if status_filter == "approved":
-        where_clause = "WHERE i.status IN ('approved', 'paid')"
+        conditions.append("i.status IN ('approved', 'paid')")
     elif status_filter in ("pending", "rejected", "expired"):
-        where_clause = "WHERE i.status = ?"
+        conditions.append("i.status = ?")
         params.append(status_filter)
 
-    count_query = f"SELECT COUNT(*) as cnt FROM invoices i {where_clause}"
+    if search_query and search_query.strip():
+        from utils.formatting import persian_to_english_digits
+
+        cleaned_q = persian_to_english_digits(search_query.strip()).lstrip("@")
+        like_term = f"%{cleaned_q}%"
+        search_cond = (
+            "("
+            "i.id LIKE ? OR "
+            "CAST(i.tg_id AS TEXT) LIKE ? OR "
+            "u.username LIKE ? OR "
+            "u.full_name LIKE ? OR "
+            "i.target_email LIKE ? OR "
+            "i.receipt_text LIKE ? OR "
+            "i.discount_code LIKE ? OR "
+            "CAST(i.amount AS TEXT) LIKE ? OR "
+            "i.payment_method LIKE ?"
+            ")"
+        )
+        conditions.append(search_cond)
+        params.extend([like_term] * 9)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    count_query = f"""
+        SELECT COUNT(*) as cnt
+        FROM invoices i
+        LEFT JOIN users u ON i.tg_id = u.tg_id
+        {where_clause}
+    """
     count_rows = await db.execute_fetchall(count_query, tuple(params))
     total_invoices = count_rows[0]["cnt"] if count_rows else 0
 

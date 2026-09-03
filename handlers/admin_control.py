@@ -75,6 +75,7 @@ class AdminControlStates(StatesGroup):
     waiting_pricing_caption = State()
     waiting_channel_lock_id = State()
     waiting_channel_lock_link = State()
+    waiting_invoice_search = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -3220,22 +3221,29 @@ async def admin_manage_admins_menu(
 
 
 async def _render_invoices_list(
-    message: types.Message,
+    message: types.Message | types.CallbackQuery,
     status_filter: str,
     page: int,
+    search_query: str | None = None,
 ) -> None:
     from db.models import get_all_invoices_paginated
     from keyboards.inline_kb import admin_invoices_list_keyboard
 
     page_size = 5
     invoices, total_invoices, total_pages = await get_all_invoices_paginated(
-        status_filter=status_filter, page=page, page_size=page_size
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+        search_query=search_query,
     )
 
     if page >= total_pages and total_pages > 0:
         page = total_pages - 1
         invoices, total_invoices, total_pages = await get_all_invoices_paginated(
-            status_filter=status_filter, page=page, page_size=page_size
+            status_filter=status_filter,
+            page=page,
+            page_size=page_size,
+            search_query=search_query,
         )
 
     status_titles = {
@@ -3255,15 +3263,26 @@ async def _render_invoices_list(
         "expired": "⌛️ منقضی",
     }
 
+    search_badge = (
+        f"\n🔍 نتیجه جستجو برای: <b>«{search_query}»</b>" if search_query else ""
+    )
+
     if not invoices:
-        text = (
-            f"🧾 <b>مدیریت و آرشیو فاکتورها</b>\n"
-            f"🔍 فیلتر فعلی: <b>{status_title}</b>\n\n"
-            f"<i>هیچ فاکتوری با این وضعیت یافت نشد.</i>"
-        )
+        if search_query:
+            text = (
+                f"🧾 <b>مدیریت و آرشیو فاکتورها</b>\n"
+                f"🔍 فیلتر وضعیت: <b>{status_title}</b>{search_badge}\n\n"
+                f"<i>هیچ فاکتوری مطابق با عبارت «{search_query}» یافت نشد.</i>"
+            )
+        else:
+            text = (
+                f"🧾 <b>مدیریت و آرشیو فاکتورها</b>\n"
+                f"🔍 فیلتر فعلی: <b>{status_title}</b>\n\n"
+                f"<i>هیچ فاکتوری با این وضعیت یافت نشد.</i>"
+            )
     else:
         lines = [
-            f"🧾 <b>مدیریت و آرشیو فاکتورها</b> (فیلتر: <b>{status_title}</b> | کل: <b>{to_persian_digits(total_invoices)}</b> فاکتور)\n"
+            f"🧾 <b>مدیریت و آرشیو فاکتورها</b> (فیلتر: <b>{status_title}</b> | کل: <b>{to_persian_digits(total_invoices)}</b> فاکتور){search_badge}\n"
         ]
         digit_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
         for idx, inv in enumerate(invoices):
@@ -3310,14 +3329,35 @@ async def _render_invoices_list(
             )
         text = "\n".join(lines)
 
-    keyboard = admin_invoices_list_keyboard(invoices, status_filter, page, total_pages)
-
-    await safe_edit_text(
-        message,
-        text,
-        reply_markup=keyboard,
-        parse_mode="HTML",
+    keyboard = admin_invoices_list_keyboard(
+        invoices, status_filter, page, total_pages, search_query=search_query
     )
+
+    if isinstance(message, types.CallbackQuery):
+        await safe_edit_text(
+            message.message,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    elif (
+        isinstance(message, types.Message)
+        and message.from_user
+        and not message.from_user.is_bot
+    ):
+        await message.answer(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    else:
+        msg_obj = message.message if hasattr(message, "message") else message
+        await safe_edit_text(
+            msg_obj,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.startswith("admin_invoices_"))
@@ -3333,7 +3373,8 @@ async def admin_invoices_list(callback: types.CallbackQuery, state: FSMContext) 
             show_alert=True,
         )
         return
-    await state.clear()
+    # Reset any active input state while preserving saved data
+    await state.set_state(None)
 
     parts = callback.data.split("_")
     status_filter = parts[2] if len(parts) >= 3 else "all"
@@ -3342,8 +3383,100 @@ async def admin_invoices_list(callback: types.CallbackQuery, state: FSMContext) 
     except ValueError:
         page = 0
 
-    await _render_invoices_list(callback.message, status_filter, page)
+    data = await state.get_data()
+    search_query = data.get("invoice_search_query")
+    await state.update_data(
+        current_invoice_filter=status_filter, current_invoice_page=page
+    )
+
+    await _render_invoices_list(
+        callback.message, status_filter, page, search_query=search_query
+    )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_inv_search_start")
+async def admin_inv_search_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from db.models import has_admin_permission
+
+    if not (
+        await has_admin_permission(callback.from_user.id, "view_invoices")
+        or await has_admin_permission(callback.from_user.id, "approve_invoices")
+    ):
+        await callback.answer(
+            "⛔️ شما دسترسی به بخش «مشاهده لیست فاکتورها» را ندارید.",
+            show_alert=True,
+        )
+        return
+
+    data = await state.get_data()
+    status_filter = data.get("current_invoice_filter", "all")
+    page = data.get("current_invoice_page", 0)
+
+    await state.set_state(AdminControlStates.waiting_invoice_search)
+
+    from keyboards.inline_kb import admin_invoice_search_prompt_keyboard
+
+    text = (
+        "🔍 <b>جستجوی پیشرفته و همه‌جانبه در فاکتورها</b>\n\n"
+        "لطفاً عبارت مورد نظر خود را جهت جستجو ارسال نمایید.\n\n"
+        "💡 <b>جستجو بر روی تمامی موارد زیر انجام می‌شود:</b>\n"
+        "• کد فاکتور (مانند: <code>INV...</code>)\n"
+        "• شناسه عددی تلگرام کاربر (User ID)\n"
+        "• نام کاربری (Username) یا نام خریدار\n"
+        "• نام سرویس / ایمیل اشتراک (مانند: <code>user123_...</code>)\n"
+        "• متن و شماره پیگیری رسید واریزی\n"
+        "• کد تخفیف یا مبلغ پرداختی\n\n"
+        "<i>برای انصراف، /cancel یا دکمه زیر را لمس کنید:</i>"
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=admin_invoice_search_prompt_keyboard(status_filter, page),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_invoice_search, F.text)
+async def admin_inv_search_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    status_filter = data.get("current_invoice_filter", "all")
+    page = data.get("current_invoice_page", 0)
+
+    if message.text and message.text.strip() == "/cancel":
+        await state.set_state(None)
+        search_query = data.get("invoice_search_query")
+        await _render_invoices_list(
+            message, status_filter, page, search_query=search_query
+        )
+        return
+
+    query = message.text.strip() if message.text else ""
+    if not query:
+        await message.answer("⚠️ لطفاً یک عبارت معتبر برای جستجو ارسال کنید.")
+        return
+
+    await state.set_state(None)
+    await state.update_data(invoice_search_query=query, current_invoice_page=0)
+
+    await _render_invoices_list(message, status_filter, 0, search_query=query)
+
+
+@router.callback_query(F.data == "admin_inv_search_clear")
+async def admin_inv_search_clear(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.set_state(None)
+    await state.update_data(invoice_search_query=None, current_invoice_page=0)
+    data = await state.get_data()
+    status_filter = data.get("current_invoice_filter", "all")
+
+    await _render_invoices_list(callback.message, status_filter, 0, search_query=None)
+    await callback.answer("✅ فیلتر جستجو پاک شد و همه فاکتورها نمایش داده شدند.")
 
 
 @router.callback_query(F.data.startswith("admin_inv_view_"))
