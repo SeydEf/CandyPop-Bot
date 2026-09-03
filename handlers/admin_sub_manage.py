@@ -281,6 +281,18 @@ async def _render_sub_dashboard(
 
     toggle_btn_text = "🔴 غیرفعال‌سازی سرویس" if is_enabled else "🟢 فعال‌سازی سرویس"
 
+    data = await state.get_data()
+    sub_back = data.get("sub_back_callback")
+    if sub_back:
+        if "admin_user_subs_" in sub_back:
+            back_btn_text = "🔙 بازگشت به اشتراک‌های کاربر"
+        else:
+            back_btn_text = "🔙 بازگشت به مدیریت کاربر"
+        back_btn_callback = sub_back
+    else:
+        back_btn_text = "🔙 بازگشت به جستجو"
+        back_btn_callback = "admin_search_back"
+
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -323,11 +335,7 @@ async def _render_sub_dashboard(
                     callback_data=f"admin_sub_delete_{email}",
                 ),
             ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به جستجو", callback_data="admin_search_back"
-                )
-            ],
+            [InlineKeyboardButton(text=back_btn_text, callback_data=back_btn_callback)],
         ]
     )
 
@@ -388,6 +396,12 @@ async def _render_user_dashboard(
     is_banned = bool(user.get("is_banned", 0))
     ban_status_str = "⛔️ مسدود شده" if is_banned else "🟢 مجاز (فعال)"
 
+    clients = await xui_api.get_normalized_clients_by_tg_id(tg_id)
+    subs_count = len(clients)
+    subs_count_str = (
+        f"{to_persian_digits(subs_count)} اشتراک" if subs_count > 0 else "بدون اشتراک"
+    )
+
     notice_block = f"{notice}\n\n" if notice else ""
 
     text = (
@@ -396,6 +410,7 @@ async def _render_user_dashboard(
         f"نام و نام‌خانوادگی: <b>{full_name}</b>\n"
         f"یوزرنیم: <b>{username_str}</b>\n"
         f"🚫 <b>وضعیت دسترسی:</b> <b>{ban_status_str}</b>\n"
+        f"📱 <b>اشتراک‌های سرور:</b> <b>{subs_count_str}</b>\n"
         f"🎁 <b>وضعیت اشتراک تست:</b> {test_status_str}\n"
         f"💰 <b>موجودی کیف پول:</b> {format_price(bal)}\n"
         f"💳 <b>کل پرداختی‌های موفق:</b> {total_paid_str} ({to_persian_digits(paid_count)} تراکنش)\n"
@@ -426,6 +441,12 @@ async def _render_user_dashboard(
     can_ban = await has_admin_permission(admin_id, "ban_users")
 
     user_action_rows = [
+        [
+            InlineKeyboardButton(
+                text=f"📱 اشتراک‌های کاربر ({to_persian_digits(subs_count)} اشتراک)",
+                callback_data=f"admin_user_subs_{tg_id}_0",
+            )
+        ],
         [
             InlineKeyboardButton(
                 text="➕ ساخت اشتراک جدید برای این کاربر",
@@ -925,6 +946,7 @@ async def _clear_fsm_keep_nav(state: FSMContext) -> None:
     data = await state.get_data()
     nav_keys = (
         "invoice_back_callback",
+        "sub_back_callback",
         "current_list_page",
         "last_search_query",
         "manage_user_id",
@@ -1630,3 +1652,64 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
     text = "\n".join(lines)
     await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_user_subs_"))
+async def admin_user_subs(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split("_")
+    tg_id = int(parts[3])
+    page = int(parts[4]) if len(parts) >= 5 else 0
+
+    clients = await xui_api.get_normalized_clients_by_tg_id(tg_id)
+
+    if not clients:
+        await callback.answer(
+            "❌ این کاربر هیچ اشتراکی در سرور ندارد.", show_alert=True
+        )
+        return
+
+    if len(clients) == 1:
+        email = clients[0]["email"]
+        await state.update_data(sub_back_callback=f"admin_manage_user_{tg_id}_back")
+        await _render_sub_dashboard(callback, email, state)
+        return
+
+    import math
+    from keyboards.inline_kb import admin_user_subs_list_keyboard
+
+    page_size = 5
+    total_clients = len(clients)
+    total_pages = max(1, math.ceil(total_clients / page_size))
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * page_size
+    page_clients = clients[start_idx : start_idx + page_size]
+
+    keyboard = admin_user_subs_list_keyboard(page_clients, tg_id, page, total_pages)
+    text = (
+        f"📱 <b>اشتراک‌های کاربر <code>{tg_id}</code> در سرور:</b>\n"
+        f"تعداد کل اشتراک‌ها: <b>{to_persian_digits(total_clients)}</b> مورد\n\n"
+        "جهت مشاهده جزئیات و مدیریت هر سرویس، آن را انتخاب کنید:"
+    )
+
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_user_subsel_"))
+async def admin_user_subsel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split("_")
+    tg_id = int(parts[3])
+    email = parts[4]
+    page = int(parts[5]) if len(parts) >= 6 else 0
+
+    await state.update_data(sub_back_callback=f"admin_user_subs_{tg_id}_{page}")
+    await _render_sub_dashboard(callback, email, state)

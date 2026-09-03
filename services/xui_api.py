@@ -195,6 +195,27 @@ async def get_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
         return []
 
 
+async def get_normalized_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
+    raw_clients = await get_clients_by_tg_id(tg_id)
+    results: list[dict[str, Any]] = []
+    seen_emails: set[str] = set()
+
+    for item in raw_clients:
+        if not isinstance(item, dict):
+            continue
+        c = (
+            item.get("client")
+            if "client" in item and isinstance(item["client"], dict)
+            else item
+        )
+        email = c.get("email")
+        if email and email not in seen_emails:
+            seen_emails.add(email)
+            results.append(c)
+
+    return results
+
+
 async def search_clients_all(query: str) -> list[dict[str, Any]]:
     clean_q = query.strip().lower()
     if clean_q.startswith("@"):

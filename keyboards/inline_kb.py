@@ -1209,3 +1209,93 @@ def admin_user_ban_cancel_keyboard(tg_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def admin_user_subs_list_keyboard(
+    clients: list[dict[str, Any]],
+    tg_id: int,
+    current_page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    import time
+    from utils.formatting import format_size_gb
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for c in clients:
+        email = c.get("email", "نامشخص")
+        enable = c.get("enable", True)
+        st_icon = "🟢" if enable else "🔴"
+        total_gb = (c.get("totalGB") or 0) / (1024**3)
+
+        expiry_ms = c.get("expiryTime", 0) or 0
+        now_ms = int(time.time() * 1000)
+        if expiry_ms > 0:
+            rem_days = max(0, int((expiry_ms - now_ms) / (86400 * 1000)))
+            dur_str = f"{to_persian_digits(rem_days)} روز" if rem_days > 0 else "منقضی"
+        elif expiry_ms < 0:
+            init_days = abs(expiry_ms) // (86400 * 1000)
+            dur_str = f"{to_persian_digits(init_days)} روز (پس از اتصال)"
+        else:
+            dur_str = "نامحدود"
+
+        btn_text = f"{st_icon} {email} | {format_size_gb(total_gb)} | {dur_str}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"admin_user_subsel_{tg_id}_{email}_{current_page}",
+                )
+            ]
+        )
+
+    if total_pages > 1:
+        nav_row: list[InlineKeyboardButton] = []
+        if current_page > 0:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="⬅️ قبلی",
+                    callback_data=f"admin_user_subs_{tg_id}_{current_page - 1}",
+                )
+            )
+        else:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="⛔️",
+                    callback_data="admin_users_list_noop",
+                )
+            )
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"📄 {current_page + 1} / {total_pages}",
+                callback_data="admin_users_list_noop",
+            )
+        )
+
+        if current_page < total_pages - 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="بعدی ➡️",
+                    callback_data=f"admin_user_subs_{tg_id}_{current_page + 1}",
+                )
+            )
+        else:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="⛔️",
+                    callback_data="admin_users_list_noop",
+                )
+            )
+        rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به مدیریت کاربر",
+                callback_data=f"admin_manage_user_{tg_id}_back",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
