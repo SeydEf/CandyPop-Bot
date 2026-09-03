@@ -1216,13 +1216,16 @@ def admin_user_subs_list_keyboard(
     tg_id: int,
     current_page: int,
     total_pages: int,
+    page_size: int = 5,
 ) -> InlineKeyboardMarkup:
     import time
     from utils.formatting import format_size_gb
 
     rows: list[list[InlineKeyboardButton]] = []
+    start_idx = current_page * page_size
 
-    for c in clients:
+    for i, c in enumerate(clients):
+        global_idx = start_idx + i
         email = c.get("email", "نامشخص")
         enable = c.get("enable", True)
         st_icon = "🟢" if enable else "🔴"
@@ -1244,7 +1247,7 @@ def admin_user_subs_list_keyboard(
             [
                 InlineKeyboardButton(
                     text=btn_text,
-                    callback_data=f"admin_user_subsel_{tg_id}_{email}_{current_page}",
+                    callback_data=f"admin_user_sub_idx_{global_idx}",
                 )
             ]
         )

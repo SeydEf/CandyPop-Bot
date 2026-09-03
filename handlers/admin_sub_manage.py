@@ -947,6 +947,7 @@ async def _clear_fsm_keep_nav(state: FSMContext) -> None:
     nav_keys = (
         "invoice_back_callback",
         "sub_back_callback",
+        "user_subs_emails",
         "current_list_page",
         "last_search_query",
         "manage_user_id",
@@ -1673,7 +1674,10 @@ async def admin_user_subs(callback: types.CallbackQuery, state: FSMContext) -> N
 
     if len(clients) == 1:
         email = clients[0]["email"]
-        await state.update_data(sub_back_callback=f"admin_manage_user_{tg_id}_back")
+        await state.update_data(
+            sub_back_callback=f"admin_manage_user_{tg_id}_back",
+            manage_user_id=tg_id,
+        )
         await _render_sub_dashboard(callback, email, state)
         return
 
@@ -1688,7 +1692,16 @@ async def admin_user_subs(callback: types.CallbackQuery, state: FSMContext) -> N
     start_idx = page * page_size
     page_clients = clients[start_idx : start_idx + page_size]
 
-    keyboard = admin_user_subs_list_keyboard(page_clients, tg_id, page, total_pages)
+    emails = [c.get("email") for c in clients if c.get("email")]
+    await state.update_data(
+        user_subs_emails=emails,
+        sub_back_callback=f"admin_user_subs_{tg_id}_{page}",
+        manage_user_id=tg_id,
+    )
+
+    keyboard = admin_user_subs_list_keyboard(
+        page_clients, tg_id, page, total_pages, page_size=page_size
+    )
     text = (
         f"📱 <b>اشتراک‌های کاربر <code>{tg_id}</code> در سرور:</b>\n"
         f"تعداد کل اشتراک‌ها: <b>{to_persian_digits(total_clients)}</b> مورد\n\n"
@@ -1701,15 +1714,53 @@ async def admin_user_subs(callback: types.CallbackQuery, state: FSMContext) -> N
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("admin_user_sub_idx_"))
+async def admin_user_sub_idx_select(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    try:
+        idx = int(callback.data[len("admin_user_sub_idx_") :])
+    except ValueError:
+        await callback.answer("خطای نامعتبر بودن اشتراک.", show_alert=True)
+        return
+
+    data = await state.get_data()
+    emails = data.get("user_subs_emails")
+    tg_id = data.get("manage_user_id")
+
+    email: str | None = None
+    if emails and 0 <= idx < len(emails):
+        email = emails[idx]
+    elif tg_id:
+        clients = await xui_api.get_normalized_clients_by_tg_id(tg_id)
+        if 0 <= idx < len(clients):
+            email = clients[idx].get("email")
+
+    if not email:
+        await callback.answer("❌ اشتراک مورد نظر یافت نشد.", show_alert=True)
+        return
+
+    await _render_sub_dashboard(callback, email, state)
+
+
 @router.callback_query(F.data.startswith("admin_user_subsel_"))
 async def admin_user_subsel(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not await _is_admin(callback):
         return
 
-    parts = callback.data.split("_")
-    tg_id = int(parts[3])
-    email = parts[4]
-    page = int(parts[5]) if len(parts) >= 6 else 0
+    payload = callback.data[len("admin_user_subsel_") :]
+    parts = payload.rsplit("_", 1)
+    page = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
+    main_part = parts[0]
+    tg_parts = main_part.split("_", 1)
+    tg_id = int(tg_parts[0]) if tg_parts[0].isdigit() else 0
+    email = tg_parts[1] if len(tg_parts) == 2 else main_part
 
-    await state.update_data(sub_back_callback=f"admin_user_subs_{tg_id}_{page}")
+    await state.update_data(
+        sub_back_callback=f"admin_user_subs_{tg_id}_{page}",
+        manage_user_id=tg_id,
+    )
     await _render_sub_dashboard(callback, email, state)
