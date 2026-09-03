@@ -26,6 +26,7 @@ from handlers import (
     test_sub,
     wallet,
 )
+from middlewares.banned_check import BannedCheckMiddleware
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.alert_scheduler import start_alert_scheduler
 from services.ip_checker_scheduler import start_ip_checker_scheduler
@@ -95,6 +96,8 @@ async def main() -> None:
 
     dp.error.register(global_error_handler)
 
+    dp.message.outer_middleware(BannedCheckMiddleware())
+    dp.callback_query.outer_middleware(BannedCheckMiddleware())
     dp.message.outer_middleware(ChannelCheckMiddleware())
     dp.callback_query.outer_middleware(ChannelCheckMiddleware())
 

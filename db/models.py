@@ -1198,6 +1198,7 @@ async def remove_admin(tg_id: int) -> bool:
 PERMISSION_TITLES: dict[str, str] = {
     "manage_subs": "جستجو و مدیریت اشتراک‌ها",
     "users_list": "مشاهده و مدیریت لیست کاربران",
+    "ban_users": "مسدودسازی و رفع مسدودی کاربران",
     "create_sub": "ساخت اشتراک سفارشی",
     "view_invoices": "مشاهده لیست فاکتورها",
     "approve_invoices": "تأیید و رد پرداخت فاکتورها",
@@ -1221,6 +1222,7 @@ PERMISSION_TITLES: dict[str, str] = {
 DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "manage_subs": True,
     "users_list": True,
+    "ban_users": False,
     "create_sub": True,
     "view_invoices": True,
     "approve_invoices": True,
@@ -1240,6 +1242,25 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "reset_configs": False,
     "stats": True,
 }
+
+
+async def set_user_ban_status(tg_id: int, is_banned: bool) -> bool:
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE users SET is_banned = ? WHERE tg_id = ?",
+        (1 if is_banned else 0, tg_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def is_user_banned(tg_id: int) -> bool:
+    db = await get_db()
+    async with db.execute(
+        "SELECT is_banned FROM users WHERE tg_id = ?", (tg_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        return bool(row[0]) if row else False
 
 
 async def get_admin_permissions(tg_id: int) -> dict[str, bool]:

@@ -522,6 +522,38 @@ async def bulk_grant_duration(
     return success_count, fail_count
 
 
+async def set_user_clients_enable(tg_id: int, enable: bool) -> tuple[int, int]:
+    clients = await get_clients_by_tg_id(tg_id)
+    if not clients:
+        return 0, 0
+
+    success_count = 0
+    fail_count = 0
+    for c in clients:
+        client_item = c.get("client")
+        if not client_item:
+            continue
+
+        email = client_item.get("email")
+        if not email:
+            continue
+
+        try:
+            client_full = await get_client(email)
+            if not client_full:
+                continue
+            client_full["enable"] = enable
+            await update_client(email, client_full)
+            success_count += 1
+        except Exception as e:
+            logger.warning(
+                "Failed to set enable=%s for client %s: %s", enable, email, e
+            )
+            fail_count += 1
+
+    return success_count, fail_count
+
+
 async def close_client() -> None:
     global _client
     if _client is not None and not _client.is_closed:

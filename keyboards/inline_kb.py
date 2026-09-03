@@ -1129,3 +1129,83 @@ def admin_invoice_delete_confirm_keyboard(
             ],
         ]
     )
+
+
+def admin_user_ban_scope_keyboard(tg_id: int, is_banned: bool) -> InlineKeyboardMarkup:
+    if not is_banned:
+        btn1 = InlineKeyboardButton(
+            text="🤖 فقط مسدودسازی دسترسی به ربات",
+            callback_data=f"admin_user_banscope_{tg_id}_bot",
+        )
+        btn2 = InlineKeyboardButton(
+            text="🚫 مسدودسازی ربات + غیرفعال‌سازی سرویس‌ها",
+            callback_data=f"admin_user_banscope_{tg_id}_both",
+        )
+    else:
+        btn1 = InlineKeyboardButton(
+            text="🤖 فقط رفع مسدودی دسترسی به ربات",
+            callback_data=f"admin_user_banscope_{tg_id}_bot",
+        )
+        btn2 = InlineKeyboardButton(
+            text="✅ رفع مسدودی ربات + فعال‌سازی مجدد سرویس‌ها",
+            callback_data=f"admin_user_banscope_{tg_id}_both",
+        )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [btn1],
+            [btn2],
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"admin_manage_user_{tg_id}_back",
+                )
+            ],
+        ]
+    )
+
+
+def admin_user_ban_notify_keyboard(
+    tg_id: int, is_banned: bool, scope: str
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚡️ بدون ارسال پیام به کاربر",
+                    callback_data=f"admin_user_banaction_{tg_id}_{scope}_none",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📢 ارسال پیام پیش‌فرض سیستمی",
+                    callback_data=f"admin_user_banaction_{tg_id}_{scope}_default",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✍️ ارسال پیام دلخواه ادمین",
+                    callback_data=f"admin_user_banaction_{tg_id}_{scope}_custom",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به مرحله قبل",
+                    callback_data=f"admin_user_ban_{tg_id}",
+                )
+            ],
+        ]
+    )
+
+
+def admin_user_ban_cancel_keyboard(tg_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"admin_manage_user_{tg_id}_back",
+                )
+            ]
+        ]
+    )

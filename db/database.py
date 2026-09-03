@@ -30,7 +30,8 @@ async def init_db() -> None:
             joined_at    TEXT NOT NULL DEFAULT (datetime('now')),
             referrer_id  INTEGER,
             test_used    INTEGER NOT NULL DEFAULT 0,
-            last_test_at TEXT
+            last_test_at TEXT,
+            is_banned    INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS wallets (
@@ -113,6 +114,13 @@ async def init_db() -> None:
     try:
         await db.execute(
             "ALTER TABLE bot_admins ADD COLUMN permissions TEXT DEFAULT '{}'"
+        )
+    except Exception:
+        pass
+
+    try:
+        await db.execute(
+            "ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0"
         )
     except Exception:
         pass

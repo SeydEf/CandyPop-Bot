@@ -58,6 +58,8 @@ class AdminSearchStates(StatesGroup):
     waiting_user_wallet = State()
     waiting_create_sub_gb = State()
     waiting_create_sub_dur = State()
+    waiting_ban_custom_msg = State()
+    waiting_unban_custom_msg = State()
 
 
 @router.message(Command("search", "find", "find_user"))
@@ -383,6 +385,9 @@ async def _render_user_dashboard(
     else:
         test_status_str = "❌ دریافت نکرده (مجاز به دریافت)"
 
+    is_banned = bool(user.get("is_banned", 0))
+    ban_status_str = "⛔️ مسدود شده" if is_banned else "🟢 مجاز (فعال)"
+
     notice_block = f"{notice}\n\n" if notice else ""
 
     text = (
@@ -390,6 +395,7 @@ async def _render_user_dashboard(
         f"👤 <b>مدیریت کاربر:</b> <code>{tg_id}</code>\n\n"
         f"نام و نام‌خانوادگی: <b>{full_name}</b>\n"
         f"یوزرنیم: <b>{username_str}</b>\n"
+        f"🚫 <b>وضعیت دسترسی:</b> <b>{ban_status_str}</b>\n"
         f"🎁 <b>وضعیت اشتراک تست:</b> {test_status_str}\n"
         f"💰 <b>موجودی کیف پول:</b> {format_price(bal)}\n"
         f"💳 <b>کل پرداختی‌های موفق:</b> {total_paid_str} ({to_persian_digits(paid_count)} تراکنش)\n"
@@ -414,35 +420,63 @@ async def _render_user_dashboard(
         page_num = list_page if list_page is not None else 0
         back_btn_callback = f"admin_users_list_{page_num}"
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="➕ ساخت اشتراک جدید برای این کاربر",
-                    callback_data=f"admin_user_create_sub_{tg_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💳 شارژ / تغییر موجودی کیف پول",
-                    callback_data=f"admin_user_wallet_{tg_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📑 سابقه تراکنش‌های پرداختی کاربر",
-                    callback_data=f"admin_user_invoices_{tg_id}_0",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="♻️ بازنشانی امکان اشتراک تست کاربر",
-                    callback_data=f"admin_user_reset_test_{tg_id}",
-                )
-            ],
-            [InlineKeyboardButton(text=back_btn_text, callback_data=back_btn_callback)],
-        ]
+    from db.models import has_admin_permission
+
+    admin_id = event.from_user.id if event.from_user else 0
+    can_ban = await has_admin_permission(admin_id, "ban_users")
+
+    user_action_rows = [
+        [
+            InlineKeyboardButton(
+                text="➕ ساخت اشتراک جدید برای این کاربر",
+                callback_data=f"admin_user_create_sub_{tg_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="💳 شارژ / تغییر موجودی کیف پول",
+                callback_data=f"admin_user_wallet_{tg_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📑 سابقه تراکنش‌های پرداختی کاربر",
+                callback_data=f"admin_user_invoices_{tg_id}_0",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="♻️ بازنشانی امکان اشتراک تست کاربر",
+                callback_data=f"admin_user_reset_test_{tg_id}",
+            )
+        ],
+    ]
+
+    if can_ban:
+        if is_banned:
+            user_action_rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="✅ رفع مسدودی کاربر",
+                        callback_data=f"admin_user_ban_{tg_id}",
+                    )
+                ]
+            )
+        else:
+            user_action_rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="🚫 مسدود کردن کاربر",
+                        callback_data=f"admin_user_ban_{tg_id}",
+                    )
+                ]
+            )
+
+    user_action_rows.append(
+        [InlineKeyboardButton(text=back_btn_text, callback_data=back_btn_callback)]
     )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=user_action_rows)
 
     if isinstance(event, types.CallbackQuery):
         await safe_edit_text(
@@ -1050,6 +1084,288 @@ async def admin_user_reset_test(
         tg_id,
         state,
         notice=f"✅ <b>امکان دریافت اشتراک تست برای کاربر {tg_id} با موفقیت بازنشانی شد.</b>",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_user_ban_"))
+async def admin_user_ban_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from db.models import has_admin_permission, is_user_banned
+    from keyboards.inline_kb import admin_user_ban_scope_keyboard
+
+    if not await has_admin_permission(callback.from_user.id, "ban_users"):
+        await callback.answer(
+            "⛔️ شما دسترسی مسدودسازی کاربران را ندارید.", show_alert=True
+        )
+        return
+
+    tg_id = int(callback.data[len("admin_user_ban_") :])
+    banned = await is_user_banned(tg_id)
+
+    await state.update_data(manage_user_id=tg_id)
+    await state.set_state(None)
+
+    if not banned:
+        title = (
+            f"🚫 <b>مسدودسازی دسترسی کاربر <code>{tg_id}</code></b>\n\n"
+            "لطفاً محدوده مسدودسازی را مشخص کنید:\n"
+            "• <b>فقط ربات:</b> کاربر امکان استفاده از ربات را نخواهد داشت ولی سرویس‌های فعلی فعال می‌مانند.\n"
+            "• <b>ربات + سرور:</b> علاوه بر ربات، کلیه سرویس‌های کاربر در پنل 3x-ui نیز غیرفعال می‌شوند."
+        )
+    else:
+        title = (
+            f"✅ <b>رفع مسدودی دسترسی کاربر <code>{tg_id}</code></b>\n\n"
+            "لطفاً محدوده رفع مسدودی را مشخص کنید:\n"
+            "• <b>فقط ربات:</b> دسترسی کاربر به ربات مجدداً فعال می‌شود.\n"
+            "• <b>ربات + سرور:</b> دسترسی به ربات فعال شده و کلیه سرویس‌های کاربر در سرور مجدداً فعال می‌شوند."
+        )
+
+    await safe_edit_text(
+        callback.message,
+        title,
+        reply_markup=admin_user_ban_scope_keyboard(tg_id, banned),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_user_banscope_"))
+async def admin_user_ban_scope(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from db.models import has_admin_permission, is_user_banned
+    from keyboards.inline_kb import admin_user_ban_notify_keyboard
+
+    if not await has_admin_permission(callback.from_user.id, "ban_users"):
+        await callback.answer(
+            "⛔️ شما دسترسی مسدودسازی کاربران را ندارید.", show_alert=True
+        )
+        return
+
+    parts = callback.data.split("_")
+    tg_id = int(parts[3])
+    scope = parts[4]
+
+    await state.update_data(ban_scope=scope, manage_user_id=tg_id)
+    banned = await is_user_banned(tg_id)
+
+    scope_desc = (
+        "فقط ربات"
+        if scope == "bot"
+        else ("ربات + سرور (غیرفعال‌سازی)" if not banned else "ربات + سرور (فعال‌سازی)")
+    )
+    action_str = "مسدودسازی" if not banned else "رفع مسدودی"
+
+    text = (
+        f"📩 <b>نحوه اطلاع‌رسانی ({action_str} کاربر <code>{tg_id}</code>)</b>\n\n"
+        f"محدوده انتخاب‌شده: <b>{scope_desc}</b>\n\n"
+        "لطفاً نحوه اطلاع‌رسانی به کاربر را انتخاب کنید:"
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=admin_user_ban_notify_keyboard(tg_id, banned, scope),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_user_banaction_"))
+async def admin_user_ban_action(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from db.models import has_admin_permission, is_user_banned, set_user_ban_status
+    from keyboards.inline_kb import admin_user_ban_cancel_keyboard
+    from services.xui_api import set_user_clients_enable
+
+    if not await has_admin_permission(callback.from_user.id, "ban_users"):
+        await callback.answer(
+            "⛔️ شما دسترسی مسدودسازی کاربران را ندارید.", show_alert=True
+        )
+        return
+
+    parts = callback.data.split("_")
+    tg_id = int(parts[3])
+    scope = parts[4]
+    notify = parts[5]
+
+    banned = await is_user_banned(tg_id)
+
+    if notify == "custom":
+        await state.update_data(manage_user_id=tg_id, ban_scope=scope)
+        if not banned:
+            await state.set_state(AdminSearchStates.waiting_ban_custom_msg)
+            prompt = (
+                f"✍️ <b>ارسال پیام دلخواه مسدودسازی به کاربر <code>{tg_id}</code>:</b>\n\n"
+                "لطفاً متن پیام ارسالی به کاربر را تایپ کنید:\n\n"
+                "<i>برای انصراف /cancel یا دکمه زیر را بزنید:</i>"
+            )
+        else:
+            await state.set_state(AdminSearchStates.waiting_unban_custom_msg)
+            prompt = (
+                f"✍️ <b>ارسال پیام دلخواه رفع مسدودی به کاربر <code>{tg_id}</code>:</b>\n\n"
+                "لطفاً متن پیام ارسالی به کاربر را تایپ کنید:\n\n"
+                "<i>برای انصراف /cancel یا دکمه زیر را بزنید:</i>"
+            )
+
+        await safe_edit_text(
+            callback.message,
+            prompt,
+            reply_markup=admin_user_ban_cancel_keyboard(tg_id),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    if not banned:
+        await set_user_ban_status(tg_id, True)
+        sub_info = ""
+        if scope == "both":
+            ok_cnt, _ = await set_user_clients_enable(tg_id, False)
+            sub_info = f"\n🔌 سرویس‌های غیرفعال‌شده در سرور: {ok_cnt}"
+
+        if notify == "default":
+            try:
+                await callback.bot.send_message(
+                    chat_id=tg_id,
+                    text=(
+                        "⛔️ <b>کاربر گرامی، دسترسی حساب شما به ربات مسدود گردید.</b>\n\n"
+                        "امکان استفاده از خدمات و ارتباط با ربات برای شما غیرفعال شده است."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+
+        notice = f"🚫 <b>کاربر {tg_id} با موفقیت مسدود شد.</b>{sub_info}"
+    else:
+        await set_user_ban_status(tg_id, False)
+        sub_info = ""
+        if scope == "both":
+            ok_cnt, _ = await set_user_clients_enable(tg_id, True)
+            sub_info = f"\n🔌 سرویس‌های فعال‌شده مجدد در سرور: {ok_cnt}"
+
+        if notify == "default":
+            try:
+                await callback.bot.send_message(
+                    chat_id=tg_id,
+                    text=(
+                        "✅ <b>کاربر گرامی، دسترسی حساب شما به ربات مجدداً فعال گردید.</b>\n\n"
+                        "هم‌اکنون می‌توانید از خدمات و امکانات ربات استفاده نمایید."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+
+        notice = f"✅ <b>مسدودیت کاربر {tg_id} با موفقیت برطرف شد.</b>{sub_info}"
+
+    await _clear_fsm_keep_nav(state)
+    await _render_user_dashboard(callback, tg_id, state, notice=notice)
+    await callback.answer()
+
+
+@router.message(AdminSearchStates.waiting_ban_custom_msg, F.text)
+async def admin_user_ban_custom_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    tg_id = data.get("manage_user_id")
+    scope = data.get("ban_scope", "bot")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        if tg_id:
+            await _render_user_dashboard(
+                message, tg_id, state, notice="❌ عملیات مسدودسازی لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not tg_id:
+        await _clear_fsm_keep_nav(state)
+        return
+
+    custom_text = message.text.strip()
+
+    from db.models import set_user_ban_status
+    from services.xui_api import set_user_clients_enable
+
+    await set_user_ban_status(tg_id, True)
+
+    sub_info = ""
+    if scope == "both":
+        ok_cnt, _ = await set_user_clients_enable(tg_id, False)
+        sub_info = f"\n🔌 سرویس‌های غیرفعال‌شده در سرور: {ok_cnt}"
+
+    try:
+        await message.bot.send_message(
+            chat_id=tg_id,
+            text=f"⛔️ <b>پیام مدیریت:</b>\n\n{custom_text}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    await _clear_fsm_keep_nav(state)
+    await _render_user_dashboard(
+        message,
+        tg_id,
+        state,
+        notice=f"🚫 <b>کاربر {tg_id} مسدود شد و پیام برای وی ارسال گردید.</b>{sub_info}",
+    )
+
+
+@router.message(AdminSearchStates.waiting_unban_custom_msg, F.text)
+async def admin_user_unban_custom_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    tg_id = data.get("manage_user_id")
+    scope = data.get("ban_scope", "bot")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        if tg_id:
+            await _render_user_dashboard(
+                message, tg_id, state, notice="❌ عملیات رفع مسدودی لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not tg_id:
+        await _clear_fsm_keep_nav(state)
+        return
+
+    custom_text = message.text.strip()
+
+    from db.models import set_user_ban_status
+    from services.xui_api import set_user_clients_enable
+
+    await set_user_ban_status(tg_id, False)
+
+    sub_info = ""
+    if scope == "both":
+        ok_cnt, _ = await set_user_clients_enable(tg_id, True)
+        sub_info = f"\n🔌 سرویس‌های فعال‌شده مجدد در سرور: {ok_cnt}"
+
+    try:
+        await message.bot.send_message(
+            chat_id=tg_id,
+            text=f"✅ <b>پیام مدیریت:</b>\n\n{custom_text}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    await _clear_fsm_keep_nav(state)
+    await _render_user_dashboard(
+        message,
+        tg_id,
+        state,
+        notice=f"✅ <b>مسدودیت کاربر {tg_id} رفع شد و پیام برای وی ارسال گردید.</b>{sub_info}",
     )
 
 
