@@ -1302,3 +1302,50 @@ def admin_user_subs_list_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_user_msg_preview_keyboard(
+    tg_id: int, with_header: bool = True
+) -> InlineKeyboardMarkup:
+    header_btn_text = (
+        "🔘 سربرگ مدیریت: فعال ✅" if with_header else "⚪️ سربرگ مدیریت: غیرفعال ❌"
+    )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=header_btn_text,
+                    callback_data=f"admin_user_msgtoggle_{tg_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ تأیید و ارسال به کاربر",
+                    callback_data=f"admin_user_msgsend_{tg_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✍️ ارسال مجدد پیام",
+                    callback_data=f"admin_user_msg_{tg_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data=f"admin_manage_user_{tg_id}_back",
+                ),
+            ],
+        ]
+    )
+
+
+def admin_user_msg_cancel_keyboard(tg_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"admin_manage_user_{tg_id}_back",
+                )
+            ]
+        ]
+    )

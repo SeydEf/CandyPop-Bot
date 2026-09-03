@@ -60,6 +60,7 @@ class AdminSearchStates(StatesGroup):
     waiting_create_sub_dur = State()
     waiting_ban_custom_msg = State()
     waiting_unban_custom_msg = State()
+    waiting_user_direct_msg = State()
 
 
 @router.message(Command("search", "find", "find_user"))
@@ -439,6 +440,7 @@ async def _render_user_dashboard(
 
     admin_id = event.from_user.id if event.from_user else 0
     can_ban = await has_admin_permission(admin_id, "ban_users")
+    can_msg = await has_admin_permission(admin_id, "send_user_message")
 
     user_action_rows = [
         [
@@ -472,6 +474,16 @@ async def _render_user_dashboard(
             )
         ],
     ]
+
+    if can_msg:
+        user_action_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✉️ ارسال پیام به این کاربر",
+                    callback_data=f"admin_user_msg_{tg_id}",
+                )
+            ]
+        )
 
     if can_ban:
         if is_banned:
@@ -1390,6 +1402,315 @@ async def admin_user_unban_custom_save(
         state,
         notice=f"✅ <b>مسدودیت کاربر {tg_id} رفع شد و پیام برای وی ارسال گردید.</b>{sub_info}",
     )
+
+
+async def _render_user_msg_preview(
+    event: types.Message | types.CallbackQuery,
+    tg_id: int,
+    state: FSMContext,
+) -> None:
+    from keyboards.inline_kb import admin_user_msg_preview_keyboard
+
+    data = await state.get_data()
+    msg_type = data.get("direct_msg_type", "text")
+    file_id = data.get("direct_msg_file_id")
+    text_content = data.get("direct_msg_text", "")
+    with_header = data.get("direct_msg_with_header", True)
+
+    header_status = (
+        "فعال ✅ (همراه با «📩 پیام از طرف مدیریت ربات:»)"
+        if with_header
+        else "غیرفعال ❌ (ارسال عین پیام)"
+    )
+    type_names = {
+        "text": "📝 متنی",
+        "photo": "🖼 تصویر",
+        "video": "🎬 ویدیو",
+        "voice": "🎙 صوتی (وویس)",
+        "audio": "🎵 آهنگ/صوت",
+        "document": "📁 فایل / داکیومنت",
+    }
+    type_str = type_names.get(msg_type, msg_type)
+
+    preview_caption = (
+        f"👁 <b>پیش‌نمایش پیام ارسالی به کاربر <code>{tg_id}</code></b>\n\n"
+        f"نوع پیام: <b>{type_str}</b>\n"
+        f"سربرگ مدیریت: <b>{header_status}</b>\n\n"
+        "👇 <b>محتوای پیام:</b>\n"
+        "────────────────────\n"
+    )
+    if with_header:
+        preview_caption += "📩 <b>پیام از طرف مدیریت ربات:</b>\n\n"
+    preview_caption += text_content or "<i>(بدون متن یا کپشن)</i>"
+
+    kb = admin_user_msg_preview_keyboard(tg_id, with_header)
+
+    if isinstance(event, types.CallbackQuery):
+        msg = event.message
+        if msg:
+            try:
+                if msg.photo or msg.video or msg.document or msg.voice or msg.audio:
+                    await msg.edit_caption(
+                        caption=preview_caption, reply_markup=kb, parse_mode="HTML"
+                    )
+                else:
+                    await msg.edit_text(
+                        text=preview_caption, reply_markup=kb, parse_mode="HTML"
+                    )
+                await event.answer()
+                return
+            except Exception as e:
+                logger.debug("Error updating preview: %s", e)
+
+    bot = event.bot
+    target_chat = event.from_user.id if event.from_user else 0
+    if msg_type == "photo" and file_id:
+        await bot.send_photo(
+            chat_id=target_chat,
+            photo=file_id,
+            caption=preview_caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    elif msg_type == "video" and file_id:
+        await bot.send_video(
+            chat_id=target_chat,
+            video=file_id,
+            caption=preview_caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    elif msg_type == "voice" and file_id:
+        await bot.send_voice(
+            chat_id=target_chat,
+            voice=file_id,
+            caption=preview_caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    elif msg_type == "audio" and file_id:
+        await bot.send_audio(
+            chat_id=target_chat,
+            audio=file_id,
+            caption=preview_caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    elif msg_type == "document" and file_id:
+        await bot.send_document(
+            chat_id=target_chat,
+            document=file_id,
+            caption=preview_caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    else:
+        await bot.send_message(
+            chat_id=target_chat,
+            text=preview_caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.startswith("admin_user_msg_"))
+async def admin_user_msg_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from db.models import has_admin_permission
+    from keyboards.inline_kb import admin_user_msg_cancel_keyboard
+
+    if not await has_admin_permission(callback.from_user.id, "send_user_message"):
+        await callback.answer(
+            "⛔️ شما دسترسی ارسال پیام به کاربر را ندارید.", show_alert=True
+        )
+        return
+
+    tg_id = int(callback.data[len("admin_user_msg_") :])
+    await state.update_data(manage_user_id=tg_id)
+    await state.set_state(AdminSearchStates.waiting_user_direct_msg)
+
+    prompt = (
+        f"✉️ <b>ارسال پیام مستقیم به کاربر <code>{tg_id}</code>:</b>\n\n"
+        "لطفاً پیام ارسالی خود را ارسال فرمایید:\n"
+        "• می‌توانید متن ساده، متن با استایل HTML، عکس، ویدیو، وویس، صوت یا فایل با کپشن دلخواه ارسال کنید.\n\n"
+        "<i>برای انصراف /cancel یا دکمه زیر را بزنید:</i>"
+    )
+
+    await safe_edit_text(
+        callback.message,
+        prompt,
+        reply_markup=admin_user_msg_cancel_keyboard(tg_id),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminSearchStates.waiting_user_direct_msg)
+async def admin_user_msg_receive(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    tg_id = data.get("manage_user_id")
+
+    if message.text and message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        if tg_id:
+            await _render_user_dashboard(
+                message, tg_id, state, notice="❌ عملیات ارسال پیام لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not tg_id:
+        await _clear_fsm_keep_nav(state)
+        return
+
+    msg_type = "text"
+    file_id = None
+    text_content = ""
+
+    if message.photo:
+        msg_type = "photo"
+        file_id = message.photo[-1].file_id
+        text_content = message.html_text if message.caption else ""
+    elif message.video:
+        msg_type = "video"
+        file_id = message.video.file_id
+        text_content = message.html_text if message.caption else ""
+    elif message.voice:
+        msg_type = "voice"
+        file_id = message.voice.file_id
+        text_content = message.html_text if message.caption else ""
+    elif message.audio:
+        msg_type = "audio"
+        file_id = message.audio.file_id
+        text_content = message.html_text if message.caption else ""
+    elif message.document:
+        msg_type = "document"
+        file_id = message.document.file_id
+        text_content = message.html_text if message.caption else ""
+    elif message.text:
+        msg_type = "text"
+        text_content = message.html_text or message.text
+    else:
+        await message.answer(
+            "❌ فرمت این پیام پشتیبانی نمی‌شود. لطفاً متن، عکس، ویدیو، صوت، فایل یا وویس ارسال فرمایید."
+        )
+        return
+
+    await state.update_data(
+        direct_msg_type=msg_type,
+        direct_msg_file_id=file_id,
+        direct_msg_text=text_content,
+        direct_msg_with_header=True,
+    )
+    await state.set_state(None)
+    await _render_user_msg_preview(message, tg_id, state)
+
+
+@router.callback_query(F.data.startswith("admin_user_msgtoggle_"))
+async def admin_user_msg_toggle_header(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    tg_id = int(callback.data[len("admin_user_msgtoggle_") :])
+    data = await state.get_data()
+    curr = data.get("direct_msg_with_header", True)
+    await state.update_data(direct_msg_with_header=not curr)
+    await _render_user_msg_preview(callback, tg_id, state)
+
+
+@router.callback_query(F.data.startswith("admin_user_msgsend_"))
+async def admin_user_msg_send_confirm(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from aiogram.exceptions import TelegramForbiddenError
+
+    from db.models import has_admin_permission
+
+    if not await has_admin_permission(callback.from_user.id, "send_user_message"):
+        await callback.answer(
+            "⛔️ شما دسترسی ارسال پیام به کاربر را ندارید.", show_alert=True
+        )
+        return
+
+    tg_id = int(callback.data[len("admin_user_msgsend_") :])
+    data = await state.get_data()
+    msg_type = data.get("direct_msg_type", "text")
+    file_id = data.get("direct_msg_file_id")
+    text_content = data.get("direct_msg_text", "")
+    with_header = data.get("direct_msg_with_header", True)
+
+    final_text = ""
+    if with_header:
+        final_text = "📩 <b>پیام از طرف مدیریت ربات:</b>\n\n"
+    final_text += text_content or ""
+
+    bot = callback.bot
+    try:
+        if msg_type == "photo" and file_id:
+            await bot.send_photo(
+                chat_id=tg_id,
+                photo=file_id,
+                caption=final_text or None,
+                parse_mode="HTML",
+            )
+        elif msg_type == "video" and file_id:
+            await bot.send_video(
+                chat_id=tg_id,
+                video=file_id,
+                caption=final_text or None,
+                parse_mode="HTML",
+            )
+        elif msg_type == "voice" and file_id:
+            await bot.send_voice(
+                chat_id=tg_id,
+                voice=file_id,
+                caption=final_text or None,
+                parse_mode="HTML",
+            )
+        elif msg_type == "audio" and file_id:
+            await bot.send_audio(
+                chat_id=tg_id,
+                audio=file_id,
+                caption=final_text or None,
+                parse_mode="HTML",
+            )
+        elif msg_type == "document" and file_id:
+            await bot.send_document(
+                chat_id=tg_id,
+                document=file_id,
+                caption=final_text or None,
+                parse_mode="HTML",
+            )
+        else:
+            await bot.send_message(chat_id=tg_id, text=final_text, parse_mode="HTML")
+
+        notice = f"✅ <b>پیام با موفقیت به کاربر <code>{tg_id}</code> ارسال شد.</b>"
+    except TelegramForbiddenError:
+        notice = "❌ <b>خطا در ارسال:</b> ربات توسط این کاربر مسدود (بلاک) شده است."
+    except Exception as e:
+        logger.error("Failed to send direct message to user %s: %s", tg_id, e)
+        notice = f"❌ <b>خطا در ارسال پیام:</b> {e}"
+
+    if callback.message and (
+        callback.message.photo
+        or callback.message.video
+        or callback.message.document
+        or callback.message.voice
+        or callback.message.audio
+    ):
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await _clear_fsm_keep_nav(state)
+        await _render_user_dashboard(callback.message, tg_id, state, notice=notice)
+        await callback.answer()
+        return
+
+    await _clear_fsm_keep_nav(state)
+    await _render_user_dashboard(callback, tg_id, state, notice=notice)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin_user_create_sub_"))

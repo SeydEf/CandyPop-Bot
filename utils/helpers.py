@@ -46,7 +46,13 @@ async def safe_edit_text(
     disable_web_page_preview: bool | None = None,
 ) -> bool:
     try:
-        if message.photo:
+        if (
+            message.photo
+            or message.video
+            or message.document
+            or message.voice
+            or message.audio
+        ):
             await message.edit_caption(
                 caption=text,
                 reply_markup=reply_markup,
