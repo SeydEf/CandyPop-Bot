@@ -3373,7 +3373,6 @@ async def admin_invoices_list(callback: types.CallbackQuery, state: FSMContext) 
             show_alert=True,
         )
         return
-    # Reset any active input state while preserving saved data
     await state.set_state(None)
 
     parts = callback.data.split("_")
