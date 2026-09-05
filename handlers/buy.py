@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
@@ -43,6 +44,8 @@ from services.pricing import (
 )
 from utils.formatting import (
     format_price,
+    format_remaining_days,
+    format_size,
     format_size_gb,
     persian_to_english_digits,
     to_persian_digits,
@@ -847,6 +850,152 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+async def _build_admin_invoice_notification_text(
+    invoice: dict[str, Any],
+    user_id: int,
+    username: str | None,
+    receipt_type: str = "card",
+    receipt_text: str | None = None,
+) -> str:
+    target_email = invoice.get("target_email")
+    is_topup = target_email == "TOPUP" or (
+        invoice.get("duration_days") == 0 and invoice.get("data_gb") == 0
+    )
+    receipt_label = "متنی" if receipt_type == "text" else "کارت به کارت"
+
+    if is_topup:
+        admin_text = (
+            f"👛 <b>درخواست افزایش موجودی کیف پول ({receipt_label})</b>\n\n"
+            f"🆔 فاکتور: <code>{invoice['id']}</code>\n"
+            f"👤 کاربر: <code>{user_id}</code>"
+        )
+        if username:
+            admin_text += f" (@{username})"
+        admin_text += (
+            f"\n\n💰 <b>مبلغ افزایش موجودی:</b> {format_price(invoice['amount'])}\n"
+        )
+        if receipt_type == "text" and receipt_text:
+            admin_text += f"\n📝 متن رسید:\n<code>{receipt_text}</code>"
+        return admin_text
+
+    is_renewal = bool(target_email and target_email != "TOPUP")
+    users_count = invoice.get("users_count", 1)
+
+    disc_code = invoice.get("discount_code")
+    orig_amount = invoice.get("original_amount") or invoice["amount"]
+    disc_info = ""
+    has_discount = False
+    if disc_code and orig_amount > invoice["amount"]:
+        has_discount = True
+        disc_info = (
+            f"🏷️ <b>کد تخفیف:</b> <code>{disc_code}</code>\n"
+            f"💵 <b>مبلغ اولیه:</b> <s>{format_price(orig_amount)}</s>\n"
+        )
+
+    if has_discount:
+        price_line = f"💰 <b>مبلغ واریزی نهایی (تخفیف‌خورده):</b> <b>{format_price(invoice['amount'])}</b>\n"
+    else:
+        price_line = (
+            f"💰 <b>مبلغ واریزی:</b> <b>{format_price(invoice['amount'])}</b>\n"
+        )
+
+    if is_renewal:
+        title = f"🔄 <b>درخواست تأیید تمدید اشتراک ({receipt_label})</b>"
+        client_info_text = ""
+        try:
+            client = await xui_api.get_client(target_email)
+            client_full = await xui_api.get_client_full(target_email)
+            if client:
+                total_bytes = client.get("totalGB", 0)
+                expiry_ms = client.get("expiryTime", 0)
+                used_traffic = client_full.get("usedTraffic", 0) if client_full else 0
+                remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
+
+                if total_bytes > 0:
+                    usage_str = (
+                        f"{format_size(used_traffic)} / {format_size(total_bytes)}"
+                    )
+                    remaining_str = format_size(remaining)
+                else:
+                    usage_str = f"{format_size(used_traffic)} / نامحدود"
+                    remaining_str = "نامحدود"
+
+                limit_ip = client.get("limitIp", 0)
+                users_str = (
+                    f"{to_persian_digits(limit_ip)} کاربر"
+                    if limit_ip > 0
+                    else "نامحدود"
+                )
+                days_str = format_remaining_days(expiry_ms)
+
+                from db.models import get_ip_violation
+
+                is_enabled = bool(client.get("enable", True))
+                ip_rec = await get_ip_violation(target_email)
+                is_ip_suspended = bool(ip_rec.get("suspended", 0)) if ip_rec else False
+
+                if is_ip_suspended:
+                    status_str = "⛔️ مسدودشده (تخطی از سقف IP)"
+                elif is_enabled:
+                    status_str = "🟢 فعال"
+                else:
+                    status_str = "🔴 غیرفعال"
+
+                client_info_text = (
+                    f"📋 <b>وضعیت فعلی اشتراک (جهت تمدید):</b>\n"
+                    f"🏷 <b>نام سرویس:</b> <code>{target_email}</code>\n"
+                    f"⚡️ <b>وضعیت:</b> {status_str}\n"
+                    f"👥 <b>ظرفیت کاربر:</b> {users_str}\n"
+                    f"📊 <b>میزان مصرف:</b> {usage_str}\n"
+                    f"🔋 <b>ترافیک باقیمانده:</b> {remaining_str}\n"
+                    f"⏳ <b>اعتبار باقیمانده:</b> {days_str}\n\n"
+                )
+            else:
+                client_info_text = (
+                    f"📋 <b>وضعیت فعلی اشتراک (جهت تمدید):</b>\n"
+                    f"🏷 <b>نام سرویس:</b> <code>{target_email}</code> (اطلاعات در سرور یافت نشد)\n\n"
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch client info for renewal target_email %s: %s",
+                target_email,
+                e,
+            )
+            client_info_text = (
+                f"📋 <b>وضعیت فعلی اشتراک (جهت تمدید):</b>\n"
+                f"🏷 <b>نام سرویس:</b> <code>{target_email}</code>\n\n"
+            )
+
+        order_header = "📦 <b>مشخصات بسته جدید تمدید:</b>\n"
+    else:
+        title = f"🔔 <b>درخواست تأیید پرداخت اشتراک ({receipt_label})</b>"
+        client_info_text = ""
+        order_header = "📦 <b>جزئیات سفارش:</b>\n"
+
+    admin_text = (
+        f"{title}\n\n"
+        f"🆔 فاکتور: <code>{invoice['id']}</code>\n"
+        f"👤 کاربر: <code>{user_id}</code>"
+    )
+    if username:
+        admin_text += f" (@{username})"
+
+    admin_text += f"\n\n{client_info_text}"
+    admin_text += (
+        f"{order_header}"
+        f"⏱ مدت: {invoice['duration_days']} روز\n"
+        f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
+        f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
+        f"{disc_info}"
+        f"{price_line}"
+    )
+
+    if receipt_type == "text" and receipt_text:
+        admin_text += f"\n📝 متن رسید:\n<code>{receipt_text}</code>"
+
+    return admin_text
+
+
 @router.message(BuyStates.waiting_receipt, F.photo)
 async def receive_receipt_photo(
     message: types.Message, state: FSMContext, bot: Bot
@@ -876,12 +1025,21 @@ async def receive_receipt_photo(
     is_topup = invoice.get("target_email") == "TOPUP" or (
         invoice.get("duration_days") == 0 and invoice.get("data_gb") == 0
     )
+    is_renewal = bool(
+        invoice.get("target_email") and invoice.get("target_email") != "TOPUP"
+    )
 
     if is_topup:
         user_msg = (
             "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
             "درخواست افزایش موجودی کیف پول شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
             "به‌محض تأیید، موجودی کیف پول شما شارژ خواهد شد. 👛"
+        )
+    elif is_renewal:
+        user_msg = (
+            "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+            "درخواست تمدید اشتراک شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+            "به‌محض تأیید، سرویس شما به‌صورت خودکار تمدید خواهد شد. 🔄"
         )
     else:
         user_msg = (
@@ -896,43 +1054,12 @@ async def receive_receipt_photo(
         reply_markup=main_menu_keyboard(),
     )
 
-    users_count = invoice.get("users_count", 1)
-    if is_topup:
-        admin_text = (
-            f"👛 <b>درخواست افزایش موجودی کیف پول (کارت به کارت)</b>\n\n"
-            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-            f"👤 کاربر: <code>{message.from_user.id}</code>"
-        )
-        if message.from_user.username:
-            admin_text += f" (@{message.from_user.username})"
-        admin_text += (
-            f"\n\n💰 <b>مبلغ افزایش موجودی:</b> {format_price(invoice['amount'])}\n"
-        )
-    else:
-        disc_code = invoice.get("discount_code")
-        orig_amount = invoice.get("original_amount") or invoice["amount"]
-        disc_info = ""
-        if disc_code and orig_amount > invoice["amount"]:
-            disc_info = (
-                f"🏷️ <b>کد تخفیف:</b> <code>{disc_code}</code>\n"
-                f"💵 <b>مبلغ اولیه:</b> <s>{format_price(orig_amount)}</s>\n"
-            )
-
-        admin_text = (
-            f"🔔 <b>درخواست تأیید پرداخت اشتراک (کارت به کارت)</b>\n\n"
-            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-            f"👤 کاربر: <code>{message.from_user.id}</code>"
-        )
-        if message.from_user.username:
-            admin_text += f" (@{message.from_user.username})"
-        admin_text += (
-            f"\n\n📦 <b>جزئیات سفارش:</b>\n"
-            f"⏱ مدت: {invoice['duration_days']} روز\n"
-            f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
-            f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
-            f"{disc_info}"
-            f"💰 <b>مبلغ واریزی نهایی (تخفیف‌خورده):</b> <b>{format_price(invoice['amount'])}</b>\n"
-        )
+    admin_text = await _build_admin_invoice_notification_text(
+        invoice=invoice,
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        receipt_type="card",
+    )
 
     from db.models import get_all_admins, has_admin_permission
 
@@ -999,12 +1126,21 @@ async def receive_receipt_text(
     is_topup = invoice.get("target_email") == "TOPUP" or (
         invoice.get("duration_days") == 0 and invoice.get("data_gb") == 0
     )
+    is_renewal = bool(
+        invoice.get("target_email") and invoice.get("target_email") != "TOPUP"
+    )
 
     if is_topup:
         user_msg = (
             "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
             "درخواست افزایش موجودی کیف پول شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
             "به‌محض تأیید، موجودی کیف پول شما شارژ خواهد شد. 👛"
+        )
+    elif is_renewal:
+        user_msg = (
+            "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
+            "درخواست تمدید اشتراک شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
+            "به‌محض تأیید، سرویس شما به‌صورت خودکار تمدید خواهد شد. 🔄"
         )
     else:
         user_msg = (
@@ -1019,35 +1155,13 @@ async def receive_receipt_text(
         reply_markup=main_menu_keyboard(),
     )
 
-    users_count = invoice.get("users_count", 1)
-    if is_topup:
-        admin_text = (
-            f"👛 <b>درخواست افزایش موجودی کیف پول (متنی)</b>\n\n"
-            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-            f"👤 کاربر: <code>{message.from_user.id}</code>"
-        )
-        if message.from_user.username:
-            admin_text += f" (@{message.from_user.username})"
-        admin_text += (
-            f"\n\n💰 <b>مبلغ افزایش موجودی:</b> {format_price(invoice['amount'])}\n\n"
-            f"📝 متن رسید:\n<code>{receipt_text}</code>"
-        )
-    else:
-        admin_text = (
-            f"🔔 <b>درخواست تأیید پرداخت اشتراک (متنی)</b>\n\n"
-            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-            f"👤 کاربر: <code>{message.from_user.id}</code>"
-        )
-        if message.from_user.username:
-            admin_text += f" (@{message.from_user.username})"
-        admin_text += (
-            f"\n\n📦 <b>جزئیات سفارش:</b>\n"
-            f"⏱ مدت: {invoice['duration_days']} روز\n"
-            f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
-            f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
-            f"💰 مبلغ: {format_price(invoice['amount'])}\n\n"
-            f"📝 متن رسید:\n<code>{receipt_text}</code>"
-        )
+    admin_text = await _build_admin_invoice_notification_text(
+        invoice=invoice,
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        receipt_type="text",
+        receipt_text=receipt_text,
+    )
 
     from db.models import get_all_admins, has_admin_permission
 
