@@ -301,11 +301,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     return text, keyboard
 
 
-# ─── Sub-menu builders ────────────────────────────────────────────────────────
-
-
 def _build_users_submenu() -> InlineKeyboardMarkup:
-    """زیرمنوی مدیریت کاربران"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -355,7 +351,6 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
 
 
 def _build_pricing_submenu() -> InlineKeyboardMarkup:
-    """زیرمنوی قیمت و مالی"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -423,7 +418,6 @@ def _build_pricing_submenu() -> InlineKeyboardMarkup:
 
 
 def _build_alerts_submenu() -> InlineKeyboardMarkup:
-    """زیرمنوی هشدارها و زمان‌بندها"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -461,7 +455,6 @@ def _build_alerts_submenu() -> InlineKeyboardMarkup:
 
 
 def _build_settings_submenu() -> InlineKeyboardMarkup:
-    """زیرمنوی تنظیمات"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -599,9 +592,6 @@ async def admin_settings_menu_handler(
     await callback.answer()
 
 
-# ─── Cancel Handlers ─────────────────────────────────────────────────────────
-
-
 @router.callback_query(F.data == "admin_cancel_to_pricing")
 async def admin_cancel_to_pricing_handler(
     callback: types.CallbackQuery, state: FSMContext
@@ -656,9 +646,6 @@ async def admin_cancel_to_settings_handler(
         parse_mode="HTML",
     )
     await callback.answer()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 @router.callback_query(F.data == "admin_price_base")
