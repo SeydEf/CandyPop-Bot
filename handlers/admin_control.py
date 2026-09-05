@@ -266,10 +266,98 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📊 آمار و گزارشات جامع ربات",
+                    text="📊 آمار و گزارشات جامع",
                     callback_data="admin_stats_menu",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text="👥 مدیریت کاربران",
+                    callback_data="admin_sub_users_menu",
+                ),
+                InlineKeyboardButton(
+                    text="💰 قیمت و مالی",
+                    callback_data="admin_pricing_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔔 هشدارها و زمان‌بندها",
+                    callback_data="admin_alerts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚙️ تنظیمات",
+                    callback_data="admin_settings_menu",
+                ),
+                InlineKeyboardButton(
+                    text="❌ بستن پنل",
+                    callback_data="admin_price_close",
+                ),
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+# ─── Sub-menu builders ────────────────────────────────────────────────────────
+
+
+def _build_users_submenu() -> InlineKeyboardMarkup:
+    """زیرمنوی مدیریت کاربران"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕ ساخت اشتراک سفارشی جدید",
+                    callback_data="admin_create_sub_start",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔍 جستجوی کاربر و مدیریت اشتراک",
+                    callback_data="admin_search_start",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 لیست و مدیریت تمام کاربران",
+                    callback_data="admin_users_list_0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧾 مدیریت و لیست فاکتورها",
+                    callback_data="admin_invoices_all_0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 مدیریت گروه‌های مشتری (Groups)",
+                    callback_data="admin_groups_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👑 مدیریت مدیران ربات (ادمین‌ها)",
+                    callback_data="admin_manage_admins_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                ),
+            ],
+        ]
+    )
+
+
+def _build_pricing_submenu() -> InlineKeyboardMarkup:
+    """زیرمنوی قیمت و مالی"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🛒/🔄 وضعیت فروش و تمدید اشتراک",
@@ -308,8 +396,40 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="🎁 تنظیمات اشتراک تست",
-                    callback_data="admin_test_menu",
+                    text="🏷️ مدیریت کدهای تخفیف",
+                    callback_data="admin_discounts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💳 تنظیمات شماره کارت و صاحب کارت",
+                    callback_data="admin_card_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی قیمت‌ها به پیش‌فرض",
+                    callback_data="admin_price_reset",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                ),
+            ],
+        ]
+    )
+
+
+def _build_alerts_submenu() -> InlineKeyboardMarkup:
+    """زیرمنوی هشدارها و زمان‌بندها"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔔 تنظیمات هشدارهای اتمام حجم و زمان",
+                    callback_data="admin_alert_menu",
                 ),
             ],
             [
@@ -320,20 +440,34 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="🏷️ مدیریت کدهای تخفیف",
-                    callback_data="admin_discounts_menu",
+                    text="♻️ بازنشانی تست همه کاربران",
+                    callback_data="admin_test_reset_all",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🔔 تنظیمات هشدارهای اتمام حجم و زمان",
-                    callback_data="admin_alert_menu",
+                    text="👤 بازنشانی تست یک کاربر مشخص",
+                    callback_data="admin_test_reset_user",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="💳 تنظیمات شماره کارت و صاحب کارت",
-                    callback_data="admin_card_menu",
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                ),
+            ],
+        ]
+    )
+
+
+def _build_settings_submenu() -> InlineKeyboardMarkup:
+    """زیرمنوی تنظیمات"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🎁 تنظیمات اشتراک تست",
+                    callback_data="admin_test_menu",
                 ),
             ],
             [
@@ -346,12 +480,6 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text="📡 مدیریت اینباندها (Inbounds)",
                     callback_data="admin_inbounds_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 مدیریت مدیران ربات (ادمین‌ها) 👑",
-                    callback_data="admin_manage_admins_menu",
                 ),
             ],
             [
@@ -374,61 +502,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="➕ ساخت اشتراک سفارشی جدید",
-                    callback_data="admin_create_sub_start",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔍 جستجوی کاربر و مدیریت اشتراک",
-                    callback_data="admin_search_start",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 لیست و مدیریت تمام کاربران",
-                    callback_data="admin_users_list_0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🧾 مدیریت و لیست فاکتورها",
-                    callback_data="admin_invoices_all_0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 مدیریت گروه‌های مشتری (Groups)",
-                    callback_data="admin_groups_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="♻️ بازنشانی تست همه کاربران",
-                    callback_data="admin_test_reset_all",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👤 بازنشانی تست یک کاربر مشخص",
-                    callback_data="admin_test_reset_user",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔄 بازنشانی قیمت‌ها به پیش‌فرض",
-                    callback_data="admin_price_reset",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ بستن پنل",
-                    callback_data="admin_price_close",
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
                 ),
             ],
         ]
     )
-    return text, keyboard
 
 
 @router.message(Command("control", "admin_control"))
@@ -456,6 +535,132 @@ async def admin_pricing_close(callback: types.CallbackQuery, state: FSMContext) 
     await callback.message.delete()
 
 
+@router.callback_query(F.data == "admin_sub_users_menu")
+async def admin_sub_users_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "👥 <b>مدیریت کاربران</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_users_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_pricing_menu")
+async def admin_pricing_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "💰 <b>قیمت و مالی</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_pricing_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_alerts_menu")
+async def admin_alerts_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "🔔 <b>هشدارها و زمان‌بندها</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_alerts_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_settings_menu")
+async def admin_settings_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "⚙️ <b>تنظیمات</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_settings_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+# ─── Cancel Handlers ─────────────────────────────────────────────────────────
+
+
+@router.callback_query(F.data == "admin_cancel_to_pricing")
+async def admin_cancel_to_pricing_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "💰 <b>قیمت و مالی</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_pricing_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel_to_users")
+async def admin_cancel_to_users_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "👥 <b>مدیریت کاربران</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_users_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel_to_alerts")
+async def admin_cancel_to_alerts_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "🔔 <b>هشدارها و زمان‌بندها</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_alerts_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel_to_settings")
+async def admin_cancel_to_settings_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "⚙️ <b>تنظیمات</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_settings_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @router.callback_query(F.data == "admin_price_base")
 async def admin_price_base_start(
     callback: types.CallbackQuery, state: FSMContext
@@ -465,8 +670,16 @@ async def admin_price_base_start(
     await state.set_state(AdminControlStates.waiting_base_rate)
     await callback.message.edit_text(
         "💵 <b>نرخ پایه جدید هر گیگ (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>5000</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>5000</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -515,8 +728,16 @@ async def admin_price_user_start(
     await state.set_state(AdminControlStates.waiting_user_surcharge)
     await callback.message.edit_text(
         "👤 <b>هزینه اضافه به ازای هر کاربر اضافه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>50000</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>50000</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -585,8 +806,8 @@ async def admin_price_dur_menu(callback: types.CallbackQuery) -> None:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی",
-                    callback_data="admin_price_main",
+                    text="🔙 بازگشت به قیمت و مالی",
+                    callback_data="admin_pricing_menu",
                 )
             ],
         ]
@@ -604,8 +825,16 @@ async def admin_price_dur_60_start(
     await state.set_state(AdminControlStates.waiting_dur_60)
     await callback.message.edit_text(
         "⏱ <b>مبلغ اضافه برای اشتراک ۶۰ روزه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>50000</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>50000</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -649,8 +878,16 @@ async def admin_price_dur_90_start(
     await state.set_state(AdminControlStates.waiting_dur_90)
     await callback.message.edit_text(
         "⏱ <b>مبلغ اضافه برای اشتراک ۹۰ روزه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>100000</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>100000</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -700,8 +937,16 @@ async def admin_price_tiers_start(
         "<code>20:5000\n"
         "50:4500\n"
         "100:4000\n"
-        "default:3500</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "default:3500</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -815,7 +1060,7 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
                 ),
             ],
         ]
@@ -903,8 +1148,16 @@ async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) 
     await state.set_state(AdminControlStates.waiting_test_gb)
     await callback.message.edit_text(
         "📊 <b>حجم اشتراک تست را به گیگابایت (اعشاری یا صحیح) وارد کنید:</b>\n"
-        "مثال: <code>0.5</code> یا <code>1</code> یا <code>2</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>0.5</code> یا <code>1</code> یا <code>2</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -946,8 +1199,16 @@ async def admin_test_dur_start(
     await state.set_state(AdminControlStates.waiting_test_dur)
     await callback.message.edit_text(
         "⏱ <b>مدت زمان اعتبار اشتراک تست را به روز وارد کنید:</b>\n"
-        "مثال: <code>1</code> یا <code>2</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>1</code> یا <code>2</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -986,8 +1247,16 @@ async def admin_test_cooldown_start(
     await state.set_state(AdminControlStates.waiting_test_cooldown)
     await callback.message.edit_text(
         "🔄 <b>فاصله زمانی دریافت مجدد (کول‌داون) را به روز وارد کنید:</b>\n"
-        "مثال: <code>14</code> یا <code>7</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>14</code> یا <code>7</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1047,8 +1316,16 @@ async def admin_test_reset_user_prompt(
     await safe_edit_text(
         callback.message,
         "👤 <b>لطفاً شناسه عددی تلگرام (Telegram ID) یا نام کاربری کاربر را جهت بازنشانی اشتراک تست وارد کنید:</b>\n\n"
-        "مثال: <code>123456789</code> یا <code>@username</code>\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "مثال: <code>123456789</code> یا <code>@username</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1153,7 +1430,7 @@ async def admin_discounts_menu(
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به قیمت و مالی", callback_data="admin_pricing_menu"
             )
         ]
     )
@@ -1211,8 +1488,16 @@ async def admin_disc_create_manual_start(
     await state.set_state(AdminControlStates.waiting_disc_manual_code)
     await callback.message.edit_text(
         "✏️ <b>کد تخفیف اختصاصی را وارد کنید:</b>\n"
-        "مثال: <code>SUMMER2026</code> یا <code>VIP50</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>SUMMER2026</code> یا <code>VIP50</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1260,8 +1545,16 @@ async def admin_disc_create_auto_start(
     await state.set_state(AdminControlStates.waiting_disc_auto_length)
     await callback.message.edit_text(
         "🎲 <b>طول کاراکترهای کد تصادفی را وارد کنید (بين ۴ تا ۱۶):</b>\n"
-        "مثال: <code>8</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>8</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1620,7 +1913,7 @@ async def admin_ref_menu(callback: types.CallbackQuery, state: FSMContext) -> No
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
                 ),
             ],
         ]
@@ -1664,8 +1957,16 @@ async def admin_ref_edit_percent_start(
     await state.set_state(AdminControlStates.waiting_ref_percent)
     await callback.message.edit_text(
         "📊 <b>درصد جدید پورسانت دعوت (۱ تا ۱۰۰) را وارد کنید:</b>\n"
-        "مثال: <code>15</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>15</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1719,7 +2020,7 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                        text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
                     )
                 ]
             ]
@@ -1777,7 +2078,7 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
             )
         ]
     )
@@ -1923,7 +2224,7 @@ async def admin_groups_menu(callback: types.CallbackQuery, state: FSMContext) ->
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به مدیریت کاربران", callback_data="admin_sub_users_menu"
             )
         ]
     )
@@ -1959,8 +2260,16 @@ async def admin_group_create_start(
     await state.set_state(AdminControlStates.waiting_group_create_name)
     await callback.message.edit_text(
         "👥 <b>نام گروه جدید را وارد کنید:</b>\n"
-        "مثال: <code>VIP</code> یا <code>Customers</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>VIP</code> یا <code>Customers</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_users"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2033,8 +2342,16 @@ async def admin_group_rename_start(
     await state.update_data(old_group_name=old_name)
     await state.set_state(AdminControlStates.waiting_group_rename_name)
     await callback.message.edit_text(
-        f"✏️ <b>نام جدید برای گروه «{old_name}» را وارد کنید:</b>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        f"✏️ <b>نام جدید برای گروه «{old_name}» را وارد کنید:</b>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_users"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2134,7 +2451,7 @@ async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> N
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به قیمت و مالی", callback_data="admin_pricing_menu"
                 )
             ],
         ]
@@ -2161,8 +2478,16 @@ async def admin_card_edit_number_start(
     await state.set_state(AdminControlStates.waiting_card_number)
     await callback.message.edit_text(
         "🔢 <b>شماره کارت ۱۶ رقمی جدید را وارد کنید:</b>\n"
-        "مثال: <code>6037991812345678</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>6037991812345678</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2209,8 +2534,16 @@ async def admin_card_edit_holder_start(
     await state.set_state(AdminControlStates.waiting_card_holder)
     await callback.message.edit_text(
         "👤 <b>نام و نام‌خانوادگی صاحب کارت را وارد کنید:</b>\n"
-        "مثال: <code>رضا محمدی</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>رضا محمدی</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2383,7 +2716,7 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به هشدارها", callback_data="admin_alerts_menu"
                 )
             ],
         ]
@@ -2408,8 +2741,16 @@ async def admin_alert_edit_gb_start(
     await state.set_state(AdminControlStates.waiting_alert_gb)
     await callback.message.edit_text(
         "📊 <b>حدآستانه جدید هشدار ترافیک (به گیگابایت) را وارد کنید:</b>\n"
-        "مثال: <code>2.0</code> یا <code>1.5</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>2.0</code> یا <code>1.5</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2453,8 +2794,16 @@ async def admin_alert_edit_days_start(
     await state.set_state(AdminControlStates.waiting_alert_days)
     await callback.message.edit_text(
         "⏱ <b>حدآستانه جدید هشدار انقضا (به روز) را وارد کنید:</b>\n"
-        "مثال: <code>3</code> یا <code>5</code>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "مثال: <code>3</code> یا <code>5</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2499,8 +2848,16 @@ async def admin_alert_edit_delete_days_start(
     await callback.message.edit_text(
         "🗑 <b>مهلت حذف خودکار اشتراک‌های منقضی‌شده (به روز پس از انقضا) را وارد کنید:</b>\n"
         "مثال: <code>3</code> (حذف پس از ۳ روز انقضا)\n"
-        "<i>برای غیرفعال‌سازی حذف خودکار عدد <code>0</code> را ارسال کنید.</i>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "<i>برای غیرفعال‌سازی حذف خودکار عدد <code>0</code> را ارسال کنید.</i>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2552,8 +2909,16 @@ async def admin_alert_edit_interval_start(
     await callback.message.edit_text(
         "⏳ <b>فاصله زمان جدید بررسی (پایش) سرویس‌ها (به دقیقه) را وارد کنید:</b>\n"
         "مثال: <code>15</code> یا <code>30</code> یا <code>60</code>\n"
-        "<i>(حداقل ۱ دقیقه)</i>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "<i>(حداقل ۱ دقیقه)</i>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2748,7 +3113,7 @@ async def admin_shop_status_menu(
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به قیمت و مالی", callback_data="admin_pricing_menu"
                 )
             ],
         ]
@@ -3002,8 +3367,16 @@ async def admin_ip_edit_interval_start(
     await callback.message.edit_text(
         "⏳ <b>فاصله زمان جدید پایش سقف IP (به دقیقه) را وارد کنید:</b>\n"
         "مثال: <code>3</code> یا <code>5</code> یا <code>10</code>\n"
-        "<i>(حداقل ۱ دقیقه)</i>\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "<i>(حداقل ۱ دقیقه)</i>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -3753,8 +4126,16 @@ async def admin_add_admin_start(
         "➕ <b>افزودن ادمین جدید:</b>\n\n"
         "لطفاً شناسه عددی تلگرام (Telegram User ID) ادمین جدید را ارسال کنید.\n"
         "یا یک پیام از کاربر مورد نظر را به این گفتگو **فوروارد (Forward)** کنید.\n\n"
-        "🔸 مثال: <code>123456789</code>\n\n"
-        "<i>برای انصراف /cancel را بفرستید.</i>",
+        "🔸 مثال: <code>123456789</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_cancel_to_users"
+                    )
+                ]
+            ]
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -4117,7 +4498,7 @@ async def _build_start_msg_panel() -> tuple[str, InlineKeyboardMarkup]:
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
             )
         ]
     )
@@ -4642,7 +5023,7 @@ async def _build_pricing_display_panel() -> tuple[str, InlineKeyboardMarkup]:
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به قیمت و مالی", callback_data="admin_pricing_menu"
             ),
         ]
     )
@@ -5225,8 +5606,8 @@ async def _build_channel_lock_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی",
-                    callback_data="admin_price_main",
+                    text="🔙 بازگشت به تنظیمات",
+                    callback_data="admin_settings_menu",
                 ),
             ],
         ]

@@ -126,7 +126,8 @@ async def _perform_search_and_render(
                 ],
                 [
                     InlineKeyboardButton(
-                        text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                        text="🔙 بازگشت به مدیریت کاربران",
+                        callback_data="admin_sub_users_menu",
                     )
                 ],
             ]
@@ -191,7 +192,7 @@ async def _perform_search_and_render(
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به مدیریت کاربران", callback_data="admin_sub_users_menu"
             )
         ]
     )

@@ -59,7 +59,11 @@ async def admin_broadcast_start(
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_price_main")]
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_settings_menu"
+                )
+            ]
         ]
     )
 
@@ -111,7 +115,11 @@ async def admin_broadcast_message_received(
                     callback_data="admin_broadcast_execute",
                 )
             ],
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_price_main")],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_settings_menu"
+                )
+            ],
         ]
     )
 

@@ -609,7 +609,8 @@ def bulk_gift_menu_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به هشدارها و زمان‌بندها",
+                    callback_data="admin_alerts_menu",
                 )
             ],
         ]
@@ -717,7 +718,7 @@ def admin_manage_admins_keyboard(admins: list[dict[str, Any]]) -> InlineKeyboard
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                text="🔙 بازگشت به مدیریت کاربران", callback_data="admin_sub_users_menu"
             )
         ]
     )
@@ -879,8 +880,8 @@ def admin_users_list_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی",
-                callback_data="admin_price_main",
+                text="🔙 بازگشت به مدیریت کاربران",
+                callback_data="admin_sub_users_menu",
             )
         ]
     )
@@ -1017,8 +1018,8 @@ def admin_invoices_list_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پنل اصلی",
-                callback_data="admin_price_main",
+                text="🔙 بازگشت به مدیریت کاربران",
+                callback_data="admin_sub_users_menu",
             )
         ]
     )

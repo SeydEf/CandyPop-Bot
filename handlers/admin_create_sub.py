@@ -92,7 +92,8 @@ async def _prompt_step_user(
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی", callback_data="admin_price_main"
+                    text="🔙 بازگشت به مدیریت کاربران",
+                    callback_data="admin_sub_users_menu",
                 )
             ],
         ]
@@ -804,7 +805,11 @@ async def _show_summary_and_confirm(
                     callback_data="admin_create_sub_step_group",
                 )
             ],
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_price_main")],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_sub_users_menu"
+                )
+            ],
         ]
     )
 
