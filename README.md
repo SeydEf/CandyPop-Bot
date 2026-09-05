@@ -55,7 +55,10 @@
   - [🔧 Configuration \& Environment Variables](#-configuration--environment-variables)
     - [Detailed Parameter Reference](#detailed-parameter-reference)
   - [🎛️ Admin Panel Guide](#️-admin-panel-guide)
-    - [Key Sub-Menus \& Features](#key-sub-menus--features)
+    - [1. 👥 Users & Subscriptions (`admin_cat_users`)](#1--users--subscriptions-admin_cat_users)
+    - [2. 💰 Pricing & Sales (`admin_cat_pricing`)](#2--pricing--sales-admin_cat_pricing)
+    - [3. 🎁 Marketing & Announcements (`admin_cat_marketing`)](#3--marketing--announcements-admin_cat_marketing)
+    - [4. ⚙️ Server & System Settings (`admin_cat_system`)](#4-️-server--system-settings-admin_cat_system)
   - [🔒 Security \& Production Guidelines](#-security--production-guidelines)
   - [❓ Frequently Asked Questions (FAQ)](#-frequently-asked-questions-faq)
   - [🤝 Contributing](#-contributing)
@@ -65,12 +68,18 @@
 
 ## 🌟 Highlights
 
-- **Custom Bot Name:** Easily change the bot name via .env to launch the entire bot under your own brand/alias.
+- **Custom Bot Name:** Easily change the bot name via `.env` to launch the entire bot under your own brand/alias.
+- **Categorized 4-Pillar Admin Control:** Reorganized, compact control panel (`/control`) with clean submenus for Users, Pricing, Marketing, and System settings with hierarchical back navigation.
+- **Full Invoice & Billing Management:** Paginated invoice browser, filtering by status (Paid, Pending, Rejected), universal search across all fields, receipt inspection, and direct deletion.
+- **User Ban & Suspension Engine:** Two-step ban flow (bot access vs bot + 3x-ui client suspension) with silent, default, or custom admin notifications, enforced via middleware.
+- **Direct Admin Messaging:** Send custom announcements, text, photos, videos, voice notes, audio, or documents directly to any user with interactive preview and toggleable headers.
+- **Dedicated User Subscription Hub:** View and manage any customer's active keys directly from their profile with smart single/multi-subscription routing.
 - **Dual Payment Workflows:** Automatic instant checkout via internal prepaid **Wallet**, or manual **Card-to-Card** transfers with receipt screenshot verification.
 - **Dynamic Pricing Engine:** Set tiered rates where high-volume purchases cost less per GB, plus customizable duration and multi-device surcharges.
+- **Server Health & Traffic Metrics:** Live 3x-ui node telemetry, displaying CPU, memory, uptime, total upload, total download, and combined traffic consumption.
 - **Intelligent Anti-Abuse IP Limiter:** 3-strike multi-device detection that automatically suspends abusers and alerts administrators.
 - **Mass Gifting & Broadcasts:** Surprise your entire user base with bonus GB or extra days in one tap using an interactive stepper keyboard.
-- **Granular Sub-Admin RBAC:** Delegate responsibilities to staff members with 16 granular permission toggles without risking root access.
+- **Granular Sub-Admin RBAC:** Delegate responsibilities to staff members across **22 granular permission scopes** without risking root access.
 - **High-Performance Async Stack:** Built with `aiogram 3.x`, `aiosqlite` in WAL mode, and non-blocking `httpx` connection pooling.
 
 ---
@@ -94,7 +103,7 @@
 | **Free Trial Subscription** | 1-time automated trial key (configurable GB & duration) with an anti-abuse cooldown period. |
 | **Referral & Affiliate System** | Earn a configurable commission percentage credited directly into the user's bot wallet for every friend invited. |
 | **Discount Code Redemption** | Enter promotional vouchers at checkout for fixed or percentage-based savings. |
-| **Client Connection Guides** | Built-in step-by-step guides for Android, iOS, Windows, and macOS clients. |
+| **Interactive Client Guides** | Step-by-step connection tutorials for Android, iOS, Windows, and macOS with recommended app downloads (`/guide` or `/help`). |
 
 ---
 
@@ -108,25 +117,30 @@
             ┌──────────────────────────┴──────────────────────────┐
             ▼                                                     ▼
 ┌───────────────────────┐                             ┌───────────────────────┐
-│ 🛡️ Sales & Support    │                             │ ⚙️ Technical Ops      │
-│ • Approve Invoices    │                             │ • Manage Subscriptions│
-│ • Manage Users        │                             │ • Inbound Routing     │
-│ • Broadcast Messages  │                             │ • Pricing & Discounts │
+│ 👥 Users & Billing    │                             │ ⚙️ Technical Ops      │
+│ • Manage Users & Subs │                             │ • Server Telemetry    │
+│ • Invoices & Search   │                             │ • Inbounds & Routing  │
+│ • Ban & Direct Msg    │                             │ • Pricing & Discounts │
+│ • Review Receipts     │                             │ • Alerts & IP Limiter │
 └───────────────────────┘                             └───────────────────────┘
 ```
 
 | Module | Administrative Capability |
 |---|---|
-| **Role-Based Access (RBAC)** | Add sub-admins with selective access across **16 permission scopes** (pricing, invoices, subs, discounts, gifts, etc.). |
+| **Categorized Control Panel** | Reorganized into 4 clean submenus (Users & Subs, Pricing & Sales, Marketing, System Settings) with hierarchical back navigation. |
+| **Role-Based Access (RBAC)** | Add sub-admins with selective access across **22 permission scopes** (invoices, users, ban, messaging, pricing, gifts, etc.). |
+| **Invoice Management & Search**| Paginated invoice registry with status filters (paid, pending, rejected), universal multi-field search, receipt inspection, and deletion. |
+| **User Ban & Suspension** | Two-step user ban system (bot-only or bot + server client suspension) with silent, default, or custom admin message delivery. |
+| **Direct User Messaging** | Dispatch direct messages, images, videos, audio, voice notes, or documents to individual users with live preview and toggleable headers. |
 | **Live Pricing Controls** | Adjust base GB price, duration surcharges, per-user multipliers, and volume discount tiers live without restarting. |
-| **Shop Master Switches** | Toggle master kill-switches for: **New Purchases**, **Renewals**, **Free Trials**, and **Wallet Deposits**. |
+| **Shop Master Switches** | Toggle master kill-switches for: **New Purchases**, **Renewals**, **Free Trials**, and **Start on First Use**. |
 | **Payment Review Queue** | Review pending card transfers with receipt photos; approve or reject in 1-click with automated customer notifications. |
-| **Subscription CRUD** | Search any user or client by Telegram ID, username, or email remark. Add GB, add days, change IP limits, or toggle access. |
+| **Subscription CRUD & Selector**| View any user's subscriptions directly from their profile with smart 1-click routing for single keys or paginated selectors for multi-keys. |
 | **Custom Manual Subscriptions**| Provision custom subscriptions for any Telegram ID with tailored volume, duration, inbounds, and device limits. |
 | **Bulk Gifting Stepper** | Deliver bonus GB or extra days to **all users simultaneously** with an interactive stepper keyboard (`+` / `-`). |
 | **Inbound & Group Manager** | Group X-UI inbounds logically (e.g. `VIP Germany`, `Normal Finland`) and route new clients dynamically. |
 | **Discount Code Engine** | Generate manual or randomized alphanumeric discount codes with usage limits, expiry, and percentage discounts. |
-| **Comprehensive Analytics** | Live dashboard showing: daily/weekly/monthly new users, total volume sold, invoice counts, and total revenue. |
+| **Server Health & Traffic Stats** | Live telemetry displaying total server upload, total download, combined traffic, and node system resources alongside sales metrics. |
 | **Broadcast Messenger** | Dispatch announcements (rich HTML text, images, videos, documents) to all bot users with graceful rate-limiting. |
 | **Payment Card Manager** | Update the recipient card number and cardholder name instantly through the Telegram interface. |
 | **Channel Guard** | Mandatory channel membership middleware that ensures users follow your news channel before using the bot. |
@@ -135,7 +149,7 @@
 
 ### 🤖 Autonomous Background Schedulers
 
-CandyPop Bot features two asynchronous daemons running in the background to keep your service running smoothly:
+CandyPop Bot features two asynchronous daemons running in the background to keep your service running smoothly, with execution telemetry logged in the admin panel:
 
 ```mermaid
 flowchart LR
@@ -156,7 +170,7 @@ flowchart LR
 - **Low-Traffic Warnings:** Automatically alerts subscribers when remaining data falls below the configured threshold (e.g., `< 2 GB`).
 - **Expiry Warnings:** Warns users when their expiration date is approaching (e.g., `< 3 days remaining`).
 - **Instant Renewal Prompt:** Sends an expiration notification containing an inline **"🔄 Renew Subscription"** button when service ends.
-- **Auto-Purge Daemon:** Automatically purges expired test subscriptions, and removes regular subscriptions if they remain expired beyond the admin-configured grace period (e.g. 7 days).
+- **Auto-Purge Daemon:** Automatically purges expired test subscriptions, and removes regular subscriptions if they remain expired beyond the admin-configured grace period (`auto_delete_days`, default 3 days).
 
 #### 2. 🛡️ Multi-Device IP Limiter & Anti-Abuse (`ip_checker_scheduler.py`)
 - **Live Connection Auditing:** Periodically tallies active client connections against their assigned `limitIp` quota.
@@ -173,7 +187,7 @@ flowchart LR
 The user-facing interface is tailored for Persian (Farsi) speaking audiences with first-class localization:
 - **Right-to-Left (RTL)** text optimization with clean typographic hierarchy.
 - **Persian Numeral Conversion:** Automatic transformation of numbers into Persian glyphs (`۱۲۳,۴۵۶`).
-- **Solar Hijri (Jalali) Calendar:** Dates and timestamps rendered natively via `jdatetime` (e.g. `۱۴۰۳/۰۶/۰۵`).
+- **Solar Hijri (Jalali) Calendar:** Dates and timestamps rendered natively via `jdatetime` (e.g. `۱۴۰۴/۰۶/۱۵`).
 - **Toman Currency Formatting:** Clean comma-separated monetary values (`۵۰,۰۰۰ تومان`).
 
 ---
@@ -197,9 +211,10 @@ candypop_bot/
 │   ├── pricing.py              # Dynamic price table display
 │   ├── referral.py             # Affiliate link generation & statistics
 │   ├── test_sub.py             # Free trial activation & cooldown logic
+│   ├── guide.py                # Interactive client OS tutorials (/guide, /help)
 │   ├── admin.py                # Admin invoice approval / rejection handlers
-│   ├── admin_control.py        # Central admin panel, pricing, shop status & settings
-│   ├── admin_sub_manage.py     # Administrative subscription CRUD & user search
+│   ├── admin_control.py        # Categorized 4-pillar admin panel, pricing & settings
+│   ├── admin_sub_manage.py     # User & sub CRUD, ban/unban, direct messaging & search
 │   ├── admin_create_sub.py     # Manual custom subscription generator
 │   └── admin_broadcast.py      # Mass message broadcasting system
 │
@@ -220,6 +235,7 @@ candypop_bot/
 │   └── inline_kb.py            # Dynamic inline keyboards, steppers, and dialogs
 │
 ├── middlewares/                # Middleware Pipeline
+│   ├── banned_check.py         # Enforced user ban check interceptor
 │   └── channel_check.py        # Enforced Telegram channel membership guard
 │
 ├── utils/                      # Utilities & Helpers
@@ -245,13 +261,14 @@ candypop_bot/
 | `/pricing` | Display the current dynamic price list and volume discount tiers |
 | `/invite` | View personal affiliate link, invite count, and referral earnings |
 | `/test` | Claim a free test subscription |
-| `/help` | Display customer assistance and usage guide |
+| `/guide` | Open the interactive connection tutorial and OS software guide |
+| `/help` | Customer assistance and connection instructions |
 | `/support` | Contact direct customer support |
 
 ### 🛡️ Administrative Commands
 | Command | Alias | Description | Required Permission |
 |---|---|---|---|
-| `/control` | `/admin_control` | Open the comprehensive admin settings and control panel | Admin / Owner |
+| `/control` | `/admin_control` | Open the categorized 4-pillar admin dashboard | Admin / Owner |
 | `/search` | `/find`, `/find_user` | Search users or subscriptions by TG ID, username, or email | `manage_subs` |
 | `/create_sub`| `/new_sub`, `/add_sub` | Create a custom subscription for any customer | `create_sub` |
 | `/send_all` | — | Send a broadcast message to all bot users | `broadcast` |
@@ -453,37 +470,84 @@ DB_PATH="data/candypop.db" # SQLite database path
 
 ## 🎛️ Admin Panel Guide
 
-Sending `/control` opens the administrative control dashboard
+Sending `/control` or `/admin_control` opens the administrative control dashboard, cleanly organized into **4 primary operational categories** with a 2×2 layout and hierarchical back navigation:
 
-### Key Sub-Menus & Features
+```
+┌────────────────────────────────────────────────────────┐
+│            📊 آمار و گزارشات جامع ربات                │
+├───────────────────────────┬────────────────────────────┤
+│ 👥 کاربران و اشتراک‌ها    │ 💰 قیمت‌گذاری و فروش       │
+├───────────────────────────┼────────────────────────────┤
+│ 🎁 هدایا و اطلاع‌رسانی    │ ⚙️ سرور و سیستم            │
+├───────────────────────────┴────────────────────────────┤
+│                      ❌ بستن پنل                       │
+└────────────────────────────────────────────────────────┘
+```
 
-1. **📊 Statistics & Insights (`/control` → Comprehensive Reports):**
-   - Total registered users, users joined today, past 7 days, and past 30 days.
-   - Total invoices created, completed orders, and gross revenue generated in Tomans.
-   - Current active wallet balances across all users.
+### 1. 👥 Users & Subscriptions (`admin_cat_users`)
 
-2. **💰 Dynamic Pricing Manager:**
-   - Modify the base rate per GB.
-   - Customize volume discounts (e.g. 20GB @ 5,000T, 50GB @ 4,500T, 100GB @ 4,000T).
-   - Adjust duration surcharges (30, 60, 90 days) and extra user fees.
+- **Universal Search (`/search`):** Query subscribers by Telegram numeric ID, `@username`, or subscription email remark.
+- **Complete Users Registry:** Paginated list of all bot users with instant access to their wallet balance, test subscription status, and purchase history.
+- **User Subscription Hub:** Inspect all keys belonging to any customer directly from their profile. Smart routing navigates straight to single keys or opens a paginated 5-item card selector for multi-key owners.
+- **User Ban & Suspension Engine:**
+  - **Scope Selection:** Restrict bot interaction only, or disable both bot access and all active 3x-ui client keys simultaneously.
+  - **Notification Delivery:** Choose between silent ban, polite default system notice, or custom admin message.
+  - **Strict Enforcement:** `BannedCheckMiddleware` intercepts banned user requests across all messages and inline buttons.
+- **Direct User Messaging:** Send announcements, messages, photos, videos, voice notes, audio files, or documents directly to any user with live preview and toggleable official headers (`📩 پیام از طرف مدیریت ربات:`).
+- **Invoice & Billing Management:**
+  - Paginated registry of all payment transactions.
+  - Quick filters: **All**, **Approved / Paid**, **Pending Review**, and **Rejected**.
+  - Universal multi-field search (searches invoice ID, Telegram ID, name, email remark, receipt text, amount, discount code, payment method).
+  - Inspect transaction details and receipt photos with 1-click database deletion capability.
+- **Manual Custom Provisioning (`/create_sub`):** Issue custom subscription keys for any user with customized volume, duration, inbounds, and device limits.
+- **Client Groups:** Organize clients into logical groups on 3x-ui and designate default groups for new orders.
 
-3. **🎁 Mass Gifting Tool:**
-   - Tap **"Bulk Gift"** → select **Gift GB** or **Gift Days**.
-   - Use the interactive `[➖]` and `[➕]` buttons to select the gift amount.
-   - Confirm to instantly top up every active subscription on your server!
+---
 
-4. **🔍 User & Subscription Search (`/search`):**
-   - Query by Telegram User ID, `@username`, or subscription email remark.
-   - Inspect used bandwidth, expiry date, connected IP limits, and wallet balance.
-   - Modify parameters on the fly (add GB, extend days, alter IP limits, toggle active state).
+### 2. 💰 Pricing & Sales (`admin_cat_pricing`)
 
-5. **🎟️ Discount Manager:**
-   - Create custom promo codes (e.g. `NOWRUZ1403`) or auto-generate random keys.
-   - Specify percentage discount (1%–100%) and maximum usage quotas.
+- **Shop Master Switches:** Independently toggle customer capabilities for **New Purchases** and **Subscription Renewals**.
+- **Dynamic Pricing Engine:**
+  - **Base GB Rate:** Modify standard per-gigabyte pricing in Tomans.
+  - **Extra User Surcharge:** Configure additional fees for multi-device (concurrent IP) capacity.
+  - **Duration Fees:** Set custom surcharges for 30-day, 60-day, and 90-day subscription validity.
+  - **Volume Discount Tiers:** Create tiered rate steps (e.g. 20GB @ 5,000T, 50GB @ 4,500T, 100GB @ 4,000T).
+- **Payment Card Settings:** Live modification of the destination 16-digit card number and cardholder name for card-to-card deposits.
+- **Promotional Discount Codes:** Generate alphanumeric promo vouchers with customizable percentage discounts, expiration dates, and maximum usage quotas.
+- **Storefront Display Settings:** Customize promotional marketing copy and banner image displayed under `/pricing`.
+- **Factory Reset:** Restore default pricing tiers and surcharges with one click.
 
-6. **🛡️ Sub-Admin Permissions:**
-   - Delegate operations to team members with granular checkboxes:
-     `approve_invoices`, `manage_subs`, `pricing`, `shop_status`, `discounts`, `test_sub`, `bulk_gift`, `alerts`, `card_config`, `inbounds`, `referral`, `broadcast`, `stats`.
+---
+
+### 3. 🎁 Marketing & Announcements (`admin_cat_marketing`)
+
+- **Free Trial Management:**
+  - Configure trial data allowance (GB) and trial validity period (days).
+  - Set anti-abuse cooldown periods before users can re-apply.
+  - View detailed trial analytics and the list of recent trial recipients.
+  - Reset trial eligibility for all users globally or for a specific user ID.
+- **Mass Gifting Tool:** Deliver bonus GB or extra days to **all users simultaneously** using an interactive stepper keyboard (`➕` / `➖`).
+- **Broadcast Messenger (`/send_all`):** Dispatch broadcast announcements (text, formatted HTML, photos, videos, documents) to all registered users with live preview and confirmation.
+- **Welcome Message Editor:** Customize the message text automatically sent to customers upon sending `/start`.
+- **Channel Membership Guard:** Require customers to join your official Telegram channel before using the bot, with automatic membership re-verification.
+- **Affiliate & Referral Engine:** Adjust commission percentages credited to user wallets when their invitees make purchases.
+
+---
+
+### 4. ⚙️ Server & System Settings (`admin_cat_system`)
+
+- **Server Telemetry & Network Load:** Live 3x-ui server statistics including CPU usage, memory consumption, system uptime, and combined network traffic:
+  - ⬆️ **Total Upload:** Bandwidth consumed by server outbound traffic.
+  - ⬇️ **Total Download:** Bandwidth consumed by server inbound traffic.
+  - 🔄 **Combined Traffic:** Total cumulative data transferred across the node.
+- **Scheduler Heartbeat & Logs:** Live monitor displaying the exact timestamp and status of the last execution for both the **Alert Scheduler** and the **IP Limiter Daemon**.
+- **Inbound Management (X-UI Inbounds):** View, activate, deactivate, or assign specific inbounds (VLESS Reality, VMess, Trojan, Shadowsocks) used for new orders.
+- **Lifecycle Alerts & Auto-Purge:**
+  - Configure thresholds for low data warnings (e.g. `< 2 GB`) and expiration warnings (e.g. `< 3 days`).
+  - Configure auto-deletion grace periods (`auto_delete_days`, default 3 days) after which expired keys are automatically purged.
+- **Multi-Device Anti-Abuse Limiter:** Set continuous IP check intervals and inspect current strike records.
+- **Sub-Admin Role-Based Access Control (RBAC):** Delegate operations to team members across **22 granular permission scopes**:
+  - `manage_subs`, `users_list`, `send_user_message`, `ban_users`, `create_sub`, `view_invoices`, `approve_invoices`, `delete_invoices`, `pricing`, `shop_status`, `discounts`, `test_sub`, `bulk_gift`, `alerts`, `card_config`, `inbounds`, `referral`, `broadcast`, `start_message`, `channel_lock`, `reset_configs`, `stats`.
 
 ---
 
