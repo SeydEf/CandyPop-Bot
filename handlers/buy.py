@@ -838,13 +838,59 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
         )
         return
 
+    from db.models import get_receipt_config
+
+    receipt_cfg = await get_receipt_config()
+    overall_enabled = receipt_cfg["overall_enabled"]
+    photo_enabled = receipt_cfg["photo_enabled"]
+    text_enabled = receipt_cfg["text_enabled"]
+    disabled_action = receipt_cfg["disabled_action"]
+    disabled_text = receipt_cfg["disabled_text"]
+
+    if not overall_enabled or (not photo_enabled and not text_enabled):
+        card_config = await get_card_config()
+        card_number = card_config["card_number"]
+        amount = invoice["amount"]
+        return_kb = card_payment_keyboard(invoice_id, card_number, amount)
+
+        if disabled_action == "alert":
+            await callback.answer(disabled_text, show_alert=True)
+        elif disabled_action == "message":
+            await callback.message.edit_text(
+                f"{disabled_text}\n\n🧾 شماره فاکتور: <code>{invoice_id}</code>",
+                reply_markup=return_kb,
+                parse_mode="HTML",
+            )
+            await callback.answer()
+        else:  # "both"
+            await callback.answer(disabled_text, show_alert=True)
+            await callback.message.edit_text(
+                f"{disabled_text}\n\n🧾 شماره فاکتور: <code>{invoice_id}</code>",
+                reply_markup=return_kb,
+                parse_mode="HTML",
+            )
+        return
+
     await state.set_state(BuyStates.waiting_receipt)
     await state.update_data(invoice_id=invoice_id)
 
+    if photo_enabled and not text_enabled:
+        guide_detail = (
+            "لطفاً <b>تصویر فیش یا رسید پرداخت بانکی</b> خود را در همین بخش ارسال کنید.\n"
+            "<i>(ارسال کد متنی در حال حاضر غیرفعال است)</i>"
+        )
+    elif text_enabled and not photo_enabled:
+        guide_detail = (
+            "لطفاً <b>شماره پیگیری یا متن مشخصات واریز</b> خود را در همین بخش ارسال کنید.\n"
+            "<i>(ارسال تصویر فیش در حال حاضر غیرفعال است)</i>"
+        )
+    else:
+        guide_detail = "لطفاً تصویر رسید پرداخت بانکی یا شماره پیگیری تراکنش خود را در همین بخش ارسال کنید."
+
     await callback.message.edit_text(
-        "📸 <b>ارسال رسید یا شماره پیگیری واریز</b>\n\n"
-        "لطفاً تصویر رسید پرداخت بانکی یا شماره پیگیری تراکنش خود را در همین بخش ارسال کنید.\n\n"
-        "💡 <i>در صورت انصراف، می‌توانید دستور /cancel را بفرستید.</i>",
+        f"📸 <b>ارسال رسید</b>\n\n"
+        f"{guide_detail}\n\n"
+        f"💡 <i>در صورت انصراف، می‌توانید دستور /cancel را بفرستید.</i>",
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1003,6 +1049,24 @@ async def receive_receipt_photo(
     if not message.from_user or not message.photo:
         return
 
+    from db.models import get_receipt_config
+
+    receipt_cfg = await get_receipt_config()
+    if not receipt_cfg["overall_enabled"] or not receipt_cfg["photo_enabled"]:
+        if receipt_cfg["text_enabled"]:
+            await message.answer(
+                "⚠️ <b>امکان ارسال تصویر رسید در حال حاضر غیرفعال است.</b>\n\n"
+                "لطفاً شماره پیگیری یا مشخصات واریز خود را به صورت <b>متنی</b> ارسال فرمایید.\n"
+                "💡 <i>در صورت انصراف می‌توانید /cancel را ارسال کنید.</i>",
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(
+                f"{receipt_cfg['disabled_text']}",
+                parse_mode="HTML",
+            )
+        return
+
     data = await state.get_data()
     invoice_id = data.get("invoice_id")
     if not invoice_id:
@@ -1102,6 +1166,24 @@ async def receive_receipt_text(
             "❌ فرآیند ارسال رسید لغو شد.",
             reply_markup=main_menu_keyboard(),
         )
+        return
+
+    from db.models import get_receipt_config
+
+    receipt_cfg = await get_receipt_config()
+    if not receipt_cfg["overall_enabled"] or not receipt_cfg["text_enabled"]:
+        if receipt_cfg["photo_enabled"]:
+            await message.answer(
+                "⚠️ <b>امکان ارسال متنی رسید در حال حاضر غیرفعال است.</b>\n\n"
+                "لطفاً <b>تصویر فیش یا رسید بانکی</b> را ارسال فرمایید.\n"
+                "💡 <i>در صورت انصراف می‌توانید /cancel را ارسال کنید.</i>",
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(
+                f"{receipt_cfg['disabled_text']}",
+                parse_mode="HTML",
+            )
         return
 
     data = await state.get_data()

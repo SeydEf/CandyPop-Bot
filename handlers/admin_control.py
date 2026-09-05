@@ -76,6 +76,7 @@ class AdminControlStates(StatesGroup):
     waiting_channel_lock_id = State()
     waiting_channel_lock_link = State()
     waiting_invoice_search = State()
+    waiting_receipt_disabled_text = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -399,6 +400,12 @@ def _build_pricing_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="💳 تنظیمات شماره کارت و صاحب کارت",
                     callback_data="admin_card_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧾 تنظیمات دریافت رسید واریز (عکس/متن)",
+                    callback_data="admin_receipt_config_menu",
                 ),
             ],
             [
@@ -2557,6 +2564,296 @@ async def admin_card_edit_holder_save(
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+
+async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_receipt_config
+
+    cfg = await get_receipt_config()
+    overall = cfg["overall_enabled"]
+    photo = cfg["photo_enabled"]
+    text_en = cfg["text_enabled"]
+    action = cfg["disabled_action"]
+    custom_text = cfg["disabled_text"]
+
+    overall_badge = "🟢 فعال" if overall else "🔴 غیرفعال"
+    photo_badge = "🟢 مجاز" if photo else "🔴 غیرمجاز"
+    text_badge = "🟢 مجاز" if text_en else "🔴 غیرمجاز"
+
+    action_titles = {
+        "both": "🔄 هر دو (پاپ‌آپ + ویرایش پیام)",
+        "alert": "💬 فقط پاپ‌آپ (Alert)",
+        "message": "📝 فقط ویرایش پیام",
+    }
+    action_badge = action_titles.get(action, action_titles["both"])
+
+    text = (
+        f"🧾 <b>تنظیمات دریافت رسید واریز (کارت به کارت)</b>\n\n"
+        f"در این بخش می‌توانید نحوه دریافت رسید پرداخت کاربران (عکس، متن یا مسدودسازی کلی) را مدیریت کنید.\n\n"
+        f"🔘 <b>وضعیت کلی دریافت رسید:</b> {overall_badge}\n"
+        f"📸 <b>ارسال تصویر فیش (عکس):</b> {photo_badge}\n"
+        f"📝 <b>ارسال متن و شناسه پیگیری:</b> {text_badge}\n"
+        f"⚡️ <b>واکنش هنگام غیرفعال بودن:</b> {action_badge}\n\n"
+        f"💬 <b>متن پیام هنگام غیرفعال بودن:</b>\n"
+        f"<code>{custom_text}</code>\n"
+    )
+
+    overall_btn_text = "🔴 غیرفعال‌سازی کلی" if overall else "🟢 فعال‌سازی کلی"
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🔘 وضعیت کلی: {overall_badge} ({overall_btn_text})",
+                    callback_data="admin_toggle_receipt_overall",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"📸 عکس: {photo_badge}",
+                    callback_data="admin_toggle_receipt_photo",
+                ),
+                InlineKeyboardButton(
+                    text=f"📝 متن: {text_badge}",
+                    callback_data="admin_toggle_receipt_text",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⚡️ واکنش: {action_badge}",
+                    callback_data="admin_cycle_receipt_action",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ ویرایش متن پیام غیرفعال بودن",
+                    callback_data="admin_edit_receipt_disabled_text",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی متن به پیش‌فرض",
+                    callback_data="admin_reset_receipt_disabled_text",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به قیمت و مالی",
+                    callback_data="admin_pricing_menu",
+                )
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_receipt_config_menu")
+async def admin_receipt_config_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+    await state.clear()
+
+    from utils.helpers import safe_edit_text
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_receipt_overall")
+async def admin_toggle_receipt_overall(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import get_receipt_config, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_receipt_config()
+    new_val = not cfg["overall_enabled"]
+    await set_receipt_config(overall_enabled=new_val)
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    st_msg = (
+        "🟢 دریافت رسید فعال شد."
+        if new_val
+        else "🔴 دریافت رسید به طور کلی غیرفعال شد."
+    )
+    await callback.answer(st_msg, show_alert=False)
+
+
+@router.callback_query(F.data == "admin_toggle_receipt_photo")
+async def admin_toggle_receipt_photo(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import get_receipt_config, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_receipt_config()
+    new_val = not cfg["photo_enabled"]
+    await set_receipt_config(photo_enabled=new_val)
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    st_msg = (
+        "🟢 ارسال تصویر رسید مجاز شد." if new_val else "🔴 ارسال تصویر رسید غیرمجاز شد."
+    )
+    await callback.answer(st_msg, show_alert=False)
+
+
+@router.callback_query(F.data == "admin_toggle_receipt_text")
+async def admin_toggle_receipt_text(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import get_receipt_config, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_receipt_config()
+    new_val = not cfg["text_enabled"]
+    await set_receipt_config(text_enabled=new_val)
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    st_msg = (
+        "🟢 ارسال متنی رسید مجاز شد." if new_val else "🔴 ارسال متنی رسید غیرمجاز شد."
+    )
+    await callback.answer(st_msg, show_alert=False)
+
+
+@router.callback_query(F.data == "admin_cycle_receipt_action")
+async def admin_cycle_receipt_action(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import get_receipt_config, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_receipt_config()
+    current = cfg["disabled_action"]
+    cycle_map = {
+        "both": "alert",
+        "alert": "message",
+        "message": "both",
+    }
+    new_action = cycle_map.get(current, "both")
+    await set_receipt_config(disabled_action=new_action)
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_edit_receipt_disabled_text")
+async def admin_edit_receipt_disabled_text_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_receipt_disabled_text)
+    from utils.helpers import safe_edit_text
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_receipt_config_menu"
+                )
+            ]
+        ]
+    )
+    text = (
+        "✏️ <b>ویرایش متن پیام غیرفعال بودن دریافت رسید:</b>\n\n"
+        "لطفاً متن جدیدی که هنگام غیرفعال بودن دریافت رسید به کاربر نمایش داده می‌شود را ارسال فرمایید.\n\n"
+        "💡 <i>در صورت تمایل می‌توانید دستور /cancel را بفرستید یا دکمه انصراف را بزنید.</i>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_receipt_disabled_text, F.text)
+async def admin_edit_receipt_disabled_text_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.from_user:
+        return
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_receipt_config_menu_content()
+        await message.answer(
+            f"❌ ویرایش متن لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_receipt_config
+
+    new_text = message.text.strip()
+    await set_receipt_config(disabled_text=new_text)
+    await state.clear()
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await message.answer(
+        f"✅ متن پیام غیرفعال بودن رسید با موفقیت به‌روزرسانی شد.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_reset_receipt_disabled_text")
+async def admin_reset_receipt_disabled_text(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import DEFAULT_RECEIPT_CONFIG, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    await set_receipt_config(disabled_text=DEFAULT_RECEIPT_CONFIG["disabled_text"])
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer("✅ متن پیام به پیش‌فرض بازنشانی شد.", show_alert=False)
 
 
 @router.callback_query(F.data == "admin_alert_menu")

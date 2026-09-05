@@ -863,6 +863,62 @@ async def set_card_config(
         await set_setting("card_holder", card_holder.strip())
 
 
+DEFAULT_RECEIPT_CONFIG: dict[str, Any] = {
+    "overall_enabled": True,
+    "photo_enabled": True,
+    "text_enabled": True,
+    "disabled_action": "both",  # "alert", "message", "both"
+    "disabled_text": "⚠️ در حال حاضر امکان ارسال رسید و ثبت خودکار پرداخت غیرفعال می‌باشد. لطفاً جهت پیگیری واریز خود به پشتیبانی پیام دهید.",
+}
+
+
+async def get_receipt_config() -> dict[str, Any]:
+    overall_str = await get_setting("receipt_overall_enabled", "1") or "1"
+    photo_str = await get_setting("receipt_photo_enabled", "1") or "1"
+    text_str = await get_setting("receipt_text_enabled", "1") or "1"
+    action_str = await get_setting("receipt_disabled_action", "both") or "both"
+    custom_text = await get_setting(
+        "receipt_disabled_text", DEFAULT_RECEIPT_CONFIG["disabled_text"]
+    )
+
+    return {
+        "overall_enabled": overall_str == "1",
+        "photo_enabled": photo_str == "1",
+        "text_enabled": text_str == "1",
+        "disabled_action": (
+            action_str if action_str in ("alert", "message", "both") else "both"
+        ),
+        "disabled_text": custom_text or DEFAULT_RECEIPT_CONFIG["disabled_text"],
+    }
+
+
+async def set_receipt_config(
+    overall_enabled: bool | None = None,
+    photo_enabled: bool | None = None,
+    text_enabled: bool | None = None,
+    disabled_action: str | None = None,
+    disabled_text: str | None = None,
+) -> None:
+    if overall_enabled is not None:
+        await set_setting("receipt_overall_enabled", "1" if overall_enabled else "0")
+    if photo_enabled is not None:
+        await set_setting("receipt_photo_enabled", "1" if photo_enabled else "0")
+    if text_enabled is not None:
+        await set_setting("receipt_text_enabled", "1" if text_enabled else "0")
+    if disabled_action is not None and disabled_action in ("alert", "message", "both"):
+        await set_setting("receipt_disabled_action", disabled_action)
+    if disabled_text is not None:
+        await set_setting("receipt_disabled_text", disabled_text.strip())
+
+
+async def reset_receipt_config() -> None:
+    await set_setting("receipt_overall_enabled", "1")
+    await set_setting("receipt_photo_enabled", "1")
+    await set_setting("receipt_text_enabled", "1")
+    await set_setting("receipt_disabled_action", "both")
+    await set_setting("receipt_disabled_text", DEFAULT_RECEIPT_CONFIG["disabled_text"])
+
+
 async def get_all_user_ids() -> list[int]:
     db = await get_db()
     rows = await db.execute_fetchall("SELECT DISTINCT tg_id FROM users")
@@ -1211,6 +1267,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "bulk_gift": "اعمال هدیه همگانی",
     "alerts": "هشدارها و پایش IP",
     "card_config": "تنظیمات کارت بانکی",
+    "receipt_config": "تنظیمات دریافت رسید واریز",
     "inbounds": "مدیریت اینباندهای سرور",
     "referral": "تنظیمات زیرمجموعه‌گیری",
     "broadcast": "ارسال پیام همگانی",
@@ -1236,6 +1293,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "bulk_gift": True,
     "alerts": True,
     "card_config": False,
+    "receipt_config": False,
     "inbounds": False,
     "referral": True,
     "broadcast": True,
