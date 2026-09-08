@@ -546,8 +546,8 @@ Sending `/control` or `/admin_control` opens the administrative control dashboar
   - Configure thresholds for low data warnings (e.g. `< 2 GB`) and expiration warnings (e.g. `< 3 days`).
   - Configure auto-deletion grace periods (`auto_delete_days`, default 3 days) after which expired keys are automatically purged.
 - **Multi-Device Anti-Abuse Limiter:** Set continuous IP check intervals and inspect current strike records.
-- **Sub-Admin Role-Based Access Control (RBAC):** Delegate operations to team members across **22 granular permission scopes**:
-  - `manage_subs`, `users_list`, `send_user_message`, `ban_users`, `create_sub`, `view_invoices`, `approve_invoices`, `delete_invoices`, `pricing`, `shop_status`, `discounts`, `test_sub`, `bulk_gift`, `alerts`, `card_config`, `inbounds`, `referral`, `broadcast`, `start_message`, `channel_lock`, `reset_configs`, `stats`.
+- **Sub-Admin Role-Based Access Control (RBAC):** Delegate operations to team members across **23 granular permission scopes**:
+  - `manage_subs`, `users_list`, `send_user_message`, `ban_users`, `create_sub`, `view_invoices`, `approve_invoices`, `delete_invoices`, `pricing`, `shop_status`, `discounts`, `test_sub`, `bulk_gift`, `alerts`, `card_config`, `receipt_config`, `inbounds`, `referral`, `broadcast`, `start_message`, `channel_lock`, `reset_configs`, `stats`.
 
 ---
 
