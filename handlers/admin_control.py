@@ -1402,10 +1402,14 @@ async def admin_discounts_menu(
                 else f"{to_persian_digits(dc['max_uses'])}"
             )
             used_str = to_persian_digits(dc["used_count"])
-            percent_str = to_persian_digits(dc["discount_percent"])
+            rules = dc.get("rules") or {}
+            if rules.get("discount_type") == "fixed":
+                val_str = f"{format_price(rules.get('amount', 0))} (نقدی)"
+            else:
+                val_str = f"{to_persian_digits(dc['discount_percent'])}٪ تخفیف"
 
             text += (
-                f"🔹 <b>{dc['code']}</b> — {percent_str}٪ تخفیف | "
+                f"🔹 <b>{dc['code']}</b> — {val_str} | "
                 f"استفاده: {used_str}/{max_uses_str} | وضعیت: {status_emoji}\n"
             )
         text += "\nجهت مشاهده جزئیات یا ویرایش، کد مورد نظر را انتخاب کنید:"
@@ -1422,10 +1426,15 @@ async def admin_discounts_menu(
 
     for dc in codes[:10]:
         status_symbol = "🟢" if dc["is_active"] else "🔴"
+        rules = dc.get("rules") or {}
+        if rules.get("discount_type") == "fixed":
+            val_display = format_price(rules.get("amount", 0))
+        else:
+            val_display = f"{to_persian_digits(dc['discount_percent'])}%"
         keyboard_rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{status_symbol} {dc['code']} ({to_persian_digits(dc['discount_percent'])}%)",
+                    text=f"{status_symbol} {dc['code']} ({val_display})",
                     callback_data=f"admin_disc_view_{dc['code']}",
                 )
             ]
