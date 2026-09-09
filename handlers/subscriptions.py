@@ -10,13 +10,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
-from db.discounts import validate_discount_code
+from db.discounts import validate_discount_code, calculate_discount_amount
 from db.models import (
     create_invoice,
     debit_wallet,
     get_balance,
     get_card_config,
     update_invoice_status,
+    get_active_client_group,
 )
 from keyboards.inline_kb import (
     card_payment_keyboard,
@@ -1037,7 +1038,19 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         return
 
     code = message.text.strip()
-    is_valid, err_msg, dc = await validate_discount_code(code, message.from_user.id)
+    active_group = await get_active_client_group()
+    order_context = {
+        "data_gb": gb,
+        "duration_days": duration,
+        "users_count": users,
+        "original_price": original_price,
+        "is_renewal": True,
+        "client_email": email,
+        "client_group": active_group,
+    }
+    is_valid, err_msg, dc = await validate_discount_code(
+        code, message.from_user.id, order_context=order_context
+    )
 
     if not is_valid or not dc:
         await message.answer(
@@ -1047,14 +1060,20 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         )
         return
 
-    percent = dc["discount_percent"]
-    discount_amount = int(round(original_price * percent / 100))
-    final_price = max(0, original_price - discount_amount)
+    discount_amount, final_price = calculate_discount_amount(dc, original_price)
     clean_code = dc["code"]
+    rules = dc.get("rules") or {}
+    disc_type = rules.get("discount_type", "percent")
+    if disc_type == "fixed":
+        disc_label = f"{format_price(rules.get('amount', 0))} تخفیف نقدی"
+    else:
+        percent = rules.get("amount") or dc["discount_percent"]
+        disc_label = f"{to_persian_digits(percent)}٪ تخفیف"
 
     await state.update_data(
         discount_code=clean_code,
-        discount_percent=percent,
+        discount_percent=dc.get("discount_percent", 0),
+        discount_amount=discount_amount,
         price=final_price,
         original_price=original_price,
     )
@@ -1076,7 +1095,7 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💰 <b>مبلغ اصلی:</b> <s>{format_price(original_price)}</s>\n"
-        f"🎁 <b>کد تخفیف:</b> <code>{clean_code}</code> ({to_persian_digits(percent)}٪ تخفیف)\n"
+        f"🎁 <b>کد تخفیف:</b> <code>{clean_code}</code> (<b>{disc_label}</b>)\n"
         f"📉 <b>سود شما از این خرید:</b> {format_price(discount_amount)}\n"
         f"💎 <b>مبلغ نهایی قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
         f"💳 روش پرداخت مورد نظر خود را انتخاب فرمایید:"

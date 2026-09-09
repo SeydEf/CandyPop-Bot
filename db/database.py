@@ -72,6 +72,7 @@ async def init_db() -> None:
             max_uses         INTEGER DEFAULT -1,
             used_count       INTEGER NOT NULL DEFAULT 0,
             is_active        INTEGER NOT NULL DEFAULT 1,
+            rules            TEXT DEFAULT '{}',
             created_at       TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -79,6 +80,7 @@ async def init_db() -> None:
             code        TEXT NOT NULL,
             tg_id       INTEGER NOT NULL,
             used_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            usage_count INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY (code, tg_id)
         );
 
@@ -121,6 +123,20 @@ async def init_db() -> None:
     try:
         await db.execute(
             "ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0"
+        )
+    except Exception:
+        pass
+
+    try:
+        await db.execute(
+            "ALTER TABLE discount_codes ADD COLUMN rules TEXT DEFAULT '{}'"
+        )
+    except Exception:
+        pass
+
+    try:
+        await db.execute(
+            "ALTER TABLE discount_usage ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 1"
         )
     except Exception:
         pass

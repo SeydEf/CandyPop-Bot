@@ -1520,23 +1520,50 @@ def generate_random_code(length: int = 8) -> str:
     return "".join(random.choice(chars) for _ in range(length))
 
 
+def parse_discount_rules(rules_raw: str | dict[str, Any] | None) -> dict[str, Any]:
+    if isinstance(rules_raw, dict):
+        return rules_raw
+    if isinstance(rules_raw, str) and rules_raw.strip():
+        try:
+            return json.loads(rules_raw)
+        except Exception:
+            return {}
+    return {}
+
+
 async def create_discount_code(
     code: str,
     discount_percent: int,
     max_uses: int = -1,
+    rules: dict[str, Any] | None = None,
 ) -> bool:
     clean_code = code.strip().upper()
-    if not clean_code or discount_percent < 1 or discount_percent > 100:
+    if not clean_code:
         return False
+
+    rules_dict = rules or {}
+    disc_type = rules_dict.get("discount_type", "percent")
+    if disc_type == "percent":
+        if discount_percent < 1 or discount_percent > 100:
+            return False
+    elif disc_type == "fixed":
+        fixed_amt = rules_dict.get("amount", 0)
+        if fixed_amt <= 0:
+            return False
 
     db = await get_db()
     try:
         await db.execute(
             """
-            INSERT INTO discount_codes (code, discount_percent, max_uses, used_count, is_active)
-            VALUES (?, ?, ?, 0, 1)
+            INSERT INTO discount_codes (code, discount_percent, max_uses, used_count, is_active, rules)
+            VALUES (?, ?, ?, 0, 1, ?)
             """,
-            (clean_code, discount_percent, max_uses),
+            (
+                clean_code,
+                discount_percent,
+                max_uses,
+                json.dumps(rules_dict, ensure_ascii=False),
+            ),
         )
         await db.commit()
         return True
@@ -1552,7 +1579,9 @@ async def get_discount_code(code: str) -> dict[str, Any] | None:
     )
     row = await cursor.fetchone()
     if row:
-        return dict(row)
+        dc = dict(row)
+        dc["rules"] = parse_discount_rules(dc.get("rules"))
+        return dc
     return None
 
 
@@ -1560,7 +1589,12 @@ async def list_discount_codes() -> list[dict[str, Any]]:
     db = await get_db()
     cursor = await db.execute("SELECT * FROM discount_codes ORDER BY created_at DESC")
     rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    result = []
+    for row in rows:
+        dc = dict(row)
+        dc["rules"] = parse_discount_rules(dc.get("rules"))
+        result.append(dc)
+    return result
 
 
 async def update_discount_code(
@@ -1568,6 +1602,7 @@ async def update_discount_code(
     discount_percent: int | None = None,
     max_uses: int | None = None,
     is_active: bool | None = None,
+    rules: dict[str, Any] | None = None,
 ) -> bool:
     clean_code = code.strip().upper()
     current = await get_discount_code(clean_code)
@@ -1581,15 +1616,19 @@ async def update_discount_code(
     )
     new_max = max_uses if max_uses is not None else current["max_uses"]
     new_active = int(is_active) if is_active is not None else current["is_active"]
+    new_rules = json.dumps(
+        rules if rules is not None else current.get("rules", {}),
+        ensure_ascii=False,
+    )
 
     db = await get_db()
     await db.execute(
         """
         UPDATE discount_codes
-        SET discount_percent = ?, max_uses = ?, is_active = ?
+        SET discount_percent = ?, max_uses = ?, is_active = ?, rules = ?
         WHERE code = ?
         """,
-        (new_percent, new_max, new_active, clean_code),
+        (new_percent, new_max, new_active, new_rules, clean_code),
     )
     await db.commit()
     return True
@@ -1605,26 +1644,58 @@ async def delete_discount_code(code: str) -> bool:
     return cursor.rowcount > 0
 
 
-async def has_user_used_discount(code: str, tg_id: int) -> bool:
+async def get_user_discount_usage_count(code: str, tg_id: int) -> int:
     clean_code = code.strip().upper()
     db = await get_db()
     cursor = await db.execute(
-        "SELECT 1 FROM discount_usage WHERE code = ? AND tg_id = ?",
+        "SELECT usage_count FROM discount_usage WHERE code = ? AND tg_id = ?",
         (clean_code, tg_id),
     )
-    if await cursor.fetchone():
-        return True
+    row = await cursor.fetchone()
+    used = row[0] if row and row[0] is not None else 0
 
     cursor = await db.execute(
-        "SELECT 1 FROM invoices WHERE tg_id = ? AND UPPER(discount_code) = ? AND status = 'approved'",
+        "SELECT COUNT(*) FROM invoices WHERE tg_id = ? AND UPPER(discount_code) = ? AND status = 'approved'",
         (tg_id, clean_code),
     )
-    return (await cursor.fetchone()) is not None
+    inv_row = await cursor.fetchone()
+    inv_count = inv_row[0] if inv_row else 0
+    return max(used, inv_count)
+
+
+async def has_user_used_discount(code: str, tg_id: int, max_allowed: int = 1) -> bool:
+    if max_allowed == -1:
+        return False
+    used_count = await get_user_discount_usage_count(code, tg_id)
+    return used_count >= max_allowed
+
+
+def calculate_discount_amount(
+    dc: dict[str, Any], original_price: int
+) -> tuple[int, int]:
+    rules = dc.get("rules") or {}
+    disc_type = rules.get("discount_type", "percent")
+    if disc_type == "fixed":
+        fixed_val = int(rules.get("amount", 0))
+        discount_amount = min(fixed_val, original_price)
+    else:
+        percent = int(rules.get("amount") or dc.get("discount_percent", 0))
+        discount_amount = int(round(original_price * percent / 100))
+        max_cap = rules.get("max_discount_amount")
+        if max_cap and int(max_cap) > 0:
+            discount_amount = min(discount_amount, int(max_cap))
+
+    final_price = max(0, original_price - discount_amount)
+    return discount_amount, final_price
 
 
 async def validate_discount_code(
-    code: str, tg_id: int | None = None
+    code: str,
+    tg_id: int | None = None,
+    order_context: dict[str, Any] | None = None,
 ) -> tuple[bool, str, dict[str, Any] | None]:
+    from utils.formatting import format_price, to_persian_digits
+
     clean_code = code.strip().upper()
     if not clean_code:
         return False, "❌ کد تخفیف نمی‌تواند خالی باشد.", None
@@ -1642,9 +1713,156 @@ async def validate_discount_code(
     if max_uses is not None and max_uses > 0 and used_count >= max_uses:
         return False, "❌ ظرفیت استفاده از این کد تخفیف به پایان رسیده است.", None
 
+    rules = dc.get("rules") or {}
+
+    expires_at_str = rules.get("expires_at")
+    if expires_at_str:
+        try:
+            exp_dt = datetime.fromisoformat(expires_at_str)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            now_dt = datetime.now(timezone.utc)
+            if now_dt > exp_dt:
+                return (
+                    False,
+                    "❌ مهلت زمانی استفاده از این کد تخفیف به پایان رسیده است.",
+                    None,
+                )
+        except Exception:
+            pass
+
     if tg_id is not None:
-        if await has_user_used_discount(clean_code, tg_id):
-            return False, "❌ شما قبلاً یک‌بار از این کد تخفیف استفاده کرده‌اید.", None
+        max_per_user = rules.get("max_uses_per_user", 1)
+        if await has_user_used_discount(clean_code, tg_id, max_allowed=max_per_user):
+            if max_per_user == 1:
+                return False, "❌ شما قبلاً یک‌بار از این کد تخفیف استفاده کرده‌اید.", None
+            return (
+                False,
+                f"❌ شما قبلاً به حداکثر سقف مجاز استفاده از این کد تخفیف ({to_persian_digits(max_per_user)} بار) رسیده‌اید.",
+                None,
+            )
+
+    if tg_id is not None and rules.get("first_time_only"):
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT 1 FROM invoices WHERE tg_id = ? AND status = 'approved' LIMIT 1",
+            (tg_id,),
+        )
+        if await cursor.fetchone():
+            return (
+                False,
+                "❌ این کد تخفیف مخصوص اولین خرید کاربران جدید می‌باشد.",
+                None,
+            )
+
+    allowed_users = rules.get("allowed_users")
+    if tg_id is not None and allowed_users:
+        user = await get_user(tg_id)
+        user_uname = (user.get("username") or "").lower().lstrip("@") if user else ""
+        matched = False
+        for au in allowed_users:
+            au_str = str(au).strip().lower().lstrip("@")
+            if au_str == str(tg_id) or (user_uname and au_str == user_uname):
+                matched = True
+                break
+        if not matched:
+            return (
+                False,
+                "❌ این کد تخفیف برای حساب کاربری شما مجاز نمی‌باشد.",
+                None,
+            )
+
+    if order_context:
+        order_type = rules.get("order_type", "all")
+        is_renewal = bool(order_context.get("is_renewal", False))
+        if order_type == "new" and is_renewal:
+            return (
+                False,
+                "❌ این کد تخفیف فقط برای «خرید اشتراک جدید» قابل استفاده است.",
+                None,
+            )
+        if order_type == "renew" and not is_renewal:
+            return (
+                False,
+                "❌ این کد تخفیف فقط برای «تمدید اشتراک» قابل استفاده است.",
+                None,
+            )
+
+        min_gb = rules.get("min_gb")
+        if min_gb is not None and min_gb > 0:
+            actual_gb = order_context.get("data_gb", 0)
+            if actual_gb < min_gb:
+                return (
+                    False,
+                    f"❌ این کد تخفیف فقط برای سفارش‌های حداقل {to_persian_digits(min_gb)} گیگابایت معتبر است.",
+                    None,
+                )
+
+        max_gb = rules.get("max_gb")
+        if max_gb is not None and max_gb > 0:
+            actual_gb = order_context.get("data_gb", 0)
+            if actual_gb > max_gb:
+                return (
+                    False,
+                    f"❌ این کد تخفیف فقط برای سفارش‌های حداکثر {to_persian_digits(max_gb)} گیگابایت معتبر است.",
+                    None,
+                )
+
+        allowed_durations = rules.get("allowed_durations")
+        if allowed_durations and isinstance(allowed_durations, list):
+            actual_dur = order_context.get("duration_days")
+            if actual_dur not in allowed_durations:
+                durs_str = "، ".join(
+                    f"{to_persian_digits(d)} روزه" for d in sorted(allowed_durations)
+                )
+                return (
+                    False,
+                    f"❌ این کد تخفیف فقط برای دوره‌های {durs_str} معتبر است.",
+                    None,
+                )
+
+        min_amount = rules.get("min_amount")
+        if min_amount is not None and min_amount > 0:
+            actual_amount = order_context.get("original_price", 0)
+            if actual_amount < min_amount:
+                return (
+                    False,
+                    f"❌ این کد تخفیف فقط برای سفارش‌های با حداقل مبلغ {format_price(min_amount)} معتبر است.",
+                    None,
+                )
+
+        allowed_groups = rules.get("allowed_groups")
+        if allowed_groups and isinstance(allowed_groups, list):
+            from services import xui_api
+
+            matched_group = False
+            ctx_group = order_context.get("client_group")
+            if ctx_group:
+                if ctx_group in allowed_groups:
+                    matched_group = True
+            elif order_context.get("client_email"):
+                try:
+                    c = await xui_api.get_client(order_context["client_email"])
+                    if c and c.get("group") in allowed_groups:
+                        matched_group = True
+                except Exception:
+                    pass
+            elif tg_id is not None:
+                try:
+                    clients = await xui_api.get_clients_by_tg_id(tg_id)
+                    for c in clients:
+                        if c.get("group") in allowed_groups:
+                            matched_group = True
+                            break
+                except Exception:
+                    pass
+            if not matched_group:
+                grps_str = "، ".join(allowed_groups)
+                return (
+                    False,
+                    f"❌ این کد تخفیف مخصوص کاربران گروه {grps_str} می‌باشد.",
+                    None,
+                )
 
     return True, "✅ کد تخفیف معتبر است.", dc
 
@@ -1658,7 +1876,11 @@ async def increment_discount_usage(code: str, tg_id: int | None = None) -> None:
     )
     if tg_id is not None:
         await db.execute(
-            "INSERT OR IGNORE INTO discount_usage (code, tg_id) VALUES (?, ?)",
+            """INSERT INTO discount_usage (code, tg_id, used_at, usage_count)
+               VALUES (?, ?, datetime('now'), 1)
+               ON CONFLICT(code, tg_id) DO UPDATE SET
+                   usage_count = usage_count + 1,
+                   used_at = datetime('now')""",
             (clean_code, tg_id),
         )
     await db.commit()

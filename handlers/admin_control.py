@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
@@ -77,6 +79,14 @@ class AdminControlStates(StatesGroup):
     waiting_channel_lock_link = State()
     waiting_invoice_search = State()
     waiting_receipt_disabled_text = State()
+    waiting_disc_fixed_amount = State()
+    waiting_disc_min_gb = State()
+    waiting_disc_max_gb = State()
+    waiting_disc_min_amount = State()
+    waiting_disc_max_cap = State()
+    waiting_disc_target_users = State()
+    waiting_disc_expiry_custom = State()
+    waiting_disc_user_limit = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -1521,11 +1531,28 @@ async def admin_disc_create_manual_save(
         return
 
     await state.update_data(new_code=code)
-    await state.set_state(AdminControlStates.waiting_disc_percent)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 تخفیف درصدی (%)",
+                    callback_data="admin_disc_type_percent",
+                ),
+                InlineKeyboardButton(
+                    text="💵 تخفیف مبلغ ثابت (تومان)",
+                    callback_data="admin_disc_type_fixed",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_discounts_menu"
+                )
+            ],
+        ]
+    )
     await message.answer(
-        f"✅ کد <code>{code}</code> انتخاب شد.\n\n"
-        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\n"
-        "مثال: <code>20</code>",
+        f"✅ کد <code>{code}</code> انتخاب شد.\n\nنوع تخفیف را مشخص فرمایید:",
+        reply_markup=keyboard,
         parse_mode="HTML",
     )
 
@@ -1579,11 +1606,91 @@ async def admin_disc_create_auto_save(
         code = generate_random_code(length)
 
     await state.update_data(new_code=code)
-    await state.set_state(AdminControlStates.waiting_disc_percent)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 تخفیف درصدی (%)",
+                    callback_data="admin_disc_type_percent",
+                ),
+                InlineKeyboardButton(
+                    text="💵 تخفیف مبلغ ثابت (تومان)",
+                    callback_data="admin_disc_type_fixed",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data="admin_discounts_menu"
+                )
+            ],
+        ]
+    )
     await message.answer(
-        f"🎲 کد تصادفی <code>{code}</code> تولید گردید.\n\n"
-        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\n"
-        "مثال: <code>20</code>",
+        f"🎲 کد تصادفی <code>{code}</code> تولید گردید.\n\nنوع تخفیف را مشخص فرمایید:",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_disc_type_percent")
+async def admin_disc_type_percent(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.set_state(AdminControlStates.waiting_disc_percent)
+    await state.update_data(discount_type="percent")
+    await callback.message.edit_text(
+        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\nمثال: <code>20</code>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_disc_type_fixed")
+async def admin_disc_type_fixed(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.set_state(AdminControlStates.waiting_disc_fixed_amount)
+    await state.update_data(discount_type="fixed")
+    await callback.message.edit_text(
+        "💵 <b>مبلغ ثابت تخفیف به تومان را وارد کنید:</b>\nمثال: <code>50000</code>",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_fixed_amount, F.text)
+async def admin_disc_create_fixed_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        amount = int(clean)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان (بزرگتر از صفر) وارد کنید."
+        )
+        return
+
+    await state.update_data(
+        discount_type="fixed", new_fixed_amount=amount, new_percent=0
+    )
+    await state.set_state(AdminControlStates.waiting_disc_max_uses)
+    await message.answer(
+        f"✅ مبلغ تخفیف: <b>{format_price(amount)}</b>\n\n"
+        "🔢 <b>حداکثر تعداد استفاده از این کد را وارد کنید:</b>\n"
+        "(برای <b>استفاده بی‌نهایت</b> عدد <code>0</code> را ارسال کنید)\n"
+        "مثال: <code>50</code> یا <code>0</code>",
         parse_mode="HTML",
     )
 
@@ -1637,25 +1744,132 @@ async def admin_disc_create_max_uses_save(
 
     data = await state.get_data()
     code = data["new_code"]
-    percent = data["new_percent"]
+    disc_type = data.get("discount_type", "percent")
+    percent = data.get("new_percent", 0)
+    fixed_amt = data.get("new_fixed_amount", 0)
     uses_value = -1 if max_uses == 0 else max_uses
+
+    rules = {
+        "discount_type": disc_type,
+        "amount": fixed_amt if disc_type == "fixed" else percent,
+    }
 
     from db.discounts import create_discount_code
 
-    success = await create_discount_code(code, percent, uses_value)
+    success = await create_discount_code(
+        code=code,
+        discount_percent=percent if disc_type == "percent" else 0,
+        max_uses=uses_value,
+        rules=rules,
+    )
     await state.clear()
 
     if success:
-        panel_text, keyboard = await _build_pricing_panel()
+        val_display = (
+            f"<b>{format_price(fixed_amt)}</b> (مبلغ ثابت)"
+            if disc_type == "fixed"
+            else f"<b>{to_persian_digits(percent)}٪</b>"
+        )
         max_str = "بی‌نهایت" if uses_value == -1 else f"{to_persian_digits(uses_value)}"
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="⚙️ تنظیم شروط کد تخفیف",
+                        callback_data=f"admin_disc_rules_{code}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🏷️ مشاهده مشخصات کد",
+                        callback_data=f"admin_disc_view_{code}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔙 لیست کدهای تخفیف",
+                        callback_data="admin_discounts_menu",
+                    )
+                ],
+            ]
+        )
         await message.answer(
-            f"✅ کد تخفیف <code>{code}</code> با <b>{to_persian_digits(percent)}٪</b> تخفیف "
-            f"و ظرفیت <b>{max_str}</b> ساخته شد!\n\n{panel_text}",
-            reply_markup=keyboard,
+            f"✅ کد تخفیف <code>{code}</code> با مقدار {val_display} و ظرفیت <b>{max_str}</b> ساخته شد!\n\n"
+            "اکنون می‌توانید با دکمه زیر شروط مورد نظرتان (حجم، مدت، نوع سفارش، خریدار بار اول، انقضا و...) را به آن اضافه کنید:",
+            reply_markup=kb,
             parse_mode="HTML",
         )
     else:
         await message.answer("❌ خطا در ثبت کد تخفیف. ممکن است کد تکراری باشد.")
+
+
+def _format_discount_rules_summary(rules: dict) -> str:
+    lines = []
+
+    order_type = rules.get("order_type", "all")
+    if order_type == "new":
+        lines.append("▫️ نوع سفارش: <b>فقط خریدهای جدید</b>")
+    elif order_type == "renew":
+        lines.append("▫️ نوع سفارش: <b>فقط تمدید اشتراک</b>")
+    else:
+        lines.append("▫️ نوع سفارش: <b>همه سفارش‌ها (جدید و تمدید)</b>")
+
+    if rules.get("first_time_only"):
+        lines.append("▫️ مخاطب: <b>فقط خریداران بار اول (بدون فاکتور قبلی)</b>")
+
+    min_gb = rules.get("min_gb")
+    max_gb = rules.get("max_gb")
+    if min_gb and max_gb:
+        lines.append(
+            f"▫️ محدوده حجم: <b>از {to_persian_digits(min_gb)} تا {to_persian_digits(max_gb)} گیگابایت</b>"
+        )
+    elif min_gb:
+        lines.append(f"▫️ حداقل حجم: <b>{to_persian_digits(min_gb)} گیگابایت</b>")
+    elif max_gb:
+        lines.append(f"▫️ حداکثر حجم: <b>{to_persian_digits(max_gb)} گیگابایت</b>")
+
+    durs = rules.get("allowed_durations")
+    if durs:
+        durs_str = "، ".join(f"{to_persian_digits(d)} روزه" for d in sorted(durs))
+        lines.append(f"▫️ دوره‌های مجاز: <b>{durs_str}</b>")
+
+    min_amt = rules.get("min_amount")
+    if min_amt:
+        lines.append(f"▫️ حداقل مبلغ سبد خرید: <b>{format_price(min_amt)}</b>")
+
+    cap = rules.get("max_discount_amount")
+    if cap:
+        lines.append(f"▫️ سقف تخفیف درصدی: <b>{format_price(cap)}</b>")
+
+    users = rules.get("allowed_users")
+    if users:
+        u_display = ", ".join(
+            str(u) if str(u).startswith("@") or str(u).isdigit() else f"@{u}"
+            for u in users[:3]
+        )
+        if len(users) > 3:
+            u_display += f" و {to_persian_digits(len(users) - 3)} کاربر دیگر"
+        lines.append(f"▫️ کاربران مجاز: <b>{u_display}</b>")
+
+    groups = rules.get("allowed_groups")
+    if groups:
+        lines.append(f"▫️ گروه‌های کلاینت مجاز: <b>{'، '.join(groups)}</b>")
+
+    user_lim = rules.get("max_uses_per_user", 1)
+    if user_lim in (-1, 0):
+        lines.append("▫️ دفعات مجاز هر کاربر: <b>نامحدود</b>")
+    else:
+        lines.append(f"▫️ دفعات مجاز هر کاربر: <b>{to_persian_digits(user_lim)} بار</b>")
+
+    exp_str = rules.get("expires_at")
+    if exp_str:
+        lines.append(f"▫️ تاریخ انقضا: <b>{format_datetime(exp_str)}</b>")
+    else:
+        lines.append("▫️ مهلت زمانی: <b>همیشگی (بدون انقضا)</b>")
+
+    if not lines:
+        return "▫️ <i>بدون شرط خاص (آزاد برای همه سفارش‌ها و کاربران)</i>"
+    return "\n".join(lines)
 
 
 @router.callback_query(F.data.startswith("admin_disc_view_"))
@@ -1679,15 +1893,32 @@ async def admin_disc_view(callback: types.CallbackQuery, state: FSMContext) -> N
         else f"{to_persian_digits(dc['max_uses'])}"
     )
 
+    rules = dc.get("rules") or {}
+    disc_type = rules.get("discount_type", "percent")
+    if disc_type == "fixed":
+        type_str = f"💵 مبلغ ثابت: <b>{format_price(rules.get('amount', 0))}</b>"
+        edit_val_btn = "💵 تغییر مبلغ تخفیف"
+    else:
+        max_cap = rules.get("max_discount_amount")
+        cap_str = f" (سقف: {format_price(max_cap)})" if max_cap else ""
+        type_str = (
+            f"📊 درصدی: <b>{to_persian_digits(dc['discount_percent'])}٪</b>{cap_str}"
+        )
+        edit_val_btn = "📊 تغییر درصد تخفیف"
+
+    rules_summary = _format_discount_rules_summary(rules)
+
     text = (
         f"🏷️ <b>جزئیات کد تخفیف:</b> <code>{dc['code']}</code>\n\n"
-        f"📊 <b>میزان تخفیف:</b> {to_persian_digits(dc['discount_percent'])}٪\n"
-        f"🔢 <b>میزان استفاده:</b> {to_persian_digits(dc['used_count'])} از {max_uses_str}\n"
+        f"🔹 <b>نوع و ارزش:</b> {type_str}\n"
+        f"🔢 <b>میزان استفاده کل:</b> {to_persian_digits(dc['used_count'])} از {max_uses_str}\n"
         f"🔘 <b>وضعیت:</b> {status_str}\n\n"
-        "جهت تغییر ویژگی‌ها یا حذف، گزینه مورد نظر را انتخاب کنید:"
+        f"📋 <b>شروط و محدودیت‌های فعال:</b>\n"
+        f"{rules_summary}\n\n"
+        "جهت تغییر ویژگی‌ها، شروط یا حذف، گزینه مورد نظر را انتخاب کنید:"
     )
 
-    toggle_btn_text = "🔴 غیرفعال‌سازی" if dc["is_active"] else "🟢 فعال‌سازی"
+    toggle_btn_text = "🔴 غیرفعال‌سازی کد" if dc["is_active"] else "🟢 فعال‌سازی کد"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1699,7 +1930,13 @@ async def admin_disc_view(callback: types.CallbackQuery, state: FSMContext) -> N
             ],
             [
                 InlineKeyboardButton(
-                    text="📊 تغییر درصد تخفیف",
+                    text="⚙️ تنظیم و مدیریت شروط کد تخفیف",
+                    callback_data=f"admin_disc_rules_{dc['code']}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=edit_val_btn,
                     callback_data=f"admin_disc_edit_p_{dc['code']}",
                 ),
                 InlineKeyboardButton(
@@ -1771,13 +2008,31 @@ async def admin_disc_edit_percent_start(
         return
 
     code = callback.data[len("admin_disc_edit_p_") :]
+    from db.discounts import get_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد تخفیف یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    disc_type = rules.get("discount_type", "percent")
+
     await state.set_state(AdminControlStates.waiting_disc_edit_percent)
-    await state.update_data(edit_code=code)
-    await callback.message.edit_text(
-        f"📊 <b>درصد جدید تخفیف را برای کد <code>{code}</code> (۱ تا ۱۰۰) وارد کنید:</b>\n\n"
-        "برای انصراف /cancel را بزنید.",
-        parse_mode="HTML",
-    )
+    await state.update_data(edit_code=code, disc_type=disc_type)
+
+    if disc_type == "fixed":
+        prompt = (
+            f"💵 <b>مبلغ جدید تخفیف را برای کد <code>{code}</code> به تومان وارد کنید:</b>\n\n"
+            "برای انصراف /cancel را بزنید."
+        )
+    else:
+        prompt = (
+            f"📊 <b>درصد جدید تخفیف را برای کد <code>{code}</code> (۱ تا ۱۰۰) وارد کنید:</b>\n\n"
+            "برای انصراف /cancel را بزنید."
+        )
+
+    await callback.message.edit_text(prompt, parse_mode="HTML")
     await callback.answer()
 
 
@@ -1790,29 +2045,58 @@ async def admin_disc_edit_percent_save(
         await message.answer("❌ عملیات لغو شد.")
         return
 
-    try:
-        clean = persian_to_english_digits(message.text.strip())
-        val = int(clean)
-        if val < 1 or val > 100:
-            raise ValueError
-    except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
-        return
-
     data = await state.get_data()
     code = data.get("edit_code")
+    disc_type = data.get("disc_type", "percent")
     if not code:
         await state.clear()
         return
 
-    from db.discounts import update_discount_code
+    from db.discounts import get_discount_code, update_discount_code
 
-    await update_discount_code(code, discount_percent=val)
+    dc = await get_discount_code(code)
+    if not dc:
+        await state.clear()
+        await message.answer("❌ کد تخفیف یافت نشد.")
+        return
+
+    rules = dc.get("rules") or {}
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if disc_type == "fixed":
+            if val < 1000:
+                await message.answer("❌ حداقل مبلغ تخفیف ۱,۰۰۰ تومان است.")
+                return
+            rules["amount"] = val
+            await update_discount_code(code, rules=rules)
+            msg_val = format_price(val)
+        else:
+            if val < 1 or val > 100:
+                await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+                return
+            rules["amount"] = val
+            await update_discount_code(code, discount_percent=val, rules=rules)
+            msg_val = f"{to_persian_digits(val)}٪"
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد معتبر وارد کنید.")
+        return
+
     await state.clear()
-    panel_text, keyboard = await _build_pricing_panel()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🏷 مشاهده کد تخفیف",
+                    callback_data=f"admin_disc_view_{code}",
+                )
+            ]
+        ]
+    )
     await message.answer(
-        f"✅ درصد تخفیف کد <code>{code}</code> به <b>{to_persian_digits(val)}٪</b> تغییر یافت.\n\n{panel_text}",
-        reply_markup=keyboard,
+        f"✅ میزان تخفیف کد <code>{code}</code> به <b>{msg_val}</b> تغییر یافت.",
+        reply_markup=kb,
         parse_mode="HTML",
     )
 
@@ -1863,11 +2147,1106 @@ async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) ->
     uses_value = -1 if val == 0 else val
     await update_discount_code(code, max_uses=uses_value)
     await state.clear()
-    panel_text, keyboard = await _build_pricing_panel()
     max_str = "بی‌نهایت" if uses_value == -1 else f"{to_persian_digits(uses_value)}"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🏷 مشاهده کد تخفیف",
+                    callback_data=f"admin_disc_view_{code}",
+                )
+            ]
+        ]
+    )
     await message.answer(
-        f"✅ سقف استفاده از کد <code>{code}</code> به <b>{max_str}</b> تغییر یافت.\n\n{panel_text}",
-        reply_markup=keyboard,
+        f"✅ سقف استفاده از کد <code>{code}</code> به <b>{max_str}</b> تغییر یافت.",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+# --- Sub-Panel: Discount Code Rules & Conditions ---
+
+
+async def _build_disc_rules_menu_content(code: str) -> tuple[str, InlineKeyboardMarkup]:
+    from db.discounts import get_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        return "❌ کد تخفیف یافت نشد.", InlineKeyboardMarkup(inline_keyboard=[])
+
+    rules = dc.get("rules") or {}
+    dtype = rules.get("discount_type", "percent")
+
+    summary = _format_discount_rules_summary(rules)
+    text = (
+        f"⚙️ <b>مدیریت و تنظیم شروط کد تخفیف:</b> <code>{code}</code>\n\n"
+        f"📋 <b>وضعیت شروط فعلی:</b>\n"
+        f"{summary}\n\n"
+        "جهت تغییر هر یک از شروط، دکمه مورد نظر را لمس کنید:"
+    )
+
+    otype = rules.get("order_type", "all")
+    otype_map = {"all": "🌐 همه", "new": "✨ فقط جدید", "renew": "🔄 فقط تمدید"}
+    btn_otype = InlineKeyboardButton(
+        text=f"نوع سفارش: {otype_map.get(otype, 'همه')}",
+        callback_data=f"admin_disc_r_ordertype_{code}",
+    )
+
+    first_time = rules.get("first_time_only", False)
+    btn_first_time = InlineKeyboardButton(
+        text=f"فقط خرید اول: {'🟢 بله' if first_time else '⚪️ خیر'}",
+        callback_data=f"admin_disc_r_firsttime_{code}",
+    )
+
+    min_gb = rules.get("min_gb")
+    max_gb = rules.get("max_gb")
+    btn_min_gb = InlineKeyboardButton(
+        text=f"📉 حداقل: {to_persian_digits(min_gb)}GB" if min_gb else "📉 حداقل: آزاد",
+        callback_data=f"admin_disc_r_mingb_{code}",
+    )
+    btn_max_gb = InlineKeyboardButton(
+        text=f"📈 حداکثر: {to_persian_digits(max_gb)}GB"
+        if max_gb
+        else "📈 حداکثر: آزاد",
+        callback_data=f"admin_disc_r_maxgb_{code}",
+    )
+
+    durs = rules.get("allowed_durations")
+    dur_label = f"{to_persian_digits(len(durs))} دوره" if durs else "همه دوره‌ها"
+    btn_durs = InlineKeyboardButton(
+        text=f"⏱ دوره‌ها: {dur_label}",
+        callback_data=f"admin_disc_r_durs_menu_{code}",
+    )
+
+    min_amt = rules.get("min_amount")
+    btn_min_amt = InlineKeyboardButton(
+        text=f"💳 حداقل مبلغ: {format_price(min_amt)}"
+        if min_amt
+        else "💳 حداقل مبلغ: آزاد",
+        callback_data=f"admin_disc_r_minamt_{code}",
+    )
+
+    extra_rows = []
+    if dtype == "percent":
+        cap = rules.get("max_discount_amount")
+        btn_cap = InlineKeyboardButton(
+            text=f"🛑 سقف تخفیف: {format_price(cap)}"
+            if cap
+            else "🛑 سقف تخفیف: بدون سقف",
+            callback_data=f"admin_disc_r_maxcap_{code}",
+        )
+        extra_rows.append([btn_cap])
+
+    users = rules.get("allowed_users")
+    btn_users = InlineKeyboardButton(
+        text=f"👥 کاربران: {to_persian_digits(len(users))} کاربر"
+        if users
+        else "👥 کاربران: همه",
+        callback_data=f"admin_disc_r_users_{code}",
+    )
+
+    groups = rules.get("allowed_groups")
+    btn_groups = InlineKeyboardButton(
+        text=f"🏷 گروه‌ها: {to_persian_digits(len(groups))} گروه"
+        if groups
+        else "🏷 گروه‌ها: همه",
+        callback_data=f"admin_disc_r_groups_menu_{code}",
+    )
+
+    user_lim = rules.get("max_uses_per_user", 1)
+    user_lim_str = (
+        "نامحدود" if user_lim in (-1, 0) else f"{to_persian_digits(user_lim)} بار"
+    )
+    btn_user_lim = InlineKeyboardButton(
+        text=f"🔁 هر کاربر: {user_lim_str}",
+        callback_data=f"admin_disc_r_userlim_{code}",
+    )
+
+    exp_str = rules.get("expires_at")
+    exp_btn_label = "دارد ⏳" if exp_str else "بدون انقضا"
+    btn_exp = InlineKeyboardButton(
+        text=f"⏳ انقضا: {exp_btn_label}",
+        callback_data=f"admin_disc_r_exp_menu_{code}",
+    )
+
+    btn_reset = InlineKeyboardButton(
+        text="🧹 حذف تمامی شروط (ریست)",
+        callback_data=f"admin_disc_r_reset_{code}",
+    )
+    btn_back = InlineKeyboardButton(
+        text="🔙 بازگشت به جزئیات کد تخفیف",
+        callback_data=f"admin_disc_view_{code}",
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [btn_otype, btn_first_time],
+            [btn_min_gb, btn_max_gb],
+            [btn_durs, btn_min_amt],
+            *extra_rows,
+            [btn_users, btn_groups],
+            [btn_user_lim, btn_exp],
+            [btn_reset],
+            [btn_back],
+        ]
+    )
+    return text, keyboard
+
+
+async def _build_disc_durs_menu_content(code: str) -> tuple[str, InlineKeyboardMarkup]:
+    from db.discounts import get_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        return "❌ کد تخفیف یافت نشد.", InlineKeyboardMarkup(inline_keyboard=[])
+
+    rules = dc.get("rules") or {}
+    allowed = set(rules.get("allowed_durations") or [])
+
+    preset_durs = [30, 60, 90, 180, 365]
+    buttons = []
+    row = []
+    for d in preset_durs:
+        label = (
+            f"✅ {to_persian_digits(d)} روزه"
+            if d in allowed
+            else f"{to_persian_digits(d)} روزه"
+        )
+        row.append(
+            InlineKeyboardButton(
+                text=label,
+                callback_data=f"admin_disc_r_td_{code}_{d}",
+            )
+        )
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="❌ پاکسازی (مجاز بودن همه دوره‌ها)",
+                callback_data=f"admin_disc_r_durs_clear_{code}",
+            )
+        ]
+    )
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به شروط",
+                callback_data=f"admin_disc_rules_{code}",
+            )
+        ]
+    )
+
+    text = (
+        f"⏱ <b>تنظیم دوره‌های مجاز برای کد:</b> <code>{code}</code>\n\n"
+        "با لمس هر دوره، وضعیت انتخاب آن جابجا می‌شود.\n"
+        "در صورتی که هیچ دوره‌ای انتخاب نشود، کد روی <b>تمامی دوره‌ها</b> معتبر خواهد بود."
+    )
+    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def _build_disc_groups_menu_content(
+    code: str,
+) -> tuple[str, InlineKeyboardMarkup]:
+    from db.discounts import get_discount_code
+    from services import xui_api
+
+    dc = await get_discount_code(code)
+    if not dc:
+        return "❌ کد تخفیف یافت نشد.", InlineKeyboardMarkup(inline_keyboard=[])
+
+    rules = dc.get("rules") or {}
+    allowed_groups = set(rules.get("allowed_groups") or [])
+
+    groups = await xui_api.list_client_groups()
+    buttons = []
+
+    if not groups:
+        text = (
+            f"🏷 <b>تنظیم گروه‌های کلاینت مجاز برای کد:</b> <code>{code}</code>\n\n"
+            "⚠️ هیچ گروه کلاینتی در پنل 3x-ui تعریف نشده است."
+        )
+    else:
+        text = (
+            f"🏷 <b>تنظیم گروه‌های کلاینت مجاز برای کد:</b> <code>{code}</code>\n\n"
+            "گروه‌هایی که این کد تخفیف روی آن‌ها معتبر است را انتخاب کنید:\n"
+            "(اگر هیچ گروهی انتخاب نشود، برای تمام گروه‌ها معتبر خواهد بود)"
+        )
+        row = []
+        for idx, g in enumerate(groups):
+            g_name = g.get("name", "")
+            if not g_name:
+                continue
+            is_checked = g_name in allowed_groups
+            label = f"✅ {g_name}" if is_checked else g_name
+            row.append(
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"admin_disc_r_tg_{code}_{idx}",
+                )
+            )
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="❌ پاکسازی (مجاز بودن همه گروه‌ها)",
+                callback_data=f"admin_disc_r_groups_clear_{code}",
+            )
+        ]
+    )
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به شروط",
+                callback_data=f"admin_disc_rules_{code}",
+            )
+        ]
+    )
+    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def _build_disc_exp_menu_content(code: str) -> tuple[str, InlineKeyboardMarkup]:
+    from db.discounts import get_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        return "❌ کد تخفیف یافت نشد.", InlineKeyboardMarkup(inline_keyboard=[])
+
+    rules = dc.get("rules") or {}
+    exp_str = rules.get("expires_at")
+    current_exp = format_datetime(exp_str) if exp_str else "بدون تاریخ انقضا (همیشگی)"
+
+    text = (
+        f"⏳ <b>تنظیم تاریخ انقضای کد تخفیف:</b> <code>{code}</code>\n\n"
+        f"▫️ مهلت فعلی: <b>{current_exp}</b>\n\n"
+        "یکی از بازه‌های سریع زیر را انتخاب کنید یا تاریخ دلخواه خود را وارد نمایید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚡️ ۲۴ ساعت آینده",
+                    callback_data=f"admin_disc_r_setexp_{code}_24h",
+                ),
+                InlineKeyboardButton(
+                    text="⚡️ ۳ روز آینده",
+                    callback_data=f"admin_disc_r_setexp_{code}_3d",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚡️ ۷ روز آینده",
+                    callback_data=f"admin_disc_r_setexp_{code}_7d",
+                ),
+                InlineKeyboardButton(
+                    text="⚡️ ۳۰ روز آینده",
+                    callback_data=f"admin_disc_r_setexp_{code}_30d",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📅 ورود تاریخ یا روز دلخواه",
+                    callback_data=f"admin_disc_r_exp_custom_{code}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ حذف تاریخ انقضا (نامحدود)",
+                    callback_data=f"admin_disc_r_setexp_{code}_none",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به شروط",
+                    callback_data=f"admin_disc_rules_{code}",
+                ),
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data.startswith("admin_disc_rules_"))
+async def admin_disc_rules_view(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    code = callback.data[len("admin_disc_rules_") :]
+    text, keyboard = await _build_disc_rules_menu_content(code)
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_ordertype_"))
+async def admin_disc_r_ordertype(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_ordertype_") :]
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    cycle = {"all": "new", "new": "renew", "renew": "all"}
+    rules["order_type"] = cycle.get(rules.get("order_type", "all"), "all")
+    await update_discount_code(code, rules=rules)
+    text, keyboard = await _build_disc_rules_menu_content(code)
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_firsttime_"))
+async def admin_disc_r_firsttime(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_firsttime_") :]
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    rules["first_time_only"] = not bool(rules.get("first_time_only", False))
+    await update_discount_code(code, rules=rules)
+    text, keyboard = await _build_disc_rules_menu_content(code)
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_mingb_"))
+async def admin_disc_r_mingb_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_mingb_") :]
+    await state.set_state(AdminControlStates.waiting_disc_min_gb)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"📉 <b>حداقل حجم مجاز (گیگابایت) را برای کد <code>{code}</code> وارد کنید:</b>\n"
+        "(جهت حذف محدودیت عدد <code>0</code> را وارد کنید)\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_min_gb, F.text)
+async def admin_disc_r_mingb_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_rules_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر (0 یا بیشتر) وارد کنید.")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    rules = dc.get("rules") or {} if dc else {}
+    rules["min_gb"] = val if val > 0 else None
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+
+    text, kb = await _build_disc_rules_menu_content(code)
+    res_str = (
+        f"<b>{to_persian_digits(val)} گیگابایت</b>"
+        if val > 0
+        else "<b>حذف شد (بدون محدودیت)</b>"
+    )
+    await message.answer(
+        f"✅ حداقل حجم مجاز برای کد <code>{code}</code> {res_str}.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_maxgb_"))
+async def admin_disc_r_maxgb_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_maxgb_") :]
+    await state.set_state(AdminControlStates.waiting_disc_max_gb)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"📈 <b>حداکثر حجم مجاز (گیگابایت) را برای کد <code>{code}</code> وارد کنید:</b>\n"
+        "(جهت حذف محدودیت عدد <code>0</code> را وارد کنید)\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_max_gb, F.text)
+async def admin_disc_r_maxgb_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_rules_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر (0 یا بیشتر) وارد کنید.")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    rules = dc.get("rules") or {} if dc else {}
+    rules["max_gb"] = val if val > 0 else None
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+
+    text, kb = await _build_disc_rules_menu_content(code)
+    res_str = (
+        f"<b>{to_persian_digits(val)} گیگابایت</b>"
+        if val > 0
+        else "<b>حذف شد (بدون محدودیت)</b>"
+    )
+    await message.answer(
+        f"✅ حداکثر حجم مجاز برای کد <code>{code}</code> {res_str}.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_minamt_"))
+async def admin_disc_r_minamt_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_minamt_") :]
+    await state.set_state(AdminControlStates.waiting_disc_min_amount)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"💳 <b>حداقل مبلغ سفارش (تومان) را برای کد <code>{code}</code> وارد کنید:</b>\n"
+        "(جهت حذف محدودیت عدد <code>0</code> را وارد کنید)\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_min_amount, F.text)
+async def admin_disc_r_minamt_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_rules_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    rules = dc.get("rules") or {} if dc else {}
+    rules["min_amount"] = val if val > 0 else None
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+
+    text, kb = await _build_disc_rules_menu_content(code)
+    res_str = f"<b>{format_price(val)}</b>" if val > 0 else "<b>حذف شد (بدون سقف)</b>"
+    await message.answer(
+        f"✅ حداقل مبلغ فاکتور برای کد <code>{code}</code> {res_str}.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_maxcap_"))
+async def admin_disc_r_maxcap_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_maxcap_") :]
+    await state.set_state(AdminControlStates.waiting_disc_max_cap)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"🛑 <b>حداکثر سقف مبلغ تخفیف (تومان) را برای کد <code>{code}</code> وارد کنید:</b>\n"
+        "(جهت بدون سقف بودن عدد <code>0</code> را وارد کنید)\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_max_cap, F.text)
+async def admin_disc_r_maxcap_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_rules_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    rules = dc.get("rules") or {} if dc else {}
+    rules["max_discount_amount"] = val if val > 0 else None
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+
+    text, kb = await _build_disc_rules_menu_content(code)
+    res_str = f"<b>{format_price(val)}</b>" if val > 0 else "<b>حذف شد (بدون سقف)</b>"
+    await message.answer(
+        f"✅ سقف تخفیف برای کد <code>{code}</code> {res_str}.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_userlim_"))
+async def admin_disc_r_userlim_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_userlim_") :]
+    await state.set_state(AdminControlStates.waiting_disc_user_limit)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"🔁 <b>حداکثر دفعات مجاز استفاده برای هر کاربر از کد <code>{code}</code> را وارد کنید:</b>\n"
+        "(مثلاً <code>1</code> یا <code>2</code> — برای بی‌نهایت عدد <code>0</code> را وارد کنید)\n\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_user_limit, F.text)
+async def admin_disc_r_userlim_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_rules_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = persian_to_english_digits(message.text.strip())
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    rules = dc.get("rules") or {} if dc else {}
+    rules["max_uses_per_user"] = -1 if val == 0 else val
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+
+    text, kb = await _build_disc_rules_menu_content(code)
+    res_str = (
+        f"<b>{to_persian_digits(val)} بار به ازای هر کاربر</b>"
+        if val > 0
+        else "<b>نامحدود</b>"
+    )
+    await message.answer(
+        f"✅ سقف استفاده هر کاربر از کد <code>{code}</code> به {res_str} تغییر یافت.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_users_"))
+async def admin_disc_r_users_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_users_") :]
+    await state.set_state(AdminControlStates.waiting_disc_target_users)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"👥 <b>شناسه عددی یا آیدی تلگرام کاربران مجاز را برای کد <code>{code}</code> وارد کنید:</b>\n\n"
+        "می‌توانید چند شناسه یا یوزرنیم را با <b>فاصله، کاما یا خط جدید</b> از یکدیگر جدا کنید.\n"
+        "مثال:\n"
+        "<code>123456789 @username 987654321</code>\n\n"
+        "برای حذف محدودیت و مجاز بودن کد برای تمامی کاربران، عدد <code>0</code> را ارسال کنید.\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_target_users, F.text)
+async def admin_disc_r_users_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_rules_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    raw_text = message.text.strip()
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    rules = dc.get("rules") or {} if dc else {}
+
+    if raw_text in ("0", "پاک", "حذف", "همه"):
+        rules["allowed_users"] = []
+        desc = "حذف شد (مجاز برای همه کاربران)"
+    else:
+        tokens = re.split(r"[\s,]+", raw_text)
+        users_list: list[str | int] = []
+        for t in tokens:
+            t = t.strip()
+            if not t:
+                continue
+            if t.startswith("@"):
+                t = t[1:]
+            clean_t = persian_to_english_digits(t)
+            if clean_t.isdigit():
+                users_list.append(int(clean_t))
+            else:
+                users_list.append(t)
+        rules["allowed_users"] = users_list
+        desc = f"محدود به {to_persian_digits(len(users_list))} کاربر"
+
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+
+    text, kb = await _build_disc_rules_menu_content(code)
+    await message.answer(
+        f"✅ کاربران مجاز برای کد <code>{code}</code> تنظیم شدند ({desc}).\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_reset_"))
+async def admin_disc_r_reset(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_reset_") :]
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    old_rules = dc.get("rules") or {}
+    clean_rules = {
+        "discount_type": old_rules.get("discount_type", "percent"),
+        "amount": old_rules.get("amount", dc.get("discount_percent", 0)),
+    }
+    await update_discount_code(code, rules=clean_rules)
+    text, keyboard = await _build_disc_rules_menu_content(code)
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ تمامی شروط پاکسازی شدند.", show_alert=True)
+
+
+# --- Sub-Panels: Durations, Groups, Expiration ---
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_durs_menu_"))
+async def admin_disc_r_durs_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_durs_menu_") :]
+    text, kb = await _build_disc_durs_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_td_"))
+async def admin_disc_r_toggle_dur(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    payload = callback.data[len("admin_disc_r_td_") :]
+    code, dur_str = payload.rsplit("_", 1)
+    dur = int(dur_str)
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    durs = set(rules.get("allowed_durations") or [])
+    if dur in durs:
+        durs.remove(dur)
+    else:
+        durs.add(dur)
+    rules["allowed_durations"] = sorted(list(durs))
+    await update_discount_code(code, rules=rules)
+    text, kb = await _build_disc_durs_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_durs_clear_"))
+async def admin_disc_r_durs_clear(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_durs_clear_") :]
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    rules["allowed_durations"] = []
+    await update_discount_code(code, rules=rules)
+    text, kb = await _build_disc_durs_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer("✅ محدودیت دوره‌ها پاکسازی شد.")
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_groups_menu_"))
+async def admin_disc_r_groups_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_groups_menu_") :]
+    text, kb = await _build_disc_groups_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_tg_"))
+async def admin_disc_r_toggle_group(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    payload = callback.data[len("admin_disc_r_tg_") :]
+    code, idx_str = payload.rsplit("_", 1)
+    idx = int(idx_str)
+
+    from db.discounts import get_discount_code, update_discount_code
+    from services import xui_api
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    groups = await xui_api.list_client_groups()
+    if idx < 0 or idx >= len(groups):
+        await callback.answer("❌ گروه یافت نشد.", show_alert=True)
+        return
+
+    g_name = groups[idx].get("name", "")
+    rules = dc.get("rules") or {}
+    allowed = set(rules.get("allowed_groups") or [])
+    if g_name in allowed:
+        allowed.remove(g_name)
+    else:
+        allowed.add(g_name)
+    rules["allowed_groups"] = list(allowed)
+    await update_discount_code(code, rules=rules)
+    text, kb = await _build_disc_groups_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_groups_clear_"))
+async def admin_disc_r_groups_clear(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_groups_clear_") :]
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    rules["allowed_groups"] = []
+    await update_discount_code(code, rules=rules)
+    text, kb = await _build_disc_groups_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer("✅ محدودیت گروه‌ها پاکسازی شد.")
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_exp_menu_"))
+async def admin_disc_r_exp_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_exp_menu_") :]
+    text, kb = await _build_disc_exp_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_setexp_"))
+async def admin_disc_r_setexp(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+    payload = callback.data[len("admin_disc_r_setexp_") :]
+    code, val = payload.rsplit("_", 1)
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await callback.answer("❌ کد یافت نشد.", show_alert=True)
+        return
+
+    rules = dc.get("rules") or {}
+    if val == "none":
+        rules["expires_at"] = None
+    else:
+        hours_map = {"24h": 24, "3d": 72, "7d": 168, "30d": 720}
+        h = hours_map.get(val, 24)
+        exp_dt = datetime.now(timezone.utc) + timedelta(hours=h)
+        rules["expires_at"] = exp_dt.isoformat()
+
+    await update_discount_code(code, rules=rules)
+    text, kb = await _build_disc_exp_menu_content(code)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer("✅ تاریخ انقضا به‌روزرسانی شد.")
+
+
+@router.callback_query(F.data.startswith("admin_disc_r_exp_custom_"))
+async def admin_disc_r_exp_custom_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    code = callback.data[len("admin_disc_r_exp_custom_") :]
+    await state.set_state(AdminControlStates.waiting_disc_expiry_custom)
+    await state.update_data(edit_code=code)
+    await callback.message.edit_text(
+        f"📅 <b>ورود تاریخ یا مهلت انقضا برای کد <code>{code}</code>:</b>\n\n"
+        "می‌توانید به دو روش وارد کنید:\n"
+        "۱. <b>تعداد روز:</b> مثلاً <code>10</code> (۱۰ روز از اکنون)\n"
+        "۲. <b>تاریخ شمسی:</b> مثلاً <code>1404/06/31</code> یا <code>1404/06/31 23:59</code>\n\n"
+        "برای حذف انقضا عدد <code>0</code> را ارسال کنید.\n"
+        "برای انصراف /cancel را بزنید.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_disc_expiry_custom, F.text)
+async def admin_disc_r_exp_custom_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        if code:
+            text, kb = await _build_disc_exp_menu_content(code)
+            await message.answer(
+                f"❌ عملیات لغو شد.\n\n{text}", reply_markup=kb, parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not code:
+        await state.clear()
+        return
+
+    from db.discounts import get_discount_code, update_discount_code
+
+    dc = await get_discount_code(code)
+    if not dc:
+        await state.clear()
+        await message.answer("❌ کد تخفیف یافت نشد.")
+        return
+
+    rules = dc.get("rules") or {}
+    clean = persian_to_english_digits(message.text.strip())
+
+    if clean == "0":
+        rules["expires_at"] = None
+        exp_desc = "حذف شد (بدون تاریخ انقضا)"
+    elif clean.isdigit():
+        days = int(clean)
+        if days <= 0:
+            rules["expires_at"] = None
+            exp_desc = "حذف شد (بدون تاریخ انقضا)"
+        else:
+            exp_dt = datetime.now(timezone.utc) + timedelta(days=days)
+            rules["expires_at"] = exp_dt.isoformat()
+            exp_desc = f"{to_persian_digits(days)} روز دیگر ({format_datetime(rules['expires_at'])})"
+    else:
+        clean_date = clean.replace("-", "/").strip()
+        import jdatetime
+
+        exp_iso = None
+        for fmt in ("%Y/%m/%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
+            try:
+                jdt = jdatetime.datetime.strptime(clean_date, fmt)
+                if fmt == "%Y/%m/%d":
+                    jdt = jdt.replace(hour=23, minute=59, second=59)
+                greg = jdt.togregorian()
+                tz_iran = timezone(timedelta(hours=3, minutes=30))
+                greg = greg.replace(tzinfo=tz_iran)
+                exp_iso = greg.astimezone(timezone.utc).isoformat()
+                break
+            except Exception:
+                continue
+
+        if not exp_iso:
+            await message.answer(
+                "❌ فرمت تاریخ نامعتبر است.\n"
+                "لطفاً تعداد روز (مثلاً <code>7</code>) یا تاریخ شمسی (مانند <code>1404/06/31</code>) وارد کنید:"
+            )
+            return
+        rules["expires_at"] = exp_iso
+        exp_desc = format_datetime(exp_iso)
+
+    await update_discount_code(code, rules=rules)
+    await state.clear()
+    text, kb = await _build_disc_rules_menu_content(code)
+    await message.answer(
+        f"✅ تاریخ انقضای کد <code>{code}</code> تنظیم شد: <b>{exp_desc}</b>\n\n{text}",
+        reply_markup=kb,
         parse_mode="HTML",
     )
 
