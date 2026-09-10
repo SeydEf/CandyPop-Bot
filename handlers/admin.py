@@ -52,29 +52,6 @@ async def admin_reset_tests(message: types.Message) -> None:
     )
 
 
-def _filter_invoice_keyboard(
-    reply_markup: types.InlineKeyboardMarkup | None,
-) -> types.InlineKeyboardMarkup | None:
-    if not reply_markup or not reply_markup.inline_keyboard:
-        return None
-    new_rows = []
-    for row in reply_markup.inline_keyboard:
-        new_row = [
-            btn
-            for btn in row
-            if not (
-                btn.callback_data
-                and (
-                    btn.callback_data.startswith("admin_approve_")
-                    or btn.callback_data.startswith("admin_reject_")
-                )
-            )
-        ]
-        if new_row:
-            new_rows.append(new_row)
-    return types.InlineKeyboardMarkup(inline_keyboard=new_rows) if new_rows else None
-
-
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     if not await _is_admin(callback):
@@ -84,10 +61,19 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     invoice_id = callback.data[len("admin_approve_") :]
     from services.invoice_service import approve_invoice
 
-    success, msg, _ = await approve_invoice(invoice_id, bot, is_reapproval=False)
+    success, msg, inv_info = await approve_invoice(invoice_id, bot, is_reapproval=False)
     if not success:
         await callback.answer(msg, show_alert=True)
         return
+
+    import html
+
+    admin_name = html.escape(
+        callback.from_user.full_name
+        or (f"@{callback.from_user.username}" if callback.from_user.username else "")
+        or str(callback.from_user.id)
+    )
+    admin_mention = f'<a href="tg://user?id={callback.from_user.id}">{admin_name}</a>'
 
     admin_text = callback.message.text or callback.message.caption or ""
     if "وضعیت فعلی:" in admin_text:
@@ -96,12 +82,19 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
             "🔘 <b>وضعیت فعلی:</b> 🟢 تأییدشده",
             admin_text,
         )
-        admin_text += f"\n\n✅ <b>تأیید شد — {msg}</b>"
+        admin_text += f"\n\n✅ <b>تأیید شد توسط {admin_mention} — {msg}</b>"
     else:
-        admin_text += f"\n\n✅ تأیید شد — {msg}"
+        admin_text += f"\n\n✅ تأیید شد توسط {admin_mention} — {msg}"
 
-    new_kb = _filter_invoice_keyboard(callback.message.reply_markup)
+    from keyboards.inline_kb import admin_invoice_processed_keyboard
     from utils.helpers import safe_edit_text
+
+    tg_id = inv_info.get("tg_id", 0) if inv_info else 0
+    new_kb = admin_invoice_processed_keyboard(
+        invoice_id=invoice_id,
+        tg_id=tg_id,
+        is_rejected=False,
+    )
 
     await safe_edit_text(
         callback.message,
@@ -133,6 +126,15 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
 
     await update_invoice_status(invoice_id, "rejected")
 
+    import html
+
+    admin_name = html.escape(
+        callback.from_user.full_name
+        or (f"@{callback.from_user.username}" if callback.from_user.username else "")
+        or str(callback.from_user.id)
+    )
+    admin_mention = f'<a href="tg://user?id={callback.from_user.id}">{admin_name}</a>'
+
     admin_text = callback.message.text or callback.message.caption or ""
     if "وضعیت فعلی:" in admin_text:
         admin_text = re.sub(
@@ -140,12 +142,23 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
             "🔘 <b>وضعیت فعلی:</b> 🔴 ردشده",
             admin_text,
         )
-        admin_text += "\n\n❌ <b>پرداخت توسط ادمین رد شد.</b>"
+        admin_text += f"\n\n❌ <b>پرداخت توسط ادمین ({admin_mention}) رد شد.</b>"
     else:
-        admin_text += "\n\n❌ رد شد"
+        admin_text += f"\n\n❌ رد شد توسط {admin_mention}"
 
-    new_kb = _filter_invoice_keyboard(callback.message.reply_markup)
+    from db.models import has_admin_permission
+    from keyboards.inline_kb import admin_invoice_processed_keyboard
     from utils.helpers import safe_edit_text
+
+    can_reapprove = await has_admin_permission(
+        callback.from_user.id, "reapprove_invoices"
+    )
+    new_kb = admin_invoice_processed_keyboard(
+        invoice_id=invoice_id,
+        tg_id=tg_id,
+        is_rejected=True,
+        can_reapprove=can_reapprove,
+    )
 
     await safe_edit_text(
         callback.message,

@@ -190,6 +190,37 @@ def admin_payment_review_keyboard(invoice_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def admin_invoice_processed_keyboard(
+    invoice_id: str,
+    tg_id: int,
+    is_rejected: bool = False,
+    can_reapprove: bool = False,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if is_rejected and can_reapprove:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازبینی و تأیید مجدد",
+                    callback_data=f"admin_inv_reapprove_ask_{invoice_id}_all_0",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="👤 پروفایل کاربر",
+                callback_data=f"admin_manage_user_{tg_id}_inv_{invoice_id}_all_0",
+            ),
+            InlineKeyboardButton(
+                text="🧾 جزئیات فاکتور",
+                callback_data=f"admin_inv_view_{invoice_id}_all_0",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def subscriptions_list_keyboard(
     subs: list[dict],
 ) -> InlineKeyboardMarkup:
