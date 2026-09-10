@@ -211,6 +211,38 @@ async def _perform_search_and_render(
         )
 
 
+def _format_ts_and_relative(
+    ts_ms: int | None,
+    is_online_check: bool = False,
+    default_text: str = "ثبت نشده ⚪️",
+) -> str:
+    if not ts_ms or ts_ms <= 0:
+        return f"<i>{default_text}</i>"
+
+    now_ms = int(time.time() * 1000)
+    diff_sec = max(0, int((now_ms - ts_ms) / 1000))
+
+    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+    dt_str = format_datetime(dt.isoformat())
+
+    if is_online_check and diff_sec <= 180:
+        return "<b>🟢 آنلاین (هم‌اکنون)</b>"
+
+    if diff_sec < 60:
+        rel_str = "لحظاتی پیش"
+    elif diff_sec < 3600:
+        mins = max(1, diff_sec // 60)
+        rel_str = f"{to_persian_digits(mins)} دقیقه پیش"
+    elif diff_sec < 86400:
+        hrs = diff_sec // 3600
+        rel_str = f"{to_persian_digits(hrs)} ساعت پیش"
+    else:
+        days = diff_sec // 86400
+        rel_str = f"{to_persian_digits(days)} روز پیش"
+
+    return f"<code>{dt_str}</code> ({rel_str})"
+
+
 async def _render_sub_dashboard(
     event: types.CallbackQuery | types.Message,
     email: str,
@@ -233,6 +265,16 @@ async def _render_sub_dashboard(
     up_bytes = traffic.get("up", 0) if traffic else 0
     down_bytes = traffic.get("down", 0) if traffic else 0
     used_bytes = up_bytes + down_bytes
+
+    last_online_ms = traffic.get("lastOnline", 0) if traffic else 0
+    last_sub_fetch_ms = traffic.get("lastSubFetch", 0) if traffic else 0
+
+    last_online_str = _format_ts_and_relative(
+        last_online_ms, is_online_check=True, default_text="هرگز متصل نشده ⚪️"
+    )
+    last_sub_fetch_str = _format_ts_and_relative(
+        last_sub_fetch_ms, is_online_check=False, default_text="هرگز دریافت نشده ⚪️"
+    )
 
     total_bytes = client.get("totalGB", 0)
     total_gb = total_bytes / (1024**3)
@@ -274,6 +316,9 @@ async def _render_sub_dashboard(
         f"👥 <b>سقف کاربر (IP):</b> {limit_ip_str}\n"
         f"🏷 <b>گروه مشتری:</b> <code>{group_name}</code>\n"
         f"🆔 <b>آیدی تلگرام:</b> <code>{client.get('tgId', 'نامشخص')}</code>\n\n"
+        f"📡 <b>وضعیت اتصال و آنلاین:</b>\n"
+        f"   • 🌐 آخرین اتصال: {last_online_str}\n"
+        f"   • 🔄 آخرین دریافت ساب: {last_sub_fetch_str}\n\n"
         f"📊 <b>حجم کل:</b> {format_size_gb(total_gb)}\n"
         f"📉 <b>حجم مصرفی:</b> {format_size_gb(used_gb)}\n"
         f"🔋 <b>حجم باقیمانده:</b> {format_size_gb(rem_gb)}\n\n"
@@ -309,12 +354,22 @@ async def _render_sub_dashboard(
             ],
             [
                 InlineKeyboardButton(
-                    text="👤 تغییر سقف کاربر (IP)",
+                    text="👥 سقف کاربر (IP)",
                     callback_data=f"admin_sub_ip_menu_{email}",
                 ),
                 InlineKeyboardButton(
                     text="✏️ تغییر نام (Email)",
                     callback_data=f"admin_sub_rename_menu_{email}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏷 تغییر گروه",
+                    callback_data=f"admin_sub_group_menu_{email}",
+                ),
+                InlineKeyboardButton(
+                    text="👤 تغییر کاربر (Telegram ID)",
+                    callback_data=f"admin_sub_tgid_menu_{email}",
                 ),
             ],
             [
@@ -334,7 +389,7 @@ async def _render_sub_dashboard(
                 ),
                 InlineKeyboardButton(
                     text="🗑 حذف کامل اشتراک",
-                    callback_data=f"admin_sub_delete_{email}",
+                    callback_data=f"admin_sub_del_ask_{email}",
                 ),
             ],
             [InlineKeyboardButton(text=back_btn_text, callback_data=back_btn_callback)],
@@ -524,6 +579,22 @@ async def _render_user_dashboard(
         await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
+async def _clear_fsm_keep_nav(state: FSMContext) -> None:
+    data = await state.get_data()
+    nav_keys = (
+        "invoice_back_callback",
+        "sub_back_callback",
+        "user_subs_emails",
+        "current_list_page",
+        "last_search_query",
+        "manage_user_id",
+    )
+    nav_data = {k: data[k] for k in nav_keys if k in data}
+    await state.clear()
+    if nav_data:
+        await state.set_data(nav_data)
+
+
 @router.callback_query(F.data.startswith("admin_manage_sub_"))
 async def admin_manage_sub_dashboard(
     callback: types.CallbackQuery, state: FSMContext
@@ -531,6 +602,7 @@ async def admin_manage_sub_dashboard(
     if not await _is_admin(callback):
         return
 
+    await _clear_fsm_keep_nav(state)
     email = callback.data[len("admin_manage_sub_") :]
     await _render_sub_dashboard(callback, email, state)
 
@@ -544,13 +616,24 @@ async def admin_sub_gb_prompt(callback: types.CallbackQuery, state: FSMContext) 
     await state.update_data(manage_email=email)
     await state.set_state(AdminSearchStates.waiting_add_gb)
 
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_manage_sub_{email}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"📊 <b>افزایش یا تنظیم حجم جدید برای اشتراک «{email}»:</b>\n\n"
         "حجم اضافه یا حجم جدید را به گیگابایت وارد کنید:\n"
         "• برای افزودن حجم به اشتراک فعلی، عدد گیگابایت را وارد کنید (مثال: <code>20</code>)\n"
         "• برای ست کردن حجم مشخص، عبارت <code>set:50</code> را ارسال کنید.\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
     await callback.answer()
 
@@ -627,13 +710,24 @@ async def admin_sub_days_prompt(
     await state.update_data(manage_email=email)
     await state.set_state(AdminSearchStates.waiting_add_days)
 
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_manage_sub_{email}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"⏱ <b>افزایش یا تمدید زمان برای اشتراک «{email}»:</b>\n\n"
         "تعداد روز جدید یا اضافی را وارد کنید:\n"
         "• برای <b>تمدید و افزودن روز</b>، عدد روزها را وارد کنید (مثال: <code>30</code>)\n"
         "• برای <b>تنظیم دقیق روزهای مانده از الان</b>، عبارت <code>set:60</code> را بفرستید.\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
     await callback.answer()
 
@@ -722,12 +816,23 @@ async def admin_sub_ip_prompt(callback: types.CallbackQuery, state: FSMContext) 
     await state.update_data(manage_email=email)
     await state.set_state(AdminSearchStates.waiting_limit_ip)
 
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_manage_sub_{email}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"👤 <b>تغییر سقف کاربر همزمان (IP Limit) برای «{email}»:</b>\n\n"
         "تعداد کاربران مجاز همزمان را به صورت عدد وارد کنید (0 یعنی نامحدود):\n"
         "مثال: <code>2</code>\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
     await callback.answer()
 
@@ -793,11 +898,22 @@ async def admin_sub_rename_prompt(
     await state.update_data(manage_email=email)
     await state.set_state(AdminSearchStates.waiting_rename_email)
 
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_manage_sub_{email}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"✏️ <b>تغییر نام سرویس (Email) برای «{email}»:</b>\n\n"
         "نام جدید و دلخواه خود را ارسال نمایید:\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
     await callback.answer()
 
@@ -934,41 +1050,141 @@ async def admin_sub_qr(callback: types.CallbackQuery) -> None:
         await callback.answer("❌ لینک اشتراک یافت نشد.", show_alert=True)
 
 
+@router.callback_query(F.data.startswith("admin_sub_del_ask_"))
+async def admin_sub_del_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_sub_del_ask_") :]
+    text = (
+        f"⚠️ <b>آیا از حذف کامل اشتراک «<code>{email}</code>» اطمینان دارید؟</b>\n\n"
+        "⚠️ <i>این عملیات غیرقابل بازگشت است و کلاینت به طور کامل از پنل و سرور حذف خواهد شد.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🗑 بله، حذف شود",
+                    callback_data=f"admin_sub_delete_{email}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_manage_sub_{email}",
+                ),
+            ],
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("admin_sub_delete_"))
 async def admin_sub_delete(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not await _is_admin(callback):
         return
 
     email = callback.data[len("admin_sub_delete_") :]
+    delete_success = False
     try:
         await xui_api.delete_client(email)
+        delete_success = True
         await callback.answer(f"✅ اشتراک «{email}» با موفقیت حذف شد.", show_alert=True)
     except Exception as e:
         logger.error("Failed to delete client %s: %s", email, e)
         await callback.answer(f"❌ خطا در حذف اشتراک: {e}", show_alert=True)
 
+    if not delete_success:
+        await _render_sub_dashboard(
+            callback, email, state, notice=f"❌ خطا در حذف اشتراک «{email}»"
+        )
+        return
+
     data = await state.get_data()
+    sub_back = data.get("sub_back_callback")
+    manage_user_id = data.get("manage_user_id")
     last_query = data.get("last_search_query")
+    notice_text = f"✅ اشتراک «{email}» با موفقیت حذف شد."
+
+    if sub_back:
+        if sub_back.startswith("admin_user_subs_"):
+            parts = sub_back.split("_")
+            tg_id = int(parts[3])
+            remaining = await xui_api.get_normalized_clients_by_tg_id(tg_id)
+            if not remaining:
+                await _render_user_dashboard(
+                    callback,
+                    tg_id,
+                    state,
+                    notice=f"✅ اشتراک «{email}» حذف شد. کاربر هیچ اشتراک دیگری ندارد.",
+                )
+                return
+            else:
+                callback.data = sub_back
+                await admin_user_subs(callback, state)
+                return
+        elif sub_back.startswith("admin_manage_user_"):
+            parts = sub_back[len("admin_manage_user_") :].split("_")
+            try:
+                tg_id = int(parts[0])
+                await _render_user_dashboard(callback, tg_id, state, notice=notice_text)
+                return
+            except (ValueError, IndexError):
+                pass
+        elif sub_back.startswith("admin_notif_return_"):
+            inv_id = sub_back[len("admin_notif_return_") :]
+            try:
+                from handlers.admin_invoices import render_admin_notification_view
+
+                await render_admin_notification_view(
+                    callback.message, inv_id, callback.from_user.id
+                )
+                return
+            except Exception as e:
+                logger.warning(
+                    "Failed to return to admin notif view after delete: %s", e
+                )
+
+    if manage_user_id:
+        await _render_user_dashboard(
+            callback, int(manage_user_id), state, notice=notice_text
+        )
+        return
+
     if last_query:
         await _perform_search_and_render(callback, state, last_query)
-    else:
-        await callback.message.edit_text("❌ اشتراک حذف شد.")
+        return
 
-
-async def _clear_fsm_keep_nav(state: FSMContext) -> None:
-    data = await state.get_data()
-    nav_keys = (
-        "invoice_back_callback",
-        "sub_back_callback",
-        "user_subs_emails",
-        "current_list_page",
-        "last_search_query",
-        "manage_user_id",
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به مدیریت کاربران",
+                    callback_data="admin_sub_users_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔍 جستجوی مجدد",
+                    callback_data="admin_search_start",
+                ),
+            ],
+        ]
     )
-    nav_data = {k: data[k] for k in nav_keys if k in data}
-    await state.clear()
-    if nav_data:
-        await state.set_data(nav_data)
+    await safe_edit_text(
+        callback.message,
+        f"✅ اشتراک «<code>{email}</code>» با موفقیت حذف شد.",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data.startswith("admin_manage_user_"))
