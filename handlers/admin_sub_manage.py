@@ -61,6 +61,8 @@ class AdminSearchStates(StatesGroup):
     waiting_ban_custom_msg = State()
     waiting_unban_custom_msg = State()
     waiting_user_direct_msg = State()
+    waiting_sub_custom_group = State()
+    waiting_sub_tgid = State()
 
 
 @router.message(Command("search", "find", "find_user"))
@@ -304,6 +306,14 @@ async def _render_sub_dashboard(
     limit_ip = client.get("limitIp", 0)
     limit_ip_str = f"{to_persian_digits(limit_ip)} کاربر" if limit_ip > 0 else "نامحدود"
     group_name = client.get("group", "") or "بدون گروه"
+    tg_id_val = client.get("tgId", 0) or 0
+    try:
+        tg_id_int = int(tg_id_val)
+    except (ValueError, TypeError):
+        tg_id_int = 0
+    tg_id_display = (
+        f"<code>{tg_id_int}</code>" if tg_id_int > 0 else "نامشخص (بدون کاربر)"
+    )
     sub_id = client.get("subId", "")
     sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
@@ -315,7 +325,7 @@ async def _render_sub_dashboard(
         f"🔘 <b>وضعیت:</b> {status_str}\n"
         f"👥 <b>سقف کاربر (IP):</b> {limit_ip_str}\n"
         f"🏷 <b>گروه مشتری:</b> <code>{group_name}</code>\n"
-        f"🆔 <b>آیدی تلگرام:</b> <code>{client.get('tgId', 'نامشخص')}</code>\n\n"
+        f"🆔 <b>آیدی تلگرام:</b> {tg_id_display}\n\n"
         f"📡 <b>وضعیت اتصال و آنلاین:</b>\n"
         f"   • 🌐 آخرین اتصال: {last_online_str}\n"
         f"   • 🔄 آخرین دریافت ساب: {last_sub_fetch_str}\n\n"
@@ -971,6 +981,369 @@ async def admin_sub_rename_save(message: types.Message, state: FSMContext) -> No
             )
         else:
             await message.answer(f"❌ خطا در تغییر نام سرویس: {e}")
+
+
+@router.callback_query(F.data.startswith("admin_sub_group_menu_"))
+async def admin_sub_group_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_sub_group_menu_") :]
+    await state.update_data(manage_email=email)
+    client = await xui_api.get_client(email)
+    if not client:
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        return
+
+    current_group = client.get("group", "") or ""
+    groups = await xui_api.list_client_groups()
+    group_names = [g.get("name", "") for g in groups if g.get("name")]
+    await state.update_data(available_groups=group_names)
+
+    keyboard_rows = []
+    for idx, g_name in enumerate(group_names):
+        mark = "✅ " if g_name == current_group else "📁 "
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{mark}{g_name}",
+                    callback_data=f"admin_sub_grpchoice_{idx}",
+                )
+            ]
+        )
+
+    none_mark = "✅ " if not current_group else "⚪️ "
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"{none_mark}بدون گروه",
+                callback_data="admin_sub_grpchoice_none",
+            )
+        ]
+    )
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="✏️ ورود نام دلخواه گروه",
+                callback_data="admin_sub_grpcust",
+            )
+        ]
+    )
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
+                text="❌ انصراف و بازگشت",
+                callback_data=f"admin_manage_sub_{email}",
+            )
+        ]
+    )
+
+    curr_str = f"<code>{current_group}</code>" if current_group else "<i>بدون گروه</i>"
+    text = (
+        f"🏷 <b>تغییر گروه مشتری برای اشتراک «<code>{email}</code>»:</b>\n\n"
+        f"گروه فعلی: {curr_str}\n\n"
+        "لطفاً یکی از گروه‌های موجود در پنل را انتخاب کنید یا نام دلخواه وارد نمایید:"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_sub_grpchoice_"))
+async def admin_sub_grp_select(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    data = await state.get_data()
+    email = data.get("manage_email")
+    if not email:
+        await callback.answer("❌ نشست منقضی شده است.", show_alert=True)
+        return
+
+    choice = callback.data[len("admin_sub_grpchoice_") :]
+    if choice == "none":
+        new_group = ""
+    else:
+        try:
+            idx = int(choice)
+            groups = data.get("available_groups") or []
+            new_group = groups[idx]
+        except (ValueError, IndexError):
+            await callback.answer("❌ گروه نامعتبر است.", show_alert=True)
+            return
+
+    client = await xui_api.get_client(email)
+    if not client:
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        return
+
+    update_data = dict(client)
+    update_data["group"] = new_group
+    try:
+        await xui_api.update_client(email, update_data)
+        notice = (
+            f"✅ <b>گروه اشتراک به «{new_group}» تغییر یافت.</b>"
+            if new_group
+            else "✅ <b>گروه اشتراک حذف شد (بدون گروه).</b>"
+        )
+    except Exception as e:
+        logger.error("Failed to update group for %s: %s", email, e)
+        notice = f"❌ خطا در تغییر گروه: {e}"
+
+    await _render_sub_dashboard(callback, email, state, notice=notice)
+
+
+@router.callback_query(F.data == "admin_sub_grpcust")
+async def admin_sub_grp_custom_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    data = await state.get_data()
+    email = data.get("manage_email")
+    if not email:
+        await callback.answer("❌ نشست منقضی شده است.", show_alert=True)
+        return
+
+    await state.set_state(AdminSearchStates.waiting_sub_custom_group)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_sub_group_menu_{email}",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        f"✏️ <b>ورود نام گروه دلخواه برای اشتراک «{email}»:</b>\n\n"
+        "نام گروه جدید را ارسال کنید:\n\n"
+        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminSearchStates.waiting_sub_custom_group, F.text)
+async def admin_sub_grp_custom_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    email = data.get("manage_email")
+    if not message.text or message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        if email:
+            await _render_sub_dashboard(
+                message, email, state, notice="❌ تغییر گروه لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not email:
+        await _clear_fsm_keep_nav(state)
+        return
+
+    new_group = message.text.strip()[:50]
+    client = await xui_api.get_client(email)
+    if not client:
+        await _clear_fsm_keep_nav(state)
+        await message.answer("❌ اشتراک یافت نشد.")
+        return
+
+    update_data = dict(client)
+    update_data["group"] = new_group
+    try:
+        await xui_api.update_client(email, update_data)
+        await _clear_fsm_keep_nav(state)
+        await _render_sub_dashboard(
+            message,
+            email,
+            state,
+            notice=f"✅ <b>گروه اشتراک به «{new_group}» تغییر یافت.</b>",
+        )
+    except Exception as e:
+        logger.error("Failed to update group for %s: %s", email, e)
+        await message.answer(f"❌ خطا در تغییر گروه: {e}")
+
+
+@router.callback_query(F.data.startswith("admin_sub_tgid_menu_"))
+async def admin_sub_tgid_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_sub_tgid_menu_") :]
+    await state.update_data(manage_email=email)
+    client = await xui_api.get_client(email)
+    if not client:
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        return
+
+    curr_tgid = client.get("tgId", 0) or 0
+    try:
+        curr_tgid_int = int(curr_tgid)
+    except (ValueError, TypeError):
+        curr_tgid_int = 0
+
+    curr_tgid_str = (
+        f"<code>{curr_tgid_int}</code>"
+        if curr_tgid_int > 0
+        else "<i>نامشخص (بدون کاربر)</i>"
+    )
+
+    await state.set_state(AdminSearchStates.waiting_sub_tgid)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚪️ بدون کاربر (لغو اتصال)",
+                    callback_data=f"admin_sub_tgid_clear_{email}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_manage_sub_{email}",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        f"👤 <b>تغییر یا انتساب کاربر به اشتراک «<code>{email}</code>»:</b>\n\n"
+        f"شناسه فعلی کاربر: {curr_tgid_str}\n\n"
+        "لطفاً <b>آیدی عددی تلگرام</b> (مثال: <code>123456789</code>) یا <b>نام‌کاربری</b> (مثال: <code>@username</code>) کاربر مورد نظر را ارسال نمایید:\n"
+        "• برای لغو اتصال کاربر به این اشتراک می‌توانید از دکمه زیر یا ارسال عدد <code>0</code> استفاده کنید.\n\n"
+        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_sub_tgid_clear_"))
+async def admin_sub_tgid_clear(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_sub_tgid_clear_") :]
+    client = await xui_api.get_client(email)
+    if not client:
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        return
+
+    update_data = dict(client)
+    update_data["tgId"] = 0
+
+    try:
+        await xui_api.update_client(email, update_data)
+        notice = "✅ <b>اتصال کاربر به اشتراک لغو شد (بدون کاربر).</b>"
+    except Exception as e:
+        logger.error("Failed to clear tgId for %s: %s", email, e)
+        notice = f"❌ خطا در لغو اتصال کاربر: {e}"
+
+    await _clear_fsm_keep_nav(state)
+    await _render_sub_dashboard(callback, email, state, notice=notice)
+
+
+@router.message(AdminSearchStates.waiting_sub_tgid, F.text)
+async def admin_sub_tgid_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    email = data.get("manage_email")
+
+    if not message.text or message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        if email:
+            await _render_sub_dashboard(
+                message, email, state, notice="❌ تغییر کاربر لغو شد."
+            )
+        else:
+            await message.answer("❌ عملیات لغو شد.")
+        return
+
+    if not email:
+        await _clear_fsm_keep_nav(state)
+        return
+
+    client = await xui_api.get_client(email)
+    if not client:
+        await _clear_fsm_keep_nav(state)
+        await message.answer("❌ اشتراک یافت نشد.")
+        return
+
+    raw_text = message.text.strip()
+    target_tg_id = 0
+    target_name_info = ""
+
+    if raw_text.startswith("@") or not raw_text.lstrip("-").isdigit():
+        clean_uname = raw_text.lstrip("@").strip()
+        users = await search_users(clean_uname)
+        matched_user = None
+        for u in users:
+            if (u.get("username") or "").lower() == clean_uname.lower():
+                matched_user = u
+                break
+        if not matched_user and users:
+            matched_user = users[0]
+
+        if not matched_user:
+            await message.answer(
+                f"❌ کاربری با مشخصات «{raw_text}» در دیتابیس ربات یافت نشد.\nلطفاً آیدی عددی تلگرام را وارد کنید یا نام کاربری صحیح را بفرستید."
+            )
+            return
+
+        target_tg_id = matched_user["tg_id"]
+        target_name_info = (
+            f" ({matched_user.get('full_name') or matched_user.get('username') or ''})"
+        )
+    else:
+        try:
+            target_tg_id = int(persian_to_english_digits(raw_text))
+            if target_tg_id < 0:
+                raise ValueError
+        except ValueError:
+            await message.answer(
+                "❌ لطفاً یک شناسه معتبر وارد کنید (مثال: 123456789 یا @username یا 0 برای حذف)."
+            )
+            return
+
+        if target_tg_id > 0:
+            from db.models import get_user
+
+            u = await get_user(target_tg_id)
+            if u:
+                target_name_info = f" ({u.get('full_name') or u.get('username') or ''})"
+
+    update_data = dict(client)
+    update_data["tgId"] = target_tg_id
+
+    try:
+        await xui_api.update_client(email, update_data)
+        await _clear_fsm_keep_nav(state)
+        if target_tg_id > 0:
+            notice = f"✅ <b>اشتراک با موفقیت به کاربر <code>{target_tg_id}</code>{target_name_info} منتسب شد.</b>"
+        else:
+            notice = "✅ <b>اتصال کاربر به اشتراک لغو شد (بدون کاربر).</b>"
+        await _render_sub_dashboard(message, email, state, notice=notice)
+    except Exception as e:
+        logger.error("Failed to update tgId for %s: %s", email, e)
+        await message.answer(f"❌ خطا در بروزرسانی شناسه کاربر: {e}")
 
 
 @router.callback_query(F.data.startswith("admin_sub_toggle_enable_"))
