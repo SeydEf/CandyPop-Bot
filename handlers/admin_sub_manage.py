@@ -1009,8 +1009,12 @@ async def admin_manage_user_dashboard(
             inv_id = parts[2]
             status_filter = parts[3]
             page_num = parts[4]
+            if status_filter == "notif":
+                back_target = f"admin_notif_return_{inv_id}"
+            else:
+                back_target = f"admin_inv_view_{inv_id}_{status_filter}_{page_num}"
             await state.update_data(
-                invoice_back_callback=f"admin_inv_view_{inv_id}_{status_filter}_{page_num}",
+                invoice_back_callback=back_target,
                 last_search_query=None,
             )
 

@@ -867,7 +867,7 @@ DEFAULT_RECEIPT_CONFIG: dict[str, Any] = {
     "overall_enabled": True,
     "photo_enabled": True,
     "text_enabled": True,
-    "disabled_action": "both",  # "alert", "message", "both"
+    "disabled_action": "both",
     "disabled_text": "⚠️ در حال حاضر امکان ارسال رسید و ثبت خودکار پرداخت غیرفعال می‌باشد. لطفاً جهت پیگیری واریز خود به پشتیبانی پیام دهید.",
 }
 

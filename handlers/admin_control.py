@@ -2174,9 +2174,6 @@ async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) ->
     )
 
 
-# --- Sub-Panel: Discount Code Rules & Conditions ---
-
-
 async def _build_disc_rules_menu_content(code: str) -> tuple[str, InlineKeyboardMarkup]:
     from db.discounts import get_discount_code
 
@@ -2977,9 +2974,6 @@ async def admin_disc_r_reset(callback: types.CallbackQuery, state: FSMContext) -
         callback.message, text, reply_markup=keyboard, parse_mode="HTML"
     )
     await callback.answer("✅ تمامی شروط پاکسازی شدند.", show_alert=True)
-
-
-# --- Sub-Panels: Durations, Groups, Expiration ---
 
 
 @router.callback_query(F.data.startswith("admin_disc_r_durs_menu_"))
@@ -5902,9 +5896,28 @@ async def admin_invoice_reapprove_confirm(
         await callback.answer(f"❌ {msg}", show_alert=True)
         return
 
-    await _render_invoice_details(
-        callback.message, callback.from_user.id, inv_id, status_filter, page
+    import html
+
+    admin_name = html.escape(
+        callback.from_user.full_name
+        or (f"@{callback.from_user.username}" if callback.from_user.username else "")
+        or str(callback.from_user.id)
     )
+    admin_mention = f'<a href="tg://user?id={callback.from_user.id}">{admin_name}</a>'
+
+    if status_filter == "notif":
+        from handlers.admin import render_admin_notification_view
+
+        await render_admin_notification_view(
+            callback.message,
+            inv_id,
+            callback.from_user.id,
+            status_note=f"✅ <b>تأیید شد پس از بازبینی توسط {admin_mention} — {msg}</b>",
+        )
+    else:
+        await _render_invoice_details(
+            callback.message, callback.from_user.id, inv_id, status_filter, page
+        )
     await callback.answer("✅ فاکتور با موفقیت تأیید و فعال شد.", show_alert=True)
 
 

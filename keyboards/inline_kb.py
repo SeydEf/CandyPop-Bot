@@ -195,6 +195,7 @@ def admin_invoice_processed_keyboard(
     tg_id: int,
     is_rejected: bool = False,
     can_reapprove: bool = False,
+    origin: str = "notif",
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if is_rejected and can_reapprove:
@@ -202,7 +203,7 @@ def admin_invoice_processed_keyboard(
             [
                 InlineKeyboardButton(
                     text="🔄 بازبینی و تأیید مجدد",
-                    callback_data=f"admin_inv_reapprove_ask_{invoice_id}_all_0",
+                    callback_data=f"admin_inv_reapprove_ask_{invoice_id}_{origin}_0",
                 )
             ]
         )
@@ -210,11 +211,11 @@ def admin_invoice_processed_keyboard(
         [
             InlineKeyboardButton(
                 text="👤 پروفایل کاربر",
-                callback_data=f"admin_manage_user_{tg_id}_inv_{invoice_id}_all_0",
+                callback_data=f"admin_manage_user_{tg_id}_inv_{invoice_id}_{origin}_0",
             ),
             InlineKeyboardButton(
                 text="🧾 جزئیات فاکتور",
-                callback_data=f"admin_inv_view_{invoice_id}_all_0",
+                callback_data=f"admin_inv_view_{invoice_id}_{origin}_0",
             ),
         ]
     )
@@ -1139,14 +1140,17 @@ def admin_invoice_detail_keyboard(
             ]
         )
 
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="🔙 بازگشت به لیست فاکتورها",
-                callback_data=f"admin_invoices_{status_filter}_{page}",
-            )
-        ]
-    )
+    if status_filter == "notif":
+        back_btn = InlineKeyboardButton(
+            text="🔙 بازگشت به پیام فاکتور",
+            callback_data=f"admin_notif_return_{invoice['id']}",
+        )
+    else:
+        back_btn = InlineKeyboardButton(
+            text="🔙 بازگشت به لیست فاکتورها",
+            callback_data=f"admin_invoices_{status_filter}_{page}",
+        )
+    rows.append([back_btn])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1156,6 +1160,11 @@ def admin_invoice_reapprove_confirm_keyboard(
     status_filter: str,
     page: int,
 ) -> InlineKeyboardMarkup:
+    if status_filter == "notif":
+        cancel_cb = f"admin_notif_return_{invoice_id}"
+    else:
+        cancel_cb = f"admin_inv_view_{invoice_id}_{status_filter}_{page}"
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -1167,7 +1176,7 @@ def admin_invoice_reapprove_confirm_keyboard(
             [
                 InlineKeyboardButton(
                     text="❌ انصراف و بازگشت",
-                    callback_data=f"admin_inv_view_{invoice_id}_{status_filter}_{page}",
+                    callback_data=cancel_cb,
                 )
             ],
         ]

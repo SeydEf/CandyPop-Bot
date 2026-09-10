@@ -52,6 +52,90 @@ async def admin_reset_tests(message: types.Message) -> None:
     )
 
 
+async def render_admin_notification_view(
+    message: types.Message,
+    invoice_id: str,
+    admin_user_id: int,
+    status_note: str | None = None,
+) -> bool:
+    from db.models import get_invoice, get_user, has_admin_permission
+    from handlers.buy import _build_admin_invoice_notification_text
+    from keyboards.inline_kb import (
+        admin_invoice_processed_keyboard,
+        admin_payment_review_keyboard,
+    )
+    from utils.helpers import safe_edit_text
+
+    inv = await get_invoice(invoice_id)
+    if not inv:
+        return False
+
+    tg_id = inv["tg_id"]
+    user = await get_user(tg_id)
+    username = user.get("username") if user else None
+    receipt_type = (
+        "text"
+        if (inv.get("receipt_text") and not inv.get("receipt_file_id"))
+        else "card"
+    )
+
+    base_text = await _build_admin_invoice_notification_text(
+        invoice=inv,
+        user_id=tg_id,
+        username=username,
+        receipt_type=receipt_type,
+        receipt_text=inv.get("receipt_text"),
+    )
+
+    status = inv.get("status", "pending")
+    status_badges = {
+        "approved": "🟢 تأییدشده",
+        "paid": "🟢 پرداخت‌شده",
+        "pending": "🟡 در انتظار تأیید",
+        "rejected": "🔴 ردشده",
+        "expired": "⌛️ منقضی‌شده",
+    }
+    badge = status_badges.get(status, status)
+    base_text += f"\n\n🔘 <b>وضعیت فعلی:</b> {badge}"
+
+    if status_note:
+        base_text += f"\n\n{status_note}"
+    elif status == "approved":
+        base_text += "\n\n✅ <b>این فاکتور قبلاً تأیید شده است.</b>"
+    elif status == "rejected":
+        base_text += "\n\n❌ <b>این فاکتور توسط ادمین رد شده است.</b>"
+
+    if status == "pending":
+        kb = admin_payment_review_keyboard(invoice_id)
+    else:
+        can_reapprove = await has_admin_permission(admin_user_id, "reapprove_invoices")
+        kb = admin_invoice_processed_keyboard(
+            invoice_id=invoice_id,
+            tg_id=tg_id,
+            is_rejected=(status == "rejected"),
+            can_reapprove=can_reapprove,
+            origin="notif",
+        )
+
+    await safe_edit_text(message, base_text, reply_markup=kb, parse_mode="HTML")
+    return True
+
+
+@router.callback_query(F.data.startswith("admin_notif_return_"))
+async def admin_notif_return(callback: types.CallbackQuery) -> None:
+    if not await _is_admin(callback):
+        return
+
+    invoice_id = callback.data[len("admin_notif_return_") :]
+    success = await render_admin_notification_view(
+        callback.message, invoice_id, callback.from_user.id
+    )
+    if not success:
+        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        return
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     if not await _is_admin(callback):
@@ -94,6 +178,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         invoice_id=invoice_id,
         tg_id=tg_id,
         is_rejected=False,
+        origin="notif",
     )
 
     await safe_edit_text(
@@ -158,6 +243,7 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
         tg_id=tg_id,
         is_rejected=True,
         can_reapprove=can_reapprove,
+        origin="notif",
     )
 
     await safe_edit_text(

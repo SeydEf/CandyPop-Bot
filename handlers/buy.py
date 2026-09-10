@@ -879,7 +879,7 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
                 parse_mode="HTML",
             )
             await callback.answer()
-        else:  # "both"
+        else:
             await callback.answer(disabled_text, show_alert=True)
             await callback.message.edit_text(
                 f"{disabled_text}\n\n🧾 شماره فاکتور: <code>{invoice_id}</code>",
