@@ -1047,6 +1047,7 @@ def admin_invoice_detail_keyboard(
     status_filter: str,
     page: int,
     can_approve: bool = False,
+    can_reapprove: bool = False,
     can_delete: bool = False,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
@@ -1063,6 +1064,16 @@ def admin_invoice_detail_keyboard(
                     text="❌ رد پرداخت",
                     callback_data=f"admin_reject_{invoice['id']}",
                 ),
+            ]
+        )
+
+    if can_reapprove and status == "rejected":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازبینی و تأیید مجدد",
+                    callback_data=f"admin_inv_reapprove_ask_{invoice['id']}_{status_filter}_{page}",
+                )
             ]
         )
 
@@ -1107,6 +1118,29 @@ def admin_invoice_detail_keyboard(
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_invoice_reapprove_confirm_keyboard(
+    invoice_id: str,
+    status_filter: str,
+    page: int,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ بله، تأیید و فعال‌سازی مجدد",
+                    callback_data=f"admin_inv_reapprove_confirm_{invoice_id}_{status_filter}_{page}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_inv_view_{invoice_id}_{status_filter}_{page}",
+                )
+            ],
+        ]
+    )
 
 
 def admin_invoice_delete_confirm_keyboard(

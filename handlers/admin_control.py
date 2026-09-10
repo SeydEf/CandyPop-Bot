@@ -5523,40 +5523,19 @@ async def admin_inv_search_clear(
     await callback.answer("✅ فیلتر جستجو پاک شد و همه فاکتورها نمایش داده شدند.")
 
 
-@router.callback_query(F.data.startswith("admin_inv_view_"))
-async def admin_invoice_view(callback: types.CallbackQuery, state: FSMContext) -> None:
-    from db.models import has_admin_permission
-
-    if not (
-        await has_admin_permission(callback.from_user.id, "view_invoices")
-        or await has_admin_permission(callback.from_user.id, "approve_invoices")
-    ):
-        await callback.answer(
-            "⛔️ شما دسترسی به بخش «مشاهده لیست فاکتورها» را ندارید.",
-            show_alert=True,
-        )
-        return
-    await state.clear()
-
-    parts = callback.data.split("_")
-    if len(parts) < 6:
-        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
-        return
-
-    inv_id = parts[3]
-    status_filter = parts[4]
-    try:
-        page = int(parts[5])
-    except ValueError:
-        page = 0
-
-    from db.models import get_invoice_details
+async def _render_invoice_details(
+    message: types.Message,
+    user_id: int,
+    inv_id: str,
+    status_filter: str,
+    page: int,
+) -> bool:
+    from db.models import get_invoice_details, has_admin_permission
     from keyboards.inline_kb import admin_invoice_detail_keyboard
 
     inv = await get_invoice_details(inv_id)
     if not inv:
-        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
-        return
+        return False
 
     status_badges = {
         "approved": "🟢 تأییدشده",
@@ -5636,23 +5615,63 @@ async def admin_invoice_view(callback: types.CallbackQuery, state: FSMContext) -
         f"{receipt_info}"
     )
 
-    can_approve = await has_admin_permission(callback.from_user.id, "approve_invoices")
-    can_delete = await has_admin_permission(callback.from_user.id, "delete_invoices")
+    can_approve = await has_admin_permission(user_id, "approve_invoices")
+    can_reapprove = await has_admin_permission(user_id, "reapprove_invoices")
+    can_delete = await has_admin_permission(user_id, "delete_invoices")
 
     keyboard = admin_invoice_detail_keyboard(
         inv,
         status_filter,
         page,
         can_approve=can_approve,
+        can_reapprove=can_reapprove,
         can_delete=can_delete,
     )
 
     await safe_edit_text(
-        callback.message,
+        message,
         text,
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+    return True
+
+
+@router.callback_query(F.data.startswith("admin_inv_view_"))
+async def admin_invoice_view(callback: types.CallbackQuery, state: FSMContext) -> None:
+    from db.models import has_admin_permission
+
+    if not (
+        await has_admin_permission(callback.from_user.id, "view_invoices")
+        or await has_admin_permission(callback.from_user.id, "approve_invoices")
+        or await has_admin_permission(callback.from_user.id, "reapprove_invoices")
+    ):
+        await callback.answer(
+            "⛔️ شما دسترسی به بخش «مشاهده لیست فاکتورها» را ندارید.",
+            show_alert=True,
+        )
+        return
+    await state.clear()
+
+    parts = callback.data.split("_")
+    if len(parts) < 6:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[3]
+    status_filter = parts[4]
+    try:
+        page = int(parts[5])
+    except ValueError:
+        page = 0
+
+    found = await _render_invoice_details(
+        callback.message, callback.from_user.id, inv_id, status_filter, page
+    )
+    if not found:
+        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        return
+
     await callback.answer()
 
 
@@ -5784,6 +5803,109 @@ async def admin_invoice_delete_confirm(
 
     await _render_invoices_list(callback.message, status_filter, page)
     await callback.answer(alert_msg, show_alert=True)
+
+
+@router.callback_query(F.data.startswith("admin_inv_reapprove_ask_"))
+async def admin_invoice_reapprove_ask(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reapprove_invoices"):
+        return
+    await state.clear()
+
+    parts = callback.data.split("_")
+    if len(parts) < 7:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[4]
+    status_filter = parts[5]
+    try:
+        page = int(parts[6])
+    except ValueError:
+        page = 0
+
+    from db.models import get_invoice_details
+    from keyboards.inline_kb import admin_invoice_reapprove_confirm_keyboard
+
+    inv = await get_invoice_details(inv_id)
+    if not inv:
+        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        return
+
+    if inv.get("status") != "rejected":
+        await callback.answer(
+            "❌ این فاکتور در وضعیت ردشده قرار ندارد.", show_alert=True
+        )
+        return
+
+    amount_str = format_price(inv.get("amount", 0))
+    u_name = inv.get("full_name") or "کاربر"
+
+    target_email = inv.get("target_email")
+    if target_email == "TOPUP" or (
+        inv.get("duration_days") == 0 and inv.get("data_gb") == 0
+    ):
+        op_desc = f"شارژ مستقیم کیف پول کاربر به مبلغ {amount_str}"
+    elif target_email:
+        op_desc = (
+            f"تمدید اشتراک <code>{target_email}</code> "
+            f"({to_persian_digits(inv.get('duration_days', 0))} روز | {format_size_gb(inv.get('data_gb', 0))})"
+        )
+    else:
+        op_desc = (
+            f"ساخت اشتراک جدید "
+            f"({to_persian_digits(inv.get('duration_days', 0))} روز | {format_size_gb(inv.get('data_gb', 0))})"
+        )
+
+    text = (
+        f"🔄 <b>بازبینی و تأیید مجدد فاکتور رد شده</b>\n\n"
+        f"آیا از تأیید مجدد این فاکتور و فعال‌سازی سرویس اطمینان دارید؟\n\n"
+        f"🆔 <b>کد فاکتور:</b> <code>{inv_id}</code>\n"
+        f"👤 <b>کاربر:</b> {u_name} (<code>{inv.get('tg_id')}</code>)\n"
+        f"💰 <b>مبلغ پرداختی:</b> {amount_str}\n"
+        f"⚙️ <b>عملیات اجرایی:</b> {op_desc}\n\n"
+        f"💡 <i>پس از تأیید، وضعیت فاکتور به «تأییدشده» تغییر کرده و پیام فعال‌سازی مجدد به همراه اطلاعات اشتراک برای کاربر ارسال خواهد شد.</i>"
+    )
+
+    keyboard = admin_invoice_reapprove_confirm_keyboard(inv_id, status_filter, page)
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inv_reapprove_confirm_"))
+async def admin_invoice_reapprove_confirm(
+    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "reapprove_invoices"):
+        return
+    await state.clear()
+
+    parts = callback.data.split("_")
+    if len(parts) < 7:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[4]
+    status_filter = parts[5]
+    try:
+        page = int(parts[6])
+    except ValueError:
+        page = 0
+
+    from services.invoice_service import approve_invoice
+
+    success, msg, _ = await approve_invoice(inv_id, bot, is_reapproval=True)
+    if not success:
+        await callback.answer(f"❌ {msg}", show_alert=True)
+        return
+
+    await _render_invoice_details(
+        callback.message, callback.from_user.id, inv_id, status_filter, page
+    )
+    await callback.answer("✅ فاکتور با موفقیت تأیید و فعال شد.", show_alert=True)
 
 
 @router.callback_query(F.data == "admin_add_admin_start")
