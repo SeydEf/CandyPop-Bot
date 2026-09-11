@@ -25,6 +25,16 @@ class WalletStates(StatesGroup):
 @router.message(F.text == BTN_INCREASE_WALLET)
 async def wallet_deposit_start(message: types.Message, state: FSMContext) -> None:
     await state.clear()
+
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await message.answer(
+            "⚠️ <b>روش پرداخت کارت به کارت و شارژ کیف پول در حال حاضر غیرفعال می‌باشد.</b>\n\n"
+            "لطفاً در زمانی دیگر مجدداً تلاش فرمایید.",
+            parse_mode="HTML",
+        )
+        return
+
     text = (
         "💳 <b>افزایش موجودی کیف پول</b>\n\n"
         "لطفاً مبلغ مورد نظر برای افزایش موجودی را از گزینه‌های زیر انتخاب نموده یا مبلغ دلخواه خود را به تومان ارسال نمایید:\n\n"
@@ -41,6 +51,14 @@ async def wallet_deposit_preset(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     if not callback.from_user:
+        return
+
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await callback.answer(
+            "⚠️ شارژ کیف پول از طریق کارت به کارت در حال حاضر غیرفعال است.",
+            show_alert=True,
+        )
         return
 
     amount_str = callback.data.split("_")[-1]
@@ -112,6 +130,16 @@ async def wallet_deposit_custom_input(
     message: types.Message, state: FSMContext
 ) -> None:
     if not message.text or not message.from_user:
+        return
+
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await state.clear()
+        await message.answer(
+            "⚠️ <b>روش پرداخت کارت به کارت و شارژ کیف پول در حال حاضر غیرفعال می‌باشد.</b>",
+            reply_markup=main_menu_keyboard(),
+            parse_mode="HTML",
+        )
         return
 
     if message.text.strip() == "/cancel":

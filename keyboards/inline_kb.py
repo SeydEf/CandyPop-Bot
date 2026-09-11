@@ -97,7 +97,12 @@ def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
 
 
 def payment_method_keyboard(
-    duration: int, users: int, gb: int, price: int, has_discount: bool = False
+    duration: int,
+    users: int,
+    gb: int,
+    price: int,
+    has_discount: bool = False,
+    card_enabled: bool = True,
 ) -> InlineKeyboardMarkup:
     discount_btn = (
         InlineKeyboardButton(
@@ -111,30 +116,34 @@ def payment_method_keyboard(
         )
     )
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [discount_btn],
-            [
-                InlineKeyboardButton(
-                    text="💰 کیف پول",
-                    callback_data=f"buy_pay_wallet_{duration}_{users}_{gb}_{price}",
-                ),
-            ],
+    rows = [
+        [discount_btn],
+        [
+            InlineKeyboardButton(
+                text="💰 کیف پول",
+                callback_data=f"buy_pay_wallet_{duration}_{users}_{gb}_{price}",
+            ),
+        ],
+    ]
+    if card_enabled:
+        rows.append(
             [
                 InlineKeyboardButton(
                     text="💳 کارت به کارت",
                     callback_data=f"buy_pay_card_{duration}_{users}_{gb}_{price}",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت",
-                    callback_data=f"buy_back_duration_{gb}_{users}",
-                ),
-                InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
-            ],
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت",
+                callback_data=f"buy_back_duration_{gb}_{users}",
+            ),
+            InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def wallet_confirm_keyboard(
@@ -426,7 +435,9 @@ async def renew_volume_keyboard(
 
 
 def renew_payment_method_keyboard(
-    is_change_plan: bool = False, has_discount: bool = False
+    is_change_plan: bool = False,
+    has_discount: bool = False,
+    card_enabled: bool = True,
 ) -> InlineKeyboardMarkup:
     discount_btn = (
         InlineKeyboardButton(
@@ -442,32 +453,34 @@ def renew_payment_method_keyboard(
 
     back_callback = "renew_back_to_duration" if is_change_plan else "sub_renew_current"
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [discount_btn],
-            [
-                InlineKeyboardButton(
-                    text="💰 کیف پول",
-                    callback_data="renew_pay_wallet",
-                ),
-            ],
+    rows = [
+        [discount_btn],
+        [
+            InlineKeyboardButton(
+                text="💰 کیف پول",
+                callback_data="renew_pay_wallet",
+            ),
+        ],
+    ]
+    if card_enabled:
+        rows.append(
             [
                 InlineKeyboardButton(
                     text="💳 کارت به کارت",
                     callback_data="renew_pay_card",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت",
-                    callback_data=back_callback,
-                ),
-                InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="sub_view_current"
-                ),
-            ],
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت",
+                callback_data=back_callback,
+            ),
+            InlineKeyboardButton(text="❌ انصراف", callback_data="sub_view_current"),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def renew_wallet_confirm_keyboard() -> InlineKeyboardMarkup:

@@ -361,7 +361,12 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
     )
 
 
-def _build_pricing_submenu() -> InlineKeyboardMarkup:
+async def _build_pricing_submenu() -> InlineKeyboardMarkup:
+    from db.models import get_card_config
+
+    card_config = await get_card_config()
+    card_status = "🟢" if card_config.get("enabled", True) else "🔴"
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -408,7 +413,7 @@ def _build_pricing_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="💳 تنظیمات شماره کارت و صاحب کارت",
+                    text=f"💳 تنظیمات شماره کارت ({card_status})",
                     callback_data="admin_card_menu",
                 ),
             ],
@@ -571,7 +576,7 @@ async def admin_pricing_menu_handler(
     await safe_edit_text(
         callback.message,
         "💰 <b>قیمت و مالی</b>\n\nیک بخش را انتخاب کنید:",
-        reply_markup=_build_pricing_submenu(),
+        reply_markup=await _build_pricing_submenu(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -617,7 +622,7 @@ async def admin_cancel_to_pricing_handler(
     await safe_edit_text(
         callback.message,
         "💰 <b>قیمت و مالی</b>\n\nیک بخش را انتخاب کنید:",
-        reply_markup=_build_pricing_submenu(),
+        reply_markup=await _build_pricing_submenu(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -3803,16 +3808,29 @@ async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> N
     card_config = await get_card_config()
     card_number = card_config["card_number"] or "تنظیم نشده"
     card_holder = card_config["card_holder"] or "تنظیم نشده"
+    card_enabled = card_config.get("enabled", True)
+
+    status_str = "🟢 فعال" if card_enabled else "🔴 غیرفعال"
+    toggle_btn_text = (
+        "🔴 غیرفعال‌سازی کارت به کارت" if card_enabled else "🟢 فعال‌سازی کارت به کارت"
+    )
 
     text = (
         f"💳 <b>تنظیمات کارت بانکی جهت واریز کارت به کارت</b>\n\n"
         f"🔢 <b>شماره کارت فعلی:</b> <code>{card_number}</code>\n"
-        f"👤 <b>نام صاحب کارت فعلی:</b> <b>{card_holder}</b>\n\n"
+        f"👤 <b>نام صاحب کارت فعلی:</b> <b>{card_holder}</b>\n"
+        f"🔘 <b>وضعیت پرداخت کارت به کارت:</b> <b>{status_str}</b>\n\n"
         f"لطفاً یکی از گزینه‌های زیر را برای تغییر انتخاب کنید:"
     )
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text,
+                    callback_data="admin_card_toggle_enable",
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text="🔢 تغییر شماره کارت",
@@ -3841,7 +3859,29 @@ async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> N
         reply_markup=keyboard,
         parse_mode="HTML",
     )
-    await callback.answer()
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "admin_card_toggle_enable")
+async def admin_card_toggle_enable(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+
+    from db.models import get_card_config, set_card_config
+
+    card_config = await get_card_config()
+    current_enabled = card_config.get("enabled", True)
+    new_status = not current_enabled
+    await set_card_config(enabled=new_status)
+
+    msg = "فعال" if new_status else "غیرفعال"
+    await callback.answer(f"✅ پرداخت کارت به کارت {msg} شد.")
+    await admin_card_menu(callback, state)
 
 
 @router.callback_query(F.data == "admin_card_edit_number")

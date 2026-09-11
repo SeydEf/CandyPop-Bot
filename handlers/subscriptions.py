@@ -630,9 +630,12 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
+    card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
-        reply_markup=renew_payment_method_keyboard(is_change_plan=False),
+        reply_markup=renew_payment_method_keyboard(
+            is_change_plan=False, card_enabled=card_cfg.get("enabled", True)
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -723,9 +726,12 @@ async def renew_select_duration(
     )
     from keyboards.inline_kb import renew_payment_method_keyboard
 
+    card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
-        reply_markup=renew_payment_method_keyboard(is_change_plan=True),
+        reply_markup=renew_payment_method_keyboard(
+            is_change_plan=True, card_enabled=card_cfg.get("enabled", True)
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1030,9 +1036,12 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
             f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
             f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
         )
+        card_cfg = await get_card_config()
         await message.answer(
             text,
-            reply_markup=renew_payment_method_keyboard(has_discount=False),
+            reply_markup=renew_payment_method_keyboard(
+                has_discount=False, card_enabled=card_cfg.get("enabled", True)
+            ),
             parse_mode="HTML",
         )
         return
@@ -1101,10 +1110,13 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         f"💳 روش پرداخت مورد نظر خود را انتخاب فرمایید:"
     )
     is_change_plan = data.get("is_change_plan", False)
+    card_cfg = await get_card_config()
     await message.answer(
         text,
         reply_markup=renew_payment_method_keyboard(
-            is_change_plan=is_change_plan, has_discount=True
+            is_change_plan=is_change_plan,
+            has_discount=True,
+            card_enabled=card_cfg.get("enabled", True),
         ),
         parse_mode="HTML",
     )
@@ -1147,10 +1159,13 @@ async def renew_discount_remove(
         f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
     is_change_plan = data.get("is_change_plan", False)
+    card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
         reply_markup=renew_payment_method_keyboard(
-            is_change_plan=is_change_plan, has_discount=False
+            is_change_plan=is_change_plan,
+            has_discount=False,
+            card_enabled=card_cfg.get("enabled", True),
         ),
         parse_mode="HTML",
     )
@@ -1161,6 +1176,15 @@ async def renew_discount_remove(
 async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not callback.from_user:
         return
+
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await callback.answer(
+            "⚠️ روش پرداخت کارت به کارت در حال حاضر غیرفعال است.",
+            show_alert=True,
+        )
+        return
+
     data = await state.get_data()
     email = data.get("renew_email", "")
     duration = data.get("duration", 30)

@@ -844,23 +844,29 @@ async def get_user_financial_summary(tg_id: int) -> dict[str, Any]:
         return {"paid_count": 0, "total_paid": 0, "topups_amount": 0, "subs_amount": 0}
 
 
-async def get_card_config() -> dict[str, str]:
+async def get_card_config() -> dict[str, Any]:
     card_number = await get_setting("card_number")
     card_holder = await get_setting("card_holder")
+    card_enabled = await get_setting("card_enabled")
 
     return {
         "card_number": card_number,
         "card_holder": card_holder,
+        "enabled": card_enabled != "false",
     }
 
 
 async def set_card_config(
-    card_number: str | None = None, card_holder: str | None = None
+    card_number: str | None = None,
+    card_holder: str | None = None,
+    enabled: bool | None = None,
 ) -> None:
     if card_number is not None:
         await set_setting("card_number", card_number.strip())
     if card_holder is not None:
         await set_setting("card_holder", card_holder.strip())
+    if enabled is not None:
+        await set_setting("card_enabled", "true" if enabled else "false")
 
 
 DEFAULT_RECEIPT_CONFIG: dict[str, Any] = {

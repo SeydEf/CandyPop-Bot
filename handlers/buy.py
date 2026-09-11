@@ -355,9 +355,12 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
         f"💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
+    card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
-        reply_markup=payment_method_keyboard(duration, users, gb, price),
+        reply_markup=payment_method_keyboard(
+            duration, users, gb, price, card_enabled=card_cfg.get("enabled", True)
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -609,9 +612,16 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
             f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
             f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
         )
+        card_cfg = await get_card_config()
         await message.answer(
             text,
-            reply_markup=payment_method_keyboard(duration, users, gb, original_price),
+            reply_markup=payment_method_keyboard(
+                duration,
+                users,
+                gb,
+                original_price,
+                card_enabled=card_cfg.get("enabled", True),
+            ),
             parse_mode="HTML",
         )
         return
@@ -676,10 +686,16 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         f"💎 <b>مبلغ نهایی و قابل پرداخت:</b> {format_price(final_price)}\n\n"
         f"💳 روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
+    card_cfg = await get_card_config()
     await message.answer(
         text,
         reply_markup=payment_method_keyboard(
-            duration, users, gb, final_price, has_discount=True
+            duration,
+            users,
+            gb,
+            final_price,
+            has_discount=True,
+            card_enabled=card_cfg.get("enabled", True),
         ),
         parse_mode="HTML",
     )
@@ -714,9 +730,16 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
         f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
     )
+    card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
-        reply_markup=payment_method_keyboard(duration, users, gb, original_price),
+        reply_markup=payment_method_keyboard(
+            duration,
+            users,
+            gb,
+            original_price,
+            card_enabled=card_cfg.get("enabled", True),
+        ),
         parse_mode="HTML",
     )
     await callback.answer("✅ کد تخفیف با موفقیت حذف شد.")
@@ -726,6 +749,15 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
 async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> None:
     if not callback.from_user:
         return
+
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await callback.answer(
+            "⚠️ روش پرداخت کارت به کارت در حال حاضر غیرفعال است.",
+            show_alert=True,
+        )
+        return
+
     parts = callback.data.split("_")
     duration = int(parts[3])
     users = int(parts[4])

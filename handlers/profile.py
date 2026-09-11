@@ -97,6 +97,16 @@ async def profile_main_callback(callback: types.CallbackQuery) -> None:
 async def profile_topup_callback(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
+    from db.models import get_card_config
+
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await callback.answer(
+            "⚠️ شارژ کیف پول از طریق کارت به کارت در حال حاضر غیرفعال است.",
+            show_alert=True,
+        )
+        return
+
     from handlers.wallet import WalletStates
 
     await state.set_state(WalletStates.waiting_deposit_amount)
