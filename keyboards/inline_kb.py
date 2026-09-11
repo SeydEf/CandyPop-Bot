@@ -32,7 +32,7 @@ async def volume_keyboard() -> InlineKeyboardMarkup:
     )
     rows.append(
         [
-            InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+            InlineKeyboardButton(text="❌ انصراف از خرید", callback_data="buy_cancel"),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -65,7 +65,9 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="🔙 بازگشت به انتخاب حجم", callback_data="buy_back_volume"
                 ),
-                InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+                InlineKeyboardButton(
+                    text="❌ انصراف از خرید", callback_data="buy_cancel"
+                ),
             ],
         ]
     )
@@ -90,7 +92,7 @@ def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
                 text="🔙 بازگشت به انتخاب کاربر",
                 callback_data=f"buy_back_users_{gb}_{users}",
             ),
-            InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+            InlineKeyboardButton(text="❌ انصراف از خرید", callback_data="buy_cancel"),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -140,7 +142,7 @@ def payment_method_keyboard(
                 text="🔙 بازگشت",
                 callback_data=f"buy_back_duration_{gb}_{users}",
             ),
-            InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+            InlineKeyboardButton(text="❌ انصراف از خرید", callback_data="buy_cancel"),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -158,7 +160,9 @@ def wallet_confirm_keyboard(
                 ),
             ],
             [
-                InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+                InlineKeyboardButton(
+                    text="❌ انصراف از خرید", callback_data="buy_cancel"
+                ),
             ],
         ]
     )
@@ -176,7 +180,9 @@ def card_payment_keyboard(
                 ),
             ],
             [
-                InlineKeyboardButton(text="❌ انصراف", callback_data="buy_cancel"),
+                InlineKeyboardButton(
+                    text="❌ انصراف از خرید", callback_data="buy_cancel"
+                ),
             ],
         ]
     )
@@ -494,7 +500,7 @@ def renew_wallet_confirm_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="sub_view_current"
+                    text="❌ انصراف و بازگشت", callback_data="sub_view_current"
                 ),
             ],
         ]
@@ -579,7 +585,9 @@ def deposit_amount_keyboard() -> InlineKeyboardMarkup:
                 ),
             ],
             [
-                InlineKeyboardButton(text="❌ انصراف", callback_data="deposit_cancel"),
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="deposit_cancel"
+                ),
             ],
         ]
     )
@@ -1355,7 +1363,7 @@ def admin_user_ban_cancel_keyboard(tg_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔙 انصراف و بازگشت",
+                    text="❌ انصراف و بازگشت",
                     callback_data=f"admin_manage_user_{tg_id}_back",
                 )
             ]
@@ -1482,7 +1490,7 @@ def admin_user_msg_preview_keyboard(
                     callback_data=f"admin_user_msg_{tg_id}",
                 ),
                 InlineKeyboardButton(
-                    text="❌ انصراف",
+                    text="❌ انصراف و بازگشت",
                     callback_data=f"admin_manage_user_{tg_id}_back",
                 ),
             ],
@@ -1495,7 +1503,7 @@ def admin_user_msg_cancel_keyboard(tg_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔙 انصراف و بازگشت",
+                    text="❌ انصراف و بازگشت",
                     callback_data=f"admin_manage_user_{tg_id}_back",
                 )
             ]

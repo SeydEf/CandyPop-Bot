@@ -78,8 +78,8 @@ async def _prompt_step_user(
     text = (
         "➕ <b>ساخت اشتراک اختصاصی (گام ۱ از ۷) - انتخاب کاربر مقصد</b>\n\n"
         "لطفاً <b>آیدی عددی تلگرام</b> یا <b>نام کاربری (@username)</b> مشتری را وارد کنید:\n\n"
-        "• برای ساخت اشتراک مستقل (بدون انتساب به کاربر)، روی دکمه زیر کلیک کنید.\n"
-        "<i>جهت انصراف، /cancel را ارسال کنید.</i>"
+        "• برای ساخت اشتراک مستقل (بدون انتساب به کاربر)، روی دکمه زیر کلیک کنید.\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -194,8 +194,8 @@ async def _prompt_step_email(
         f"🏷 <b>تعیین نام سرویس / ایمیل (گام ۲ از ۷)</b>\n\n"
         f"نام پیشنهادی سیستم: <code>{auto_email}</code>\n\n"
         f"• می‌توانید نام دلخواه خود را تایپ و ارسال کنید.\n"
-        f"• یا برای استفاده از نام پیشنهادی، دکمه زیر را بزنید:\n"
-        f"<i>جهت انصراف، /cancel را ارسال کنید.</i>"
+        f"• یا برای استفاده از نام پیشنهادی، دکمه زیر را بزنید:\n\n"
+        f"💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -210,7 +210,11 @@ async def _prompt_step_email(
                 InlineKeyboardButton(
                     text="🔙 گام قبلی (انتخاب کاربر)",
                     callback_data="admin_create_sub_step_user",
-                )
+                ),
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_sub_users_menu",
+                ),
             ],
         ]
     )
@@ -807,7 +811,7 @@ async def _show_summary_and_confirm(
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_sub_users_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_sub_users_menu"
                 )
             ],
         ]

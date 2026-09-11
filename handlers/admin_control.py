@@ -689,12 +689,14 @@ async def admin_price_base_start(
     await state.set_state(AdminControlStates.waiting_base_rate)
     await callback.message.edit_text(
         "💵 <b>نرخ پایه جدید هر گیگ (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>5000</code>",
+        "مثال: <code>5000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
                     )
                 ]
             ]
@@ -732,8 +734,19 @@ async def admin_price_base_save(message: types.Message, state: FSMContext) -> No
             parse_mode="HTML",
         )
     except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "❌ لطفاً یک عدد صحیح معتبر به تومان وارد کنید. مثال: <code>5000</code>",
+            "❌ لطفاً یک عدد صحیح معتبر به تومان وارد کنید. مثال: <code>5000</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
 
@@ -747,12 +760,14 @@ async def admin_price_user_start(
     await state.set_state(AdminControlStates.waiting_user_surcharge)
     await callback.message.edit_text(
         "👤 <b>هزینه اضافه به ازای هر کاربر اضافه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>50000</code>",
+        "مثال: <code>50000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
                     )
                 ]
             ]
@@ -790,8 +805,19 @@ async def admin_price_user_save(message: types.Message, state: FSMContext) -> No
             parse_mode="HTML",
         )
     except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "❌ لطفاً یک عدد صحیح معتبر وارد کنید. مثال: <code>50000</code>",
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید. مثال: <code>50000</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
 
@@ -844,12 +870,14 @@ async def admin_price_dur_60_start(
     await state.set_state(AdminControlStates.waiting_dur_60)
     await callback.message.edit_text(
         "⏱ <b>مبلغ اضافه برای اشتراک ۶۰ روزه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>50000</code>",
+        "مثال: <code>50000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
                     )
                 ]
             ]
@@ -885,7 +913,21 @@ async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> 
             parse_mode="HTML",
         )
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data == "admin_price_dur_90")
@@ -897,12 +939,14 @@ async def admin_price_dur_90_start(
     await state.set_state(AdminControlStates.waiting_dur_90)
     await callback.message.edit_text(
         "⏱ <b>مبلغ اضافه برای اشتراک ۹۰ روزه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>100000</code>",
+        "مثال: <code>100000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
                     )
                 ]
             ]
@@ -938,7 +982,21 @@ async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> 
             parse_mode="HTML",
         )
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
 
 
 async def _build_price_tiers_panel() -> tuple[str, InlineKeyboardMarkup]:
@@ -1062,12 +1120,14 @@ async def admin_price_tiers_start(
         "<code>20:5000\n"
         "50:4500\n"
         "100:4000\n"
-        "default:3500</code>",
+        "default:3500</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_price_tiers_menu"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_price_tiers_menu",
                     )
                 ]
             ]
@@ -1123,10 +1183,22 @@ async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> N
         )
 
     except Exception:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_price_tiers_menu",
+                    )
+                ]
+            ]
+        )
         await message.answer(
             "❌ فرمت وارد شده نامعتبر است.\n"
             "لطفاً مطابق مثال ارسال کنید:\n"
-            "<code>20:5000\n50:4500\n100:4000\ndefault:3500</code>",
+            "<code>20:5000\n50:4500\n100:4000\ndefault:3500</code>\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
 
@@ -1276,12 +1348,14 @@ async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) 
     await state.set_state(AdminControlStates.waiting_test_gb)
     await callback.message.edit_text(
         "📊 <b>حجم اشتراک تست را به گیگابایت (اعشاری یا صحیح) وارد کنید:</b>\n"
-        "مثال: <code>0.5</code> یا <code>1</code> یا <code>2</code>",
+        "مثال: <code>0.5</code> یا <code>1</code> یا <code>2</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
                     )
                 ]
             ]
@@ -1312,8 +1386,19 @@ async def admin_test_gb_save(message: types.Message, state: FSMContext) -> None:
             parse_mode="HTML",
         )
     except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "❌ لطفاً یک عدد معتبر وارد کنید. مثال: <code>0.5</code>",
+            "❌ لطفاً یک عدد معتبر وارد کنید. مثال: <code>0.5</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
 
@@ -1327,12 +1412,14 @@ async def admin_test_dur_start(
     await state.set_state(AdminControlStates.waiting_test_dur)
     await callback.message.edit_text(
         "⏱ <b>مدت زمان اعتبار اشتراک تست را به روز وارد کنید:</b>\n"
-        "مثال: <code>1</code> یا <code>2</code>",
+        "مثال: <code>1</code> یا <code>2</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
                     )
                 ]
             ]
@@ -1363,7 +1450,21 @@ async def admin_test_dur_save(message: types.Message, state: FSMContext) -> None
             parse_mode="HTML",
         )
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data == "admin_test_cooldown")
@@ -1375,12 +1476,14 @@ async def admin_test_cooldown_start(
     await state.set_state(AdminControlStates.waiting_test_cooldown)
     await callback.message.edit_text(
         "🔄 <b>فاصله زمانی دریافت مجدد (کول‌داون) را به روز وارد کنید:</b>\n"
-        "مثال: <code>14</code> یا <code>7</code>",
+        "مثال: <code>14</code> یا <code>7</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
                     )
                 ]
             ]
@@ -1411,7 +1514,21 @@ async def admin_test_cooldown_save(message: types.Message, state: FSMContext) ->
             parse_mode="HTML",
         )
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data == "admin_test_reset_all")
@@ -1444,12 +1561,14 @@ async def admin_test_reset_user_prompt(
     await safe_edit_text(
         callback.message,
         "👤 <b>لطفاً شناسه عددی تلگرام (Telegram ID) یا نام کاربری کاربر را جهت بازنشانی اشتراک تست وارد کنید:</b>\n\n"
-        "مثال: <code>123456789</code> یا <code>@username</code>",
+        "مثال: <code>123456789</code> یا <code>@username</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
                     )
                 ]
             ]
@@ -1471,9 +1590,20 @@ async def admin_test_reset_user_save(message: types.Message, state: FSMContext) 
 
     users = await search_users(query)
     if not users:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            f"❌ هیچ کاربری با شناسه یا نام کاربری «<code>{query}</code>» در دیتابیس ربات یافت نشد.\n"
-            "لطفاً دوباره تلاش کنید یا /cancel را ارسال فرمایید.",
+            f"❌ هیچ کاربری با شناسه یا نام کاربری «<code>{query}</code>» در دیتابیس ربات یافت نشد.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
         return
@@ -1625,12 +1755,13 @@ async def admin_disc_create_manual_start(
     await state.set_state(AdminControlStates.waiting_disc_manual_code)
     await callback.message.edit_text(
         "✏️ <b>کد تخفیف اختصاصی را وارد کنید:</b>\n"
-        "مثال: <code>SUMMER2026</code> یا <code>VIP50</code>",
+        "مثال: <code>SUMMER2026</code> یا <code>VIP50</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
                     )
                 ]
             ]
@@ -1651,15 +1782,39 @@ async def admin_disc_create_manual_save(
 
     code = message.text.strip().upper()
     if len(code) < 2 or len(code) > 30:
-        await message.answer("❌ طول کد تخفیف باید بین ۲ تا ۳۰ کاراکتر باشد.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ طول کد تخفیف باید بین ۲ تا ۳۰ کاراکتر باشد.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.discounts import get_discount_code
 
     existing = await get_discount_code(code)
     if existing:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "❌ این کد تخفیف قبلاً ثبت شده است. لطفاً کد دیگری وارد کنید."
+            "❌ این کد تخفیف قبلاً ثبت شده است. لطفاً کد دیگری وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
         )
         return
 
@@ -1678,7 +1833,7 @@ async def admin_disc_create_manual_save(
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_discounts_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
                 )
             ],
         ]
@@ -1699,12 +1854,13 @@ async def admin_disc_create_auto_start(
     await state.set_state(AdminControlStates.waiting_disc_auto_length)
     await callback.message.edit_text(
         "🎲 <b>طول کاراکترهای کد تصادفی را وارد کنید (بين ۴ تا ۱۶):</b>\n"
-        "مثال: <code>8</code>",
+        "مثال: <code>8</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
                     )
                 ]
             ]
@@ -1729,7 +1885,20 @@ async def admin_disc_create_auto_save(
         if length < 4 or length > 16:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد بین ۴ تا ۱۶ وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد بین ۴ تا ۱۶ وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.discounts import generate_random_code, get_discount_code
@@ -1753,7 +1922,7 @@ async def admin_disc_create_auto_save(
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_discounts_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
                 )
             ],
         ]
@@ -1773,8 +1942,20 @@ async def admin_disc_type_percent(
         return
     await state.set_state(AdminControlStates.waiting_disc_percent)
     await state.update_data(discount_type="percent")
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
-        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\nمثال: <code>20</code>",
+        "📊 <b>درصد تخفیف را بین ۱ تا ۱۰۰ وارد کنید:</b>\n"
+        "مثال: <code>20</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1788,8 +1969,20 @@ async def admin_disc_type_fixed(
         return
     await state.set_state(AdminControlStates.waiting_disc_fixed_amount)
     await state.update_data(discount_type="fixed")
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
-        "💵 <b>مبلغ ثابت تخفیف به تومان را وارد کنید:</b>\nمثال: <code>50000</code>",
+        "💵 <b>مبلغ ثابت تخفیف به تومان را وارد کنید:</b>\n"
+        "مثال: <code>50000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1810,8 +2003,19 @@ async def admin_disc_create_fixed_save(
         if amount <= 0:
             raise ValueError
     except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "❌ لطفاً یک مبلغ معتبر به تومان (بزرگتر از صفر) وارد کنید."
+            "❌ لطفاً یک مبلغ معتبر به تومان (بزرگتر از صفر) وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
         )
         return
 
@@ -1819,11 +2023,22 @@ async def admin_disc_create_fixed_save(
         discount_type="fixed", new_fixed_amount=amount, new_percent=0
     )
     await state.set_state(AdminControlStates.waiting_disc_max_uses)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                )
+            ]
+        ]
+    )
     await message.answer(
         f"✅ مبلغ تخفیف: <b>{format_price(amount)}</b>\n\n"
         "🔢 <b>حداکثر تعداد استفاده از این کد را وارد کنید:</b>\n"
         "(برای <b>استفاده بی‌نهایت</b> عدد <code>0</code> را ارسال کنید)\n"
-        "مثال: <code>50</code> یا <code>0</code>",
+        "مثال: <code>50</code> یا <code>0</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
 
@@ -1843,16 +2058,40 @@ async def admin_disc_create_percent_save(
         if percent < 1 or percent > 100:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     await state.update_data(new_percent=percent)
     await state.set_state(AdminControlStates.waiting_disc_max_uses)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                )
+            ]
+        ]
+    )
     await message.answer(
         f"✅ میزان تخفیف: <b>{to_persian_digits(percent)}٪</b>\n\n"
         "🔢 <b>حداکثر تعداد استفاده از این کد را وارد کنید:</b>\n"
         "(برای <b>استفاده بی‌نهایت</b> عدد <code>0</code> را ارسال کنید)\n"
-        "مثال: <code>50</code> یا <code>0</code>",
+        "مثال: <code>50</code> یا <code>0</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
 
@@ -1872,7 +2111,20 @@ async def admin_disc_create_max_uses_save(
         if max_uses < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_discounts_menu"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     data = await state.get_data()
@@ -2154,18 +2406,29 @@ async def admin_disc_edit_percent_start(
     await state.set_state(AdminControlStates.waiting_disc_edit_percent)
     await state.update_data(edit_code=code, disc_type=disc_type)
 
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_view_{code}",
+                )
+            ]
+        ]
+    )
+
     if disc_type == "fixed":
         prompt = (
             f"💵 <b>مبلغ جدید تخفیف را برای کد <code>{code}</code> به تومان وارد کنید:</b>\n\n"
-            "برای انصراف /cancel را بزنید."
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
         )
     else:
         prompt = (
             f"📊 <b>درصد جدید تخفیف را برای کد <code>{code}</code> (۱ تا ۱۰۰) وارد کنید:</b>\n\n"
-            "برای انصراف /cancel را بزنید."
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
         )
 
-    await callback.message.edit_text(prompt, parse_mode="HTML")
+    await callback.message.edit_text(prompt, reply_markup=cancel_kb, parse_mode="HTML")
     await callback.answer()
 
 
@@ -2200,20 +2463,62 @@ async def admin_disc_edit_percent_save(
         val = int(clean)
         if disc_type == "fixed":
             if val < 1000:
-                await message.answer("❌ حداقل مبلغ تخفیف ۱,۰۰۰ تومان است.")
+                err_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="❌ انصراف و بازگشت",
+                                callback_data=f"admin_disc_view_{code}",
+                            )
+                        ]
+                    ]
+                )
+                await message.answer(
+                    "❌ حداقل مبلغ تخفیف ۱,۰۰۰ تومان است.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                    reply_markup=err_kb,
+                    parse_mode="HTML",
+                )
                 return
             rules["amount"] = val
             await update_discount_code(code, rules=rules)
             msg_val = format_price(val)
         else:
             if val < 1 or val > 100:
-                await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+                err_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="❌ انصراف و بازگشت",
+                                callback_data=f"admin_disc_view_{code}",
+                            )
+                        ]
+                    ]
+                )
+                await message.answer(
+                    "❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                    reply_markup=err_kb,
+                    parse_mode="HTML",
+                )
                 return
             rules["amount"] = val
             await update_discount_code(code, discount_percent=val, rules=rules)
             msg_val = f"{to_persian_digits(val)}٪"
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد معتبر وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_view_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     await state.clear()
@@ -2244,10 +2549,21 @@ async def admin_disc_edit_max_start(
     code = callback.data[len("admin_disc_edit_m_") :]
     await state.set_state(AdminControlStates.waiting_disc_edit_max_uses)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_view_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"⏱ <b>حداکثر سقف استفاده جدید برای کد <code>{code}</code> را وارد کنید:</b>\n"
         "(جهت استفاده <b>بی‌نهایت</b> عدد <code>0</code> را وارد کنید)\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2255,6 +2571,12 @@ async def admin_disc_edit_max_start(
 
 @router.message(AdminControlStates.waiting_disc_edit_max_uses, F.text)
 async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("edit_code")
+    if not code:
+        await state.clear()
+        return
+
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -2266,13 +2588,21 @@ async def admin_disc_edit_max_save(message: types.Message, state: FSMContext) ->
         if val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).")
-        return
-
-    data = await state.get_data()
-    code = data.get("edit_code")
-    if not code:
-        await state.clear()
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_view_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.discounts import update_discount_code
@@ -2680,10 +3010,21 @@ async def admin_disc_r_mingb_start(
     code = callback.data[len("admin_disc_r_mingb_") :]
     await state.set_state(AdminControlStates.waiting_disc_min_gb)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_rules_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"📉 <b>حداقل حجم مجاز (گیگابایت) را برای کد <code>{code}</code> وارد کنید:</b>\n"
         "(جهت حذف محدودیت عدد <code>0</code> را وارد کنید)\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2710,7 +3051,21 @@ async def admin_disc_r_mingb_save(message: types.Message, state: FSMContext) -> 
         if val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر (0 یا بیشتر) وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_rules_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (0 یا بیشتر) وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     if not code:
@@ -2747,10 +3102,21 @@ async def admin_disc_r_maxgb_start(
     code = callback.data[len("admin_disc_r_maxgb_") :]
     await state.set_state(AdminControlStates.waiting_disc_max_gb)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_rules_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"📈 <b>حداکثر حجم مجاز (گیگابایت) را برای کد <code>{code}</code> وارد کنید:</b>\n"
         "(جهت حذف محدودیت عدد <code>0</code> را وارد کنید)\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2777,7 +3143,21 @@ async def admin_disc_r_maxgb_save(message: types.Message, state: FSMContext) -> 
         if val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر (0 یا بیشتر) وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_rules_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (0 یا بیشتر) وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     if not code:
@@ -2814,10 +3194,21 @@ async def admin_disc_r_minamt_start(
     code = callback.data[len("admin_disc_r_minamt_") :]
     await state.set_state(AdminControlStates.waiting_disc_min_amount)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_rules_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"💳 <b>حداقل مبلغ سفارش (تومان) را برای کد <code>{code}</code> وارد کنید:</b>\n"
         "(جهت حذف محدودیت عدد <code>0</code> را وارد کنید)\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2844,7 +3235,21 @@ async def admin_disc_r_minamt_save(message: types.Message, state: FSMContext) ->
         if val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_rules_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     if not code:
@@ -2877,10 +3282,21 @@ async def admin_disc_r_maxcap_start(
     code = callback.data[len("admin_disc_r_maxcap_") :]
     await state.set_state(AdminControlStates.waiting_disc_max_cap)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_rules_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"🛑 <b>حداکثر سقف مبلغ تخفیف (تومان) را برای کد <code>{code}</code> وارد کنید:</b>\n"
         "(جهت بدون سقف بودن عدد <code>0</code> را وارد کنید)\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2907,7 +3323,21 @@ async def admin_disc_r_maxcap_save(message: types.Message, state: FSMContext) ->
         if val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_rules_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     if not code:
@@ -2940,10 +3370,21 @@ async def admin_disc_r_userlim_start(
     code = callback.data[len("admin_disc_r_userlim_") :]
     await state.set_state(AdminControlStates.waiting_disc_user_limit)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_rules_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"🔁 <b>حداکثر دفعات مجاز استفاده برای هر کاربر از کد <code>{code}</code> را وارد کنید:</b>\n"
         "(مثلاً <code>1</code> یا <code>2</code> — برای بی‌نهایت عدد <code>0</code> را وارد کنید)\n\n"
-        "برای انصراف /cancel را بزنید.",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2970,7 +3411,21 @@ async def admin_disc_r_userlim_save(message: types.Message, state: FSMContext) -
         if val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_disc_rules_{code}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای بی‌نهایت).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     if not code:
@@ -3007,13 +3462,24 @@ async def admin_disc_r_users_start(
     code = callback.data[len("admin_disc_r_users_") :]
     await state.set_state(AdminControlStates.waiting_disc_target_users)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_rules_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"👥 <b>شناسه عددی یا آیدی تلگرام کاربران مجاز را برای کد <code>{code}</code> وارد کنید:</b>\n\n"
         "می‌توانید چند شناسه یا یوزرنیم را با <b>فاصله، کاما یا خط جدید</b> از یکدیگر جدا کنید.\n"
         "مثال:\n"
         "<code>123456789 @username 987654321</code>\n\n"
-        "برای حذف محدودیت و مجاز بودن کد برای تمامی کاربران، عدد <code>0</code> را ارسال کنید.\n"
-        "برای انصراف /cancel را بزنید.",
+        "برای حذف محدودیت و مجاز بودن کد برای تمامی کاربران، عدد <code>0</code> را ارسال کنید.\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -3285,13 +3751,24 @@ async def admin_disc_r_exp_custom_start(
     code = callback.data[len("admin_disc_r_exp_custom_") :]
     await state.set_state(AdminControlStates.waiting_disc_expiry_custom)
     await state.update_data(edit_code=code)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_disc_exp_{code}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"📅 <b>ورود تاریخ یا مهلت انقضا برای کد <code>{code}</code>:</b>\n\n"
         "می‌توانید به دو روش وارد کنید:\n"
         "۱. <b>تعداد روز:</b> مثلاً <code>10</code> (۱۰ روز از اکنون)\n"
         "۲. <b>تاریخ شمسی:</b> مثلاً <code>1404/06/31</code> یا <code>1404/06/31 23:59</code>\n\n"
-        "برای حذف انقضا عدد <code>0</code> را ارسال کنید.\n"
-        "برای انصراف /cancel را بزنید.",
+        "برای حذف انقضا عدد <code>0</code> را ارسال کنید.\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -3360,9 +3837,22 @@ async def admin_disc_r_exp_custom_save(
                 continue
 
         if not exp_iso:
+            err_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف و بازگشت",
+                            callback_data=f"admin_disc_exp_{code}",
+                        )
+                    ]
+                ]
+            )
             await message.answer(
                 "❌ فرمت تاریخ نامعتبر است.\n"
-                "لطفاً تعداد روز (مثلاً <code>7</code>) یا تاریخ شمسی (مانند <code>1404/06/31</code>) وارد کنید:"
+                "لطفاً تعداد روز (مثلاً <code>7</code>) یا تاریخ شمسی (مانند <code>1404/06/31</code>) وارد کنید:\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=err_kb,
+                parse_mode="HTML",
             )
             return
         rules["expires_at"] = exp_iso
@@ -3457,12 +3947,14 @@ async def admin_ref_edit_percent_start(
     await state.set_state(AdminControlStates.waiting_ref_percent)
     await callback.message.edit_text(
         "📊 <b>درصد جدید پورسانت دعوت (۱ تا ۱۰۰) را وارد کنید:</b>\n"
-        "مثال: <code>15</code>",
+        "مثال: <code>15</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_settings"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
                     )
                 ]
             ]
@@ -3487,7 +3979,21 @@ async def admin_ref_edit_percent_save(
         if val < 1 or val > 100:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_settings",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_referral_config
@@ -3760,12 +4266,13 @@ async def admin_group_create_start(
     await state.set_state(AdminControlStates.waiting_group_create_name)
     await callback.message.edit_text(
         "👥 <b>نام گروه جدید را وارد کنید:</b>\n"
-        "مثال: <code>VIP</code> یا <code>Customers</code>",
+        "مثال: <code>VIP</code> یا <code>Customers</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_users"
+                        text="❌ انصراف و بازگشت", callback_data="admin_cancel_to_users"
                     )
                 ]
             ]
@@ -3842,12 +4349,13 @@ async def admin_group_rename_start(
     await state.update_data(old_group_name=old_name)
     await state.set_state(AdminControlStates.waiting_group_rename_name)
     await callback.message.edit_text(
-        f"✏️ <b>نام جدید برای گروه «{old_name}» را وارد کنید:</b>",
+        f"✏️ <b>نام جدید برای گروه «{old_name}» را وارد کنید:</b>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_users"
+                        text="❌ انصراف و بازگشت", callback_data="admin_cancel_to_users"
                     )
                 ]
             ]
@@ -4013,12 +4521,14 @@ async def admin_card_edit_number_start(
     await state.set_state(AdminControlStates.waiting_card_number)
     await callback.message.edit_text(
         "🔢 <b>شماره کارت ۱۶ رقمی جدید را وارد کنید:</b>\n"
-        "مثال: <code>6037991812345678</code>",
+        "مثال: <code>6037991812345678</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
                     )
                 ]
             ]
@@ -4043,7 +4553,21 @@ async def admin_card_edit_number_save(
         .replace("-", "")
     )
     if len(clean_num) != 16 or not clean_num.isdigit():
-        await message.answer("❌ لطفاً یک شماره کارت ۱۶ رقمی معتبر وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک شماره کارت ۱۶ رقمی معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_card_config
@@ -4069,12 +4593,14 @@ async def admin_card_edit_holder_start(
     await state.set_state(AdminControlStates.waiting_card_holder)
     await callback.message.edit_text(
         "👤 <b>نام و نام‌خانوادگی صاحب کارت را وارد کنید:</b>\n"
-        "مثال: <code>رضا محمدی</code>",
+        "مثال: <code>رضا محمدی</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_pricing",
                     )
                 ]
             ]
@@ -4327,7 +4853,7 @@ async def admin_edit_receipt_disabled_text_start(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_receipt_config_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_receipt_config_menu"
                 )
             ]
         ]
@@ -4335,7 +4861,7 @@ async def admin_edit_receipt_disabled_text_start(
     text = (
         "✏️ <b>ویرایش متن پیام غیرفعال بودن دریافت رسید:</b>\n\n"
         "لطفاً متن جدیدی که هنگام غیرفعال بودن دریافت رسید به کاربر نمایش داده می‌شود را ارسال فرمایید.\n\n"
-        "💡 <i>در صورت تمایل می‌توانید دستور /cancel را بفرستید یا دکمه انصراف را بزنید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
     await safe_edit_text(
         callback.message,
@@ -4566,12 +5092,14 @@ async def admin_alert_edit_gb_start(
     await state.set_state(AdminControlStates.waiting_alert_gb)
     await callback.message.edit_text(
         "📊 <b>حدآستانه جدید هشدار ترافیک (به گیگابایت) را وارد کنید:</b>\n"
-        "مثال: <code>2.0</code> یا <code>1.5</code>",
+        "مثال: <code>2.0</code> یا <code>1.5</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
                     )
                 ]
             ]
@@ -4593,7 +5121,21 @@ async def admin_alert_edit_gb_save(message: types.Message, state: FSMContext) ->
         if gb_val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد معتبر به گیگابایت وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر به گیگابایت وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_alert_config
@@ -4619,12 +5161,14 @@ async def admin_alert_edit_days_start(
     await state.set_state(AdminControlStates.waiting_alert_days)
     await callback.message.edit_text(
         "⏱ <b>حدآستانه جدید هشدار انقضا (به روز) را وارد کنید:</b>\n"
-        "مثال: <code>3</code> یا <code>5</code>",
+        "مثال: <code>3</code> یا <code>5</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
                     )
                 ]
             ]
@@ -4646,7 +5190,21 @@ async def admin_alert_edit_days_save(message: types.Message, state: FSMContext) 
         if days_val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر به روز وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر به روز وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_alert_config
@@ -4673,12 +5231,14 @@ async def admin_alert_edit_delete_days_start(
     await callback.message.edit_text(
         "🗑 <b>مهلت حذف خودکار اشتراک‌های منقضی‌شده (به روز پس از انقضا) را وارد کنید:</b>\n"
         "مثال: <code>3</code> (حذف پس از ۳ روز انقضا)\n"
-        "<i>برای غیرفعال‌سازی حذف خودکار عدد <code>0</code> را ارسال کنید.</i>",
+        "<i>برای غیرفعال‌سازی حذف خودکار عدد <code>0</code> را ارسال کنید.</i>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
                     )
                 ]
             ]
@@ -4702,7 +5262,21 @@ async def admin_alert_edit_delete_days_save(
         if del_val < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_alert_config
@@ -4734,12 +5308,14 @@ async def admin_alert_edit_interval_start(
     await callback.message.edit_text(
         "⏳ <b>فاصله زمان جدید بررسی (پایش) سرویس‌ها (به دقیقه) را وارد کنید:</b>\n"
         "مثال: <code>15</code> یا <code>30</code> یا <code>60</code>\n"
-        "<i>(حداقل ۱ دقیقه)</i>",
+        "<i>(حداقل ۱ دقیقه)</i>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
                     )
                 ]
             ]
@@ -4763,7 +5339,21 @@ async def admin_alert_edit_interval_save(
         if interval_val < 1:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر (به دقیقه) وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (به دقیقه) وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_alert_config
@@ -5051,7 +5641,7 @@ async def admin_ip_reactivate_start(callback: types.CallbackQuery) -> None:
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data=f"admin_ip_cancel_{email}"
+                    text="❌ انصراف و بازگشت", callback_data=f"admin_ip_cancel_{email}"
                 )
             ],
         ]
@@ -5124,7 +5714,7 @@ async def admin_ip_delete_start(callback: types.CallbackQuery) -> None:
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data=f"admin_ip_cancel_{email}"
+                    text="❌ انصراف و بازگشت", callback_data=f"admin_ip_cancel_{email}"
                 )
             ],
         ]
@@ -5192,12 +5782,14 @@ async def admin_ip_edit_interval_start(
     await callback.message.edit_text(
         "⏳ <b>فاصله زمان جدید پایش سقف IP (به دقیقه) را وارد کنید:</b>\n"
         "مثال: <code>3</code> یا <code>5</code> یا <code>10</code>\n"
-        "<i>(حداقل ۱ دقیقه)</i>",
+        "<i>(حداقل ۱ دقیقه)</i>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_alerts"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
                     )
                 ]
             ]
@@ -5223,7 +5815,21 @@ async def admin_ip_edit_interval_save(
         if interval_val < 1:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر (به دقیقه) وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_alerts",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (به دقیقه) وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import set_ip_checker_config
@@ -5626,7 +6232,7 @@ async def admin_inv_search_start(
         "• نام سرویس / ایمیل اشتراک (مانند: <code>user123_...</code>)\n"
         "• متن و شماره پیگیری رسید واریزی\n"
         "• کد تخفیف یا مبلغ پرداختی\n\n"
-        "<i>برای انصراف، /cancel یا دکمه زیر را لمس کنید:</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
 
     await safe_edit_text(
@@ -5654,7 +6260,13 @@ async def admin_inv_search_save(message: types.Message, state: FSMContext) -> No
 
     query = message.text.strip() if message.text else ""
     if not query:
-        await message.answer("⚠️ لطفاً یک عبارت معتبر برای جستجو ارسال کنید.")
+        from keyboards.inline_kb import admin_invoice_search_prompt_keyboard
+
+        await message.answer(
+            "⚠️ لطفاً یک عبارت معتبر برای جستجو ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=admin_invoice_search_prompt_keyboard(status_filter, page),
+            parse_mode="HTML",
+        )
         return
 
     await state.set_state(None)
@@ -6092,12 +6704,13 @@ async def admin_add_admin_start(
         "➕ <b>افزودن ادمین جدید:</b>\n\n"
         "لطفاً شناسه عددی تلگرام (Telegram User ID) ادمین جدید را ارسال کنید.\n"
         "یا یک پیام از کاربر مورد نظر را به این گفتگو **فوروارد (Forward)** کنید.\n\n"
-        "🔸 مثال: <code>123456789</code>",
+        "🔸 مثال: <code>123456789</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_users"
+                        text="❌ انصراف و بازگشت", callback_data="admin_cancel_to_users"
                     )
                 ]
             ]
@@ -6132,13 +6745,39 @@ async def admin_add_admin_save(message: types.Message, state: FSMContext) -> Non
             )
             new_tg_id = int(clean_id)
         except ValueError:
+            err_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف و بازگشت",
+                            callback_data="admin_cancel_to_users",
+                        )
+                    ]
+                ]
+            )
             await message.answer(
-                "⚠️ لطفاً یک شناسه عددی معتبر تلگرام یا پیام فورواردی ارسال کنید."
+                "⚠️ لطفاً یک شناسه عددی معتبر تلگرام یا پیام فورواردی ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=err_kb,
+                parse_mode="HTML",
             )
             return
 
     if new_tg_id <= 0:
-        await message.answer("⚠️ شناسه تلگرام وارد شده معتبر نیست.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_cancel_to_users",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "⚠️ شناسه تلگرام وارد شده معتبر نیست.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     from db.models import add_admin
@@ -6732,13 +7371,13 @@ async def admin_start_msg_set(callback: types.CallbackQuery, state: FSMContext) 
         "لطفاً پیام مدنظر خود را ارسال یا فوروارد کنید.\n\n"
         "• پشتیبانی از: <b>متن ساده/فرمت‌دار، عکس با کپشن، ویدیو، انیمیشن (گیف)، وویس، فایل صوتی، داکیومنت و استیکر</b>.\n"
         "• پس از ارسال، پیش‌نمایش به شما نشان داده می‌شود و می‌توانید دکمه‌های شیشه‌ای دلخواه نیز اضافه کنید.\n\n"
-        "<i>برای انصراف /cancel را ارسال کنید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_start_msg_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
                 )
             ]
         ]
@@ -6826,7 +7465,11 @@ async def admin_start_msg_content_received(
             ]
         )
     confirm_rows.append(
-        [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_start_msg_menu")]
+        [
+            InlineKeyboardButton(
+                text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
+            )
+        ]
     )
 
     await message.answer(
@@ -6877,12 +7520,22 @@ async def admin_start_msg_add_btn(
         return
 
     await state.set_state(AdminControlStates.waiting_start_msg_button_title)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
+                )
+            ]
+        ]
+    )
     if callback.message:
         await callback.message.answer(
             "🔘 <b>افزودن دکمه شیشه‌ای جدید</b>\n\n"
             "لطفاً <b>عنوان (متن روی دکمه)</b> را ارسال کنید:\n"
             "مثال: <code>کانال اطلاع‌رسانی</code>\n\n"
-            "<i>برای انصراف /cancel را ارسال کنید.</i>",
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
     await callback.answer()
@@ -6908,11 +7561,21 @@ async def admin_start_msg_btn_title_received(
     await state.update_data(btn_title=title)
     await state.set_state(AdminControlStates.waiting_start_msg_button_url)
 
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
+                )
+            ]
+        ]
+    )
     await message.answer(
         f"🔗 عنوان دکمه: <b>{title}</b>\n\n"
         "حالا لطفاً <b>لینک دکمه (URL)</b> را ارسال کنید:\n"
         "مثال: <code>https://t.me/your_channel</code>\n\n"
-        "<i>برای انصراف /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
 
@@ -6940,9 +7603,19 @@ async def admin_start_msg_btn_url_received(
         or url.startswith("t.me/")
         or url.startswith("tg://")
     ):
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "❌ لینک نامعتبر است. لینک باید با <code>https://</code> یا <code>t.me/</code> شروع شود.\n"
-            "لطفاً مجدداً لینک صحیح را بفرستید:",
+            "❌ لینک نامعتبر است. لینک باید با <code>https://</code> یا <code>t.me/</code> شروع شود.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
         return
@@ -6993,7 +7666,11 @@ async def admin_start_msg_btn_url_received(
                 callback_data="admin_start_msg_clear_btns",
             )
         ],
-        [InlineKeyboardButton(text="❌ انصراف", callback_data="admin_start_msg_menu")],
+        [
+            InlineKeyboardButton(
+                text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
+            )
+        ],
     ]
     await message.answer(
         confirm_text,
@@ -7046,7 +7723,7 @@ async def admin_start_msg_clear_btns(
                 ],
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_start_msg_menu"
+                        text="❌ انصراف و بازگشت", callback_data="admin_start_msg_menu"
                     )
                 ],
             ]
@@ -7289,13 +7966,13 @@ async def admin_pricing_disp_set(
         "• اگر تصویر را <u>همراه با کپشن</u> بفرستید، کپشن شما به عنوان توضیحات تعرفه قرار خواهد گرفت.\n\n"
         "2️⃣ <b>ارسال متن دلخواه:</b>\n"
         "• می‌توانید متن دلخواه خود را (با فرمت‌های HTML) بفرستید تا تعرفه به صورت متنی نمایش داده شود.\n\n"
-        "<i>جهت انصراف /cancel را ارسال کنید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_pricing_disp_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_pricing_disp_menu"
                 )
             ]
         ]
@@ -7373,7 +8050,7 @@ async def admin_pricing_content_received(
                     ],
                     [
                         InlineKeyboardButton(
-                            text="❌ انصراف",
+                            text="❌ انصراف و بازگشت",
                             callback_data="admin_pricing_disp_menu",
                         )
                     ],
@@ -7415,7 +8092,7 @@ async def admin_pricing_content_received(
                     ],
                     [
                         InlineKeyboardButton(
-                            text="❌ انصراف",
+                            text="❌ انصراف و بازگشت",
                             callback_data="admin_pricing_disp_menu",
                         )
                     ],
@@ -7446,7 +8123,7 @@ async def admin_pricing_content_received(
                 ],
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف",
+                        text="❌ انصراف و بازگشت",
                         callback_data="admin_pricing_disp_menu",
                     )
                 ],
@@ -7467,10 +8144,21 @@ async def admin_pricing_disp_write_caption(
         return
 
     await state.set_state(AdminControlStates.waiting_pricing_caption)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_pricing_disp_menu",
+                )
+            ]
+        ]
+    )
     if callback.message:
         await callback.message.answer(
             "✍️ لطفاً <b>متن (کپشن) دلخواه</b> برای تصویر را ارسال کنید:\n\n"
-            "<i>جهت انصراف /cancel را ارسال کنید.</i>",
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
     await callback.answer()
@@ -7527,7 +8215,7 @@ async def admin_pricing_caption_received(
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف",
+                    text="❌ انصراف و بازگشت",
                     callback_data="admin_pricing_disp_menu",
                 )
             ],
@@ -7799,13 +8487,13 @@ async def admin_channel_lock_set_id(
     text = (
         "📢 <b>تنظیم آیدی/یوزرنیم کانال</b>\n\n"
         "لطفاً آیدی عددی کانال (مثال: <code>-1001234567890</code>) یا یوزرنیم کانال (مثال: <code>@MyChannel</code>) را ارسال کنید:\n\n"
-        "<i>جهت انصراف /cancel را ارسال نمایید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_channel_lock_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_channel_lock_menu"
                 )
             ]
         ]
@@ -7861,13 +8549,13 @@ async def admin_channel_lock_set_link(
     text = (
         "🔗 <b>تنظیم لینک عضویت در کانال</b>\n\n"
         "لطفاً لینک عضویت عمومی یا لینک خصوصی (Invite Link) کانال را ارسال کنید (مثال: <code>https://t.me/MyChannel</code> یا <code>https://t.me/+AbCdEf...</code>):\n\n"
-        "<i>جهت انصراف /cancel را ارسال نمایید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_channel_lock_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_channel_lock_menu"
                 )
             ]
         ]

@@ -64,10 +64,20 @@ async def wallet_deposit_preset(
     amount_str = callback.data.split("_")[-1]
     if amount_str == "custom":
         await state.set_state(WalletStates.waiting_deposit_amount)
+        cancel_kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="deposit_back"
+                    )
+                ]
+            ]
+        )
         await callback.message.edit_text(
             "💰 <b>لطفاً مبلغ مورد نظر خود را (به تومان) وارد کنید:</b>\n\n"
-            "مثال: <code>150000</code>\n"
-            "برای انصراف دستور /cancel را ارسال کنید.",
+            "مثال: <code>150000</code>\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
         await callback.answer()
@@ -113,16 +123,50 @@ async def wallet_deposit_preset(
     await callback.answer()
 
 
+@router.callback_query(F.data == "deposit_back")
+async def wallet_deposit_back(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    card_cfg = await get_card_config()
+    if not card_cfg.get("enabled", True):
+        await callback.answer(
+            "⚠️ شارژ کیف پول از طریق کارت به کارت در حال حاضر غیرفعال است.",
+            show_alert=True,
+        )
+        return
+    text = (
+        "💳 <b>افزایش موجودی کیف پول</b>\n\n"
+        "لطفاً مبلغ مورد نظر برای افزایش موجودی را از گزینه‌های زیر انتخاب نموده یا مبلغ دلخواه خود را به تومان ارسال نمایید:\n\n"
+        "💡 <i>حداقل مبلغ برای شارژ حساب ۵۰,۰۰۰ تومان می‌باشد.</i>"
+    )
+    await callback.message.edit_text(
+        text, reply_markup=deposit_amount_keyboard(), parse_mode="HTML"
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "deposit_cancel")
 async def wallet_deposit_cancel(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     await state.clear()
-    await callback.message.edit_text(
-        "❌ <b>فرآیند افزایش موجودی کیف پول لغو شد.</b>",
-        parse_mode="HTML",
-    )
-    await callback.answer()
+    from db.models import get_user
+    from handlers.profile import _build_profile_text
+    from keyboards.inline_kb import profile_dashboard_keyboard
+
+    if callback.from_user:
+        user_info = await get_user(callback.from_user.id)
+        text = await _build_profile_text(callback.from_user.id, user_info)
+        await callback.message.edit_text(
+            text,
+            reply_markup=profile_dashboard_keyboard(),
+            parse_mode="HTML",
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ <b>فرآیند افزایش موجودی کیف پول لغو شد.</b>",
+            parse_mode="HTML",
+        )
+    await callback.answer("عملیات افزایش موجودی لغو شد.")
 
 
 @router.message(WalletStates.waiting_deposit_amount, F.text)
@@ -154,17 +198,31 @@ async def wallet_deposit_custom_input(
     raw_text = persian_to_english_digits(message.text.strip())
     clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
 
+    cancel_kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="deposit_back"
+                )
+            ]
+        ]
+    )
+
     try:
         amount = int(clean_text)
         if amount < 50000:
             await message.answer(
-                "❌ <b>حداقل مبلغ برای افزایش موجودی ۵۰,۰۰۰ تومان می‌باشد.</b>",
+                "❌ <b>حداقل مبلغ برای افزایش موجودی ۵۰,۰۰۰ تومان می‌باشد.</b>\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
             return
         if amount > 50000000:
             await message.answer(
-                "❌ <b>حداکثر مبلغ برای هر بار واریز ۵۰,۰۰۰,۰۰۰ تومان می‌باشد.</b>",
+                "❌ <b>حداکثر مبلغ برای هر بار واریز ۵۰,۰۰۰,۰۰۰ تومان می‌باشد.</b>\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
             return
@@ -172,7 +230,9 @@ async def wallet_deposit_custom_input(
         await message.answer(
             "❌ <b>مبلغ وارد شده معتبر نیست!</b>\n\n"
             "لطفاً مبلغ مورد نظر را فقط به صورت عدد (به تومان) ارسال نمایید.\n"
-            "💡 <i>مثال: <code>150000</code></i>",
+            "💡 <i>مثال: <code>150000</code></i>\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
         return

@@ -54,14 +54,14 @@ async def admin_broadcast_start(
         "📢 <b>ارسال پیام همگانی (اطلاعیه به تمام کاربران)</b>\n\n"
         "لطفاً پیام اطلاعیه خود را ارسال نمایید.\n"
         "• می‌توانید متن ساده، متن دارای استایل HTML، عکس با کپشن یا ویدیو بفرستید.\n\n"
-        "<i>جهت انصراف، دستور /cancel را ارسال کنید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_settings_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_settings_menu"
                 )
             ]
         ]
@@ -117,7 +117,7 @@ async def admin_broadcast_message_received(
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="admin_settings_menu"
+                    text="❌ انصراف و بازگشت", callback_data="admin_settings_menu"
                 )
             ],
         ]

@@ -9,6 +9,7 @@ from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import (
     ADMIN_CHAT_ID,
@@ -153,12 +154,22 @@ async def buy_select_volume(callback: types.CallbackQuery) -> None:
 @router.callback_query(F.data == "buy_vol_custom")
 async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
     await state.set_state(BuyStates.waiting_custom_gb)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="buy_back_volume"
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         "✍️ <b>حجم دلخواهت رو وارد کن:</b>\n\n"
         "میزان حجم رو به گیگابایت بصورت عددی ارسال کن.\n"
         "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
         "🔸 <b>مثال:</b> <code>25</code>\n\n"
-        "<i>برای انصراف /cancel رو بفرست.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -180,19 +191,46 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         )
         clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
         gb = int(clean_text)
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="buy_back_volume"
+                    )
+                ]
+            ]
+        )
         if gb < 10:
             await message.answer(
                 "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت می‌باشد.</b>\n"
-                "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.",
+                "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
             return
         if gb > 150:
-            await message.answer("⚠️ حداکثر حجم قابل سفارش 150 گیگابایت هست.")
+            await message.answer(
+                "⚠️ حداکثر حجم قابل سفارش 150 گیگابایت هست.\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
             return
     except (ValueError, TypeError):
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت", callback_data="buy_back_volume"
+                    )
+                ]
+            ]
+        )
         await message.answer(
-            "⚠️ لطفاً فقط یک عدد انگلیسی یا فارسی معتبر وارد کنید (حداقل ۱۰ گیگابایت).\n🔸 مثال: <code>25</code>",
+            "⚠️ لطفاً فقط یک عدد انگلیسی یا فارسی معتبر وارد کنید (حداقل ۱۰ گیگابایت).\n🔸 مثال: <code>25</code>\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
         return
@@ -571,10 +609,21 @@ async def buy_discount_apply_prompt(
         gb=gb,
         original_price=price,
     )
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"buy_discount_cancel_{duration}_{users}_{gb}_{price}",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         "🏷️ <b>کد تخفیف دارید؟</b>\n\n"
         "کد تخفیف خود را ارسال کنید تا روی مبلغ سفارش اعمال شود:\n\n"
-        "<i>جهت انصراف /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -640,9 +689,21 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
     )
 
     if not is_valid or not dc:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"buy_discount_cancel_{duration}_{users}_{gb}_{original_price}",
+                    )
+                ]
+            ]
+        )
         await message.answer(
             f"⚠️ <b>{err_msg}</b>\n\n"
-            "لطفاً کد تخفیف را مجدداً و با دقت وارد کنید، یا در صورت تمایل دستور /cancel را ارسال نمایید.",
+            "لطفاً کد تخفیف را مجدداً و با دقت وارد کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
         return
@@ -699,6 +760,50 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         ),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data.regexp(r"^buy_discount_cancel_\d+_\d+_\d+_\d+$"))
+async def buy_discount_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split("_")
+    duration = int(parts[3])
+    users = int(parts[4])
+    gb = int(parts[5])
+    _price = int(parts[6])
+
+    await state.clear()
+    bd = await get_price_breakdown(gb, duration, users)
+    original_price = bd["total_price"]
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    text = (
+        f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
+        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+    )
+    card_cfg = await get_card_config()
+    await callback.message.edit_text(
+        text,
+        reply_markup=payment_method_keyboard(
+            duration,
+            users,
+            gb,
+            original_price,
+            card_enabled=card_cfg.get("enabled", True),
+        ),
+        parse_mode="HTML",
+    )
+    await callback.answer("عملیات لغو شد.")
 
 
 @router.callback_query(F.data.regexp(r"^buy_discount_remove_\d+_\d+_\d+_\d+$"))
@@ -936,10 +1041,21 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
     else:
         guide_detail = "لطفاً تصویر رسید پرداخت بانکی یا شماره پیگیری تراکنش خود را در همین بخش ارسال کنید."
 
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف از خرید",
+                    callback_data="buy_cancel",
+                )
+            ]
+        ]
+    )
     await callback.message.edit_text(
         f"📸 <b>ارسال رسید</b>\n\n"
         f"{guide_detail}\n\n"
-        f"💡 <i>در صورت انصراف، می‌توانید دستور /cancel را بفرستید.</i>",
+        f"💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1098,15 +1214,32 @@ async def receive_receipt_photo(
     if not message.from_user or not message.photo:
         return
 
+    data = await state.get_data()
+    invoice_id = data.get("invoice_id")
+    if not invoice_id:
+        await state.clear()
+        return
+
     from db.models import get_receipt_config
 
     receipt_cfg = await get_receipt_config()
     if not receipt_cfg["overall_enabled"] or not receipt_cfg["photo_enabled"]:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف از خرید",
+                        callback_data="buy_cancel",
+                    )
+                ]
+            ]
+        )
         if receipt_cfg["text_enabled"]:
             await message.answer(
                 "⚠️ <b>امکان ارسال تصویر رسید در حال حاضر غیرفعال است.</b>\n\n"
-                "لطفاً شماره پیگیری یا مشخصات واریز خود را به صورت <b>متنی</b> ارسال فرمایید.\n"
-                "💡 <i>در صورت انصراف می‌توانید /cancel را ارسال کنید.</i>",
+                "لطفاً شماره پیگیری یا مشخصات واریز خود را به صورت <b>متنی</b> ارسال فرمایید.\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
         else:
@@ -1114,12 +1247,6 @@ async def receive_receipt_photo(
                 f"{receipt_cfg['disabled_text']}",
                 parse_mode="HTML",
             )
-        return
-
-    data = await state.get_data()
-    invoice_id = data.get("invoice_id")
-    if not invoice_id:
-        await state.clear()
         return
 
     invoice = await get_invoice(invoice_id)
@@ -1217,15 +1344,32 @@ async def receive_receipt_text(
         )
         return
 
+    data = await state.get_data()
+    invoice_id = data.get("invoice_id")
+    if not invoice_id:
+        await state.clear()
+        return
+
     from db.models import get_receipt_config
 
     receipt_cfg = await get_receipt_config()
     if not receipt_cfg["overall_enabled"] or not receipt_cfg["text_enabled"]:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف از خرید",
+                        callback_data="buy_cancel",
+                    )
+                ]
+            ]
+        )
         if receipt_cfg["photo_enabled"]:
             await message.answer(
                 "⚠️ <b>امکان ارسال متنی رسید در حال حاضر غیرفعال است.</b>\n\n"
-                "لطفاً <b>تصویر فیش یا رسید بانکی</b> را ارسال فرمایید.\n"
-                "💡 <i>در صورت انصراف می‌توانید /cancel را ارسال کنید.</i>",
+                "لطفاً <b>تصویر فیش یا رسید بانکی</b> را ارسال فرمایید.\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
         else:
@@ -1233,12 +1377,6 @@ async def receive_receipt_text(
                 f"{receipt_cfg['disabled_text']}",
                 parse_mode="HTML",
             )
-        return
-
-    data = await state.get_data()
-    invoice_id = data.get("invoice_id")
-    if not invoice_id:
-        await state.clear()
         return
 
     invoice = await get_invoice(invoice_id)

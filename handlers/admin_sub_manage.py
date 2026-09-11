@@ -75,21 +75,33 @@ async def admin_search_start(
 
     await state.set_state(AdminSearchStates.waiting_search_query)
 
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_sub_users_menu",
+                )
+            ]
+        ]
+    )
+
     text = (
         "🔍 <b>جستجوی کاربر و مدیریت اشتراک‌ها</b>\n\n"
         "لطفاً عبارتی برای جستجو وارد کنید:\n"
         "• <b>آیدی عددی تلگرام:</b> <code>123456789</code>\n"
         "• <b>نام کاربری (Username):</b> <code>@username</code>\n"
         "• <b>نام سرویس یا ایمیل اشتراک:</b> <code>user_123456</code>\n\n"
-        "<i>جهت انصراف، دستور /cancel را ارسال کنید.</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
     )
 
     if isinstance(event, types.Message):
-        await event.answer(text, parse_mode="HTML")
+        await event.answer(text, reply_markup=cancel_kb, parse_mode="HTML")
     else:
         await safe_edit_text(
             event.message,
             text,
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
         await event.answer()
@@ -643,7 +655,7 @@ async def admin_sub_gb_prompt(callback: types.CallbackQuery, state: FSMContext) 
         "حجم اضافه یا حجم جدید را به گیگابایت وارد کنید:\n"
         "• برای افزودن حجم به اشتراک فعلی، عدد گیگابایت را وارد کنید (مثال: <code>20</code>)\n"
         "• برای ست کردن حجم مشخص، عبارت <code>set:50</code> را ارسال کنید.\n\n"
-        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         parse_mode="HTML",
         reply_markup=keyboard,
     )
@@ -686,7 +698,23 @@ async def admin_sub_gb_save(message: types.Message, state: FSMContext) -> None:
         if gb_val <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد معتبر وارد کنید (مثال: 20 یا set:50).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_manage_sub_{email}"
+                        if email
+                        else "admin_sub_users_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر وارد کنید (مثال: 20 یا set:50).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     current_total_gb = (client.get("totalGB") or 0) / (1024**3)
@@ -737,7 +765,7 @@ async def admin_sub_days_prompt(
         "تعداد روز جدید یا اضافی را وارد کنید:\n"
         "• برای <b>تمدید و افزودن روز</b>، عدد روزها را وارد کنید (مثال: <code>30</code>)\n"
         "• برای <b>تنظیم دقیق روزهای مانده از الان</b>، عبارت <code>set:60</code> را بفرستید.\n\n"
-        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         parse_mode="HTML",
         reply_markup=keyboard,
     )
@@ -780,7 +808,23 @@ async def admin_sub_days_save(message: types.Message, state: FSMContext) -> None
         if days_val <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (مثال: 30).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_manage_sub_{email}"
+                        if email
+                        else "admin_sub_users_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید (مثال: 30).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     now_ms = int(time.time() * 1000)
@@ -842,7 +886,7 @@ async def admin_sub_ip_prompt(callback: types.CallbackQuery, state: FSMContext) 
         f"👤 <b>تغییر سقف کاربر همزمان (IP Limit) برای «{email}»:</b>\n\n"
         "تعداد کاربران مجاز همزمان را به صورت عدد وارد کنید (0 یعنی نامحدود):\n"
         "مثال: <code>2</code>\n\n"
-        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         parse_mode="HTML",
         reply_markup=keyboard,
     )
@@ -873,7 +917,23 @@ async def admin_sub_ip_save(message: types.Message, state: FSMContext) -> None:
         if limit_ip < 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای نامحدود).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_manage_sub_{email}"
+                        if email
+                        else "admin_sub_users_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید (0 برای نامحدود).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     client = await xui_api.get_client(email)
@@ -923,7 +983,7 @@ async def admin_sub_rename_prompt(
     await callback.message.edit_text(
         f"✏️ <b>تغییر نام سرویس (Email) برای «{email}»:</b>\n\n"
         "نام جدید و دلخواه خود را ارسال نمایید:\n\n"
-        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         parse_mode="HTML",
         reply_markup=keyboard,
     )
@@ -1131,7 +1191,7 @@ async def admin_sub_grp_custom_prompt(
         callback.message,
         f"✏️ <b>ورود نام گروه دلخواه برای اشتراک «{email}»:</b>\n\n"
         "نام گروه جدید را ارسال کنید:\n\n"
-        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -1230,7 +1290,7 @@ async def admin_sub_tgid_prompt(
         f"شناسه فعلی کاربر: {curr_tgid_str}\n\n"
         "لطفاً <b>آیدی عددی تلگرام</b> (مثال: <code>123456789</code>) یا <b>نام‌کاربری</b> (مثال: <code>@username</code>) کاربر مورد نظر را ارسال نمایید:\n"
         "• برای لغو اتصال کاربر به این اشتراک می‌توانید از دکمه زیر یا ارسال عدد <code>0</code> استفاده کنید.\n\n"
-        "<i>برای انصراف دکمه زیر را لمس کرده یا /cancel را ارسال کنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -1638,7 +1698,7 @@ async def admin_user_wallet_prompt(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔙 انصراف و بازگشت",
+                    text="❌ انصراف و بازگشت",
                     callback_data=f"admin_manage_user_{tg_id}_back",
                 )
             ]
@@ -1650,7 +1710,7 @@ async def admin_user_wallet_prompt(
         "مبلغ (به تومان) را وارد کنید:\n"
         "• برای <b>شارژ و افزودن به موجودی</b>، عدد مثبت وارد کنید (مثال: <code>50000</code>)\n"
         "• برای <b>تنظیم مستقیم موجودی</b>، عبارت <code>set:100000</code> را ارسال کنید.\n\n"
-        "<i>برای انصراف /cancel یا دکمه زیر را بزنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=kb,
         parse_mode="HTML",
     )
@@ -1685,7 +1745,23 @@ async def admin_user_wallet_save(message: types.Message, state: FSMContext) -> N
     try:
         amount = int(persian_to_english_digits(txt))
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر به تومان وارد کنید.")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_manage_user_{tg_id}_back"
+                        if tg_id
+                        else "admin_sub_users_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     if is_set:
@@ -1842,14 +1918,14 @@ async def admin_user_ban_action(
             prompt = (
                 f"✍️ <b>ارسال پیام دلخواه مسدودسازی به کاربر <code>{tg_id}</code>:</b>\n\n"
                 "لطفاً متن پیام ارسالی به کاربر را تایپ کنید:\n\n"
-                "<i>برای انصراف /cancel یا دکمه زیر را بزنید:</i>"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید:</i>"
             )
         else:
             await state.set_state(AdminSearchStates.waiting_unban_custom_msg)
             prompt = (
                 f"✍️ <b>ارسال پیام دلخواه رفع مسدودی به کاربر <code>{tg_id}</code>:</b>\n\n"
                 "لطفاً متن پیام ارسالی به کاربر را تایپ کنید:\n\n"
-                "<i>برای انصراف /cancel یا دکمه زیر را بزنید:</i>"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید:</i>"
             )
 
         await safe_edit_text(
@@ -2141,7 +2217,7 @@ async def admin_user_msg_start(
         f"✉️ <b>ارسال پیام مستقیم به کاربر <code>{tg_id}</code>:</b>\n\n"
         "لطفاً پیام ارسالی خود را ارسال فرمایید:\n"
         "• می‌توانید متن ساده، متن با استایل HTML، عکس، ویدیو، وویس، صوت یا فایل با کپشن دلخواه ارسال کنید.\n\n"
-        "<i>برای انصراف /cancel یا دکمه زیر را بزنید:</i>"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید:</i>"
     )
 
     await safe_edit_text(
@@ -2335,7 +2411,7 @@ async def admin_user_create_sub_start(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔙 انصراف و بازگشت",
+                    text="❌ انصراف و بازگشت",
                     callback_data=f"admin_manage_user_{tg_id}_back",
                 )
             ]
@@ -2346,7 +2422,7 @@ async def admin_user_create_sub_start(
         f"➕ <b>ساخت اشتراک اختصاصی جدید برای کاربر {tg_id}:</b>\n\n"
         "<b>مرحله ۱:</b> لطفاً حجم اشتراک را به گیگابایت وارد کنید:\n"
         "مثال: <code>30</code>\n\n"
-        "<i>برای انصراف /cancel یا دکمه زیر را بزنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=kb,
         parse_mode="HTML",
     )
@@ -2375,16 +2451,46 @@ async def admin_user_create_sub_gb_save(
         if gb_val <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد معتبر وارد کنید (مثال: 30).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_sub_user_profile_{tg_id}"
+                        if tg_id
+                        else "admin_sub_users_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر وارد کنید (مثال: 30).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     await state.update_data(new_sub_gb=gb_val)
     await state.set_state(AdminSearchStates.waiting_create_sub_dur)
 
+    dur_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_sub_user_profile_{tg_id}"
+                    if tg_id
+                    else "admin_sub_users_menu",
+                )
+            ]
+        ]
+    )
+
     await message.answer(
         "<b>مرحله ۲:</b> مدت اعتبار اشتراک را به روز وارد کنید:\n"
         "مثال: <code>30</code>\n\n"
-        "<i>برای انصراف /cancel را بزنید.</i>",
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=dur_kb,
         parse_mode="HTML",
     )
 
@@ -2411,7 +2517,23 @@ async def admin_user_create_sub_dur_save(
         if dur_val <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید (مثال: 30).")
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_sub_user_profile_{tg_id}"
+                        if tg_id
+                        else "admin_sub_users_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر وارد کنید (مثال: 30).\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
         return
 
     gb_val = data.get("new_sub_gb", 10.0)
