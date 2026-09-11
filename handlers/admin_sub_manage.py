@@ -2649,21 +2649,45 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
 
     for inv in invoices:
         inv_id = inv["id"]
-        amount = format_price(inv["amount"])
-        status = inv["status"]
-        status_str = (
-            "✅ موفق/تأییدشده"
-            if status in ("paid", "approved")
-            else ("⏳ در انتظار" if status == "pending" else "❌ ردشده/ناموفق")
-        )
+        amount = format_price(inv.get("amount", 0))
+        status = inv.get("status")
+        if status in ("paid", "approved"):
+            status_str = "🟢 تأییدشده"
+        elif status == "pending":
+            status_str = "🟡 در انتظار"
+        elif status == "expired":
+            status_str = "⌛️ منقضی‌شده"
+        elif status == "rejected":
+            status_str = "🔴 ردشده"
+        else:
+            status_str = f"❌ {status}"
+
         pm = inv.get("payment_method") or "card"
         pm_str = "💰 کیف پول" if pm == "wallet" else "💳 کارت به کارت"
-        created_at = inv.get("created_at") or ""
+        created_at = inv.get("created_at")
+        date_str = format_datetime(created_at) if created_at else "نامشخص"
+
+        target_email = inv.get("target_email")
+        if target_email == "TOPUP" or (
+            inv.get("duration_days") == 0 and inv.get("data_gb") == 0
+        ):
+            item_desc = "💵 شارژ کیف پول"
+        elif target_email:
+            item_desc = f"🔄 تمدید: <code>{target_email}</code>"
+        else:
+            gb = inv.get("data_gb", 0)
+            dur = inv.get("duration_days", 0)
+            item_desc = (
+                f"🛍 خرید: {format_size_gb(gb)} ({to_persian_digits(dur)} روز)"
+                if (gb or dur)
+                else "🛍 خرید اشتراک"
+            )
 
         lines.append(
             f"🔹 <b>فاکتور #{inv_id}</b> | {amount}\n"
+            f"   بابت: {item_desc}\n"
             f"   روش: {pm_str} | وضعیت: <b>{status_str}</b>\n"
-            f"   📅 تاریخ: <code>{created_at}</code>\n"
+            f"   📅 تاریخ: <code>{date_str}</code>\n"
         )
 
     nav_btns = []
