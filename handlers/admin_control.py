@@ -221,6 +221,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     last_max = volume_tiers[-1][0] if volume_tiers else 100
     tiers_text += f"  • بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} / GB\n"
 
+    volume_tiers_enabled = config.get("volume_tiers_enabled", True)
+    if volume_tiers_enabled:
+        tiers_summary = f"📊 <b>پله‌های تخفیف حجم:</b> 🟢 فعال\n{tiers_text}"
+    else:
+        tiers_summary = f"📊 <b>پله‌های تخفیف حجم:</b> 🔴 غیرفعال (محاسبه بر اساس نرخ پایه: {format_price(base_rate)} / GB)\n"
+
     dur_text = (
         f"  • ۳۰ روز: +{format_price(dur_surcharges.get(30, 0))}\n"
         f"  • ۶۰ روز: +{format_price(dur_surcharges.get(60, 0))}\n"
@@ -264,7 +270,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         f"🤖 <b>وضعیت و آخرین اجرای زمان‌بندها:</b>\n{schedulers_text}\n"
         f"🔔 <b>حدآستانه هشدارهای اتمام سرویس:</b>\n{alert_text}\n"
         f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
-        f"📊 <b>پله‌های تخفیف حجم:</b>\n{tiers_text}\n"
+        f"{tiers_summary}\n"
         f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
         f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}\n"
         f"📩 <b>پیام پس از استارت:</b> {start_msg_status}\n"
@@ -363,9 +369,13 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
 
 async def _build_pricing_submenu() -> InlineKeyboardMarkup:
     from db.models import get_card_config
+    from services.pricing import get_pricing_config
 
     card_config = await get_card_config()
     card_status = "🟢" if card_config.get("enabled", True) else "🔴"
+
+    pricing_config = await get_pricing_config()
+    tiers_status = "🟢" if pricing_config.get("volume_tiers_enabled", True) else "🔴"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -395,8 +405,8 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="📊 تغییر پله‌های تخفیف حجم",
-                    callback_data="admin_price_tiers",
+                    text=f"📊 پله‌های تخفیف حجم ({tiers_status})",
+                    callback_data="admin_price_tiers_menu",
                 ),
             ],
             [
@@ -931,6 +941,112 @@ async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> 
         await message.answer("❌ لطفاً یک عدد صحیح معتبر وارد کنید.", parse_mode="HTML")
 
 
+async def _build_price_tiers_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from services.pricing import get_pricing_config
+
+    config = await get_pricing_config()
+    is_enabled = config.get("volume_tiers_enabled", True)
+    base_rate = config["base_gb_rate"]
+    volume_tiers = config["volume_tiers"]
+    fallback_rate = config["fallback_gb_rate"]
+
+    status_str = (
+        "🟢 فعال (محاسبه پلکانی)"
+        if is_enabled
+        else "🔴 غیرفعال (قیمت ثابت بر اساس نرخ پایه)"
+    )
+    toggle_btn_text = (
+        "🔴 غیرفعال‌سازی تخفیف پلکانی" if is_enabled else "🟢 فعال‌سازی تخفیف پلکانی"
+    )
+
+    tiers_desc = ""
+    for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
+        tiers_desc += (
+            f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
+        )
+    last_max = volume_tiers[-1][0] if volume_tiers else 100
+    tiers_desc += f"  • بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} / GB\n"
+
+    text = (
+        f"📊 <b>مدیریت تخفیف پلکانی حجم</b>\n\n"
+        f"🔘 <b>وضعیت سیستم:</b> <b>{status_str}</b>\n"
+        f"💵 <b>نرخ پایه هر گیگ (قیمت ثابت):</b> <b>{format_price(base_rate)}</b>\n\n"
+        f"📋 <b>پله‌های تعریف‌شده فعلی:</b>\n{tiers_desc}\n"
+        f"💡 <i>در صورت غیرفعال بودن تخفیف پلکانی، هزینه هر گیگابایت برای تمامی حجم‌ها بر اساس نرخ پایه ({format_price(base_rate)}) محاسبه خواهد شد.</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text,
+                    callback_data="admin_price_tiers_toggle",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ ویرایش پله‌های تخفیف",
+                    callback_data="admin_price_tiers_edit",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به قیمت و مالی",
+                    callback_data="admin_pricing_menu",
+                )
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_price_tiers_menu")
+async def admin_price_tiers_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+
+    text, keyboard = await _build_price_tiers_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "admin_price_tiers_toggle")
+async def admin_price_tiers_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+
+    from services.pricing import get_pricing_config, set_volume_tiers_enabled
+
+    config = await get_pricing_config()
+    current_status = config.get("volume_tiers_enabled", True)
+    new_status = not current_status
+    await set_volume_tiers_enabled(new_status)
+
+    msg = "فعال" if new_status else "غیرفعال"
+    await callback.answer(f"✅ تخفیف پلکانی {msg} شد.")
+    text, keyboard = await _build_price_tiers_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_price_tiers_edit")
 @router.callback_query(F.data == "admin_price_tiers")
 async def admin_price_tiers_start(
     callback: types.CallbackQuery, state: FSMContext
@@ -951,7 +1067,7 @@ async def admin_price_tiers_start(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف", callback_data="admin_cancel_to_pricing"
+                        text="❌ انصراف", callback_data="admin_price_tiers_menu"
                     )
                 ]
             ]
@@ -965,7 +1081,10 @@ async def admin_price_tiers_start(
 async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> None:
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
-        await message.answer("❌ عملیات لغو شد.")
+        text, keyboard = await _build_price_tiers_panel()
+        await message.answer(
+            "❌ عملیات لغو شد.\n\n" + text, reply_markup=keyboard, parse_mode="HTML"
+        )
         return
 
     raw_lines = [
@@ -996,7 +1115,7 @@ async def admin_price_tiers_save(message: types.Message, state: FSMContext) -> N
         parsed_tiers.sort(key=lambda x: x[0])
         await update_volume_tiers(parsed_tiers, fallback_rate)
         await state.clear()
-        text, keyboard = await _build_pricing_panel()
+        text, keyboard = await _build_price_tiers_panel()
         await message.answer(
             f"✅ پله‌های تخفیف حجم با موفقیت به روزرسانی شدند!\n\n{text}",
             reply_markup=keyboard,

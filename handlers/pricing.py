@@ -22,20 +22,30 @@ async def build_pricing_text() -> str:
     durations = config["duration_surcharges"]
     user_surcharge = config["user_surcharge"]
 
-    tiers_text = ""
-    sorted_tiers = sorted(tiers, key=lambda x: x[0])
-    for i, (max_gb, rate) in enumerate(sorted_tiers):
-        if i == 0:
-            tiers_text += f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
-        else:
-            prev_gb = sorted_tiers[i - 1][0]
-            tiers_text += f"  • از {to_persian_digits(prev_gb)} تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
+    base_rate = config["base_gb_rate"]
+    volume_tiers_enabled = config.get("volume_tiers_enabled", True)
 
-    if sorted_tiers:
-        last_gb = sorted_tiers[-1][0]
-        tiers_text += f"  • بالای {to_persian_digits(last_gb)} گیگ: {format_price(fallback_rate)} به ازای هر گیگ\n"
+    if volume_tiers_enabled:
+        tiers_text = ""
+        sorted_tiers = sorted(tiers, key=lambda x: x[0])
+        for i, (max_gb, rate) in enumerate(sorted_tiers):
+            if i == 0:
+                tiers_text += f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
+            else:
+                prev_gb = sorted_tiers[i - 1][0]
+                tiers_text += f"  • از {to_persian_digits(prev_gb)} تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
+
+        if sorted_tiers:
+            last_gb = sorted_tiers[-1][0]
+            tiers_text += f"  • بالای {to_persian_digits(last_gb)} گیگ: {format_price(fallback_rate)} به ازای هر گیگ\n"
+        else:
+            tiers_text += (
+                f"  • تمامی حجم‌ها: {format_price(fallback_rate)} به ازای هر گیگ\n"
+            )
+
+        volume_section = f"📊 <b>هرچه حجم بیشتر، قیمت هر گیگ کمتر!</b>\n{tiers_text}"
     else:
-        tiers_text += f"  • تمامی حجم‌ها: {format_price(fallback_rate)} به ازای هر گیگ\n"
+        volume_section = f"📊 <b>قیمت حجم (نرخ ثابت):</b>\n  • هر گیگابایت: {format_price(base_rate)}\n"
 
     dur_60 = durations.get(60, 50000)
     dur_90 = durations.get(90, 100000)
@@ -51,8 +61,7 @@ async def build_pricing_text() -> str:
     )
     text = (
         f"💰 <b>تعرفه خدمات {BOT_NAME}</b>\n\n"
-        "📊 <b>هرچه حجم بیشتر، قیمت هر گیگ کمتر!</b>\n"
-        f"{tiers_text}\n"
+        f"{volume_section}\n"
         "⏱ <b>مدت اشتراک را انتخاب کنید</b>\n"
         f"{dur_text}\n"
         "👥 <b>تعداد کاربران همزمان</b>\n"

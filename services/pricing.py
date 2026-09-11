@@ -71,12 +71,16 @@ async def load_pricing_config() -> dict[str, Any]:
         volume_tiers = list(DEFAULT_VOLUME_TIERS)
         fallback_rate = DEFAULT_FALLBACK_GB_RATE
 
+    tiers_enabled_str = await get_setting("pricing_volume_tiers_enabled", "1")
+    volume_tiers_enabled = tiers_enabled_str != "0"
+
     _pricing_cache = {
         "base_gb_rate": base_rate,
         "user_surcharge": user_surcharge,
         "duration_surcharges": duration_surcharges,
         "volume_tiers": volume_tiers,
         "fallback_gb_rate": fallback_rate,
+        "volume_tiers_enabled": volume_tiers_enabled,
     }
     return _pricing_cache
 
@@ -162,6 +166,11 @@ async def update_volume_tiers(tiers: list[tuple[int, int]], fallback_rate: int) 
     invalidate_pricing_cache()
 
 
+async def set_volume_tiers_enabled(enabled: bool) -> None:
+    await set_setting("pricing_volume_tiers_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
 async def reset_pricing_config_to_defaults() -> None:
     await set_setting("pricing_base_gb_rate", str(DEFAULT_BASE_GB_RATE))
     await set_setting("pricing_user_surcharge", str(DEFAULT_USER_SURCHARGE))
@@ -173,6 +182,7 @@ async def reset_pricing_config_to_defaults() -> None:
         "fallback_rate": DEFAULT_FALLBACK_GB_RATE,
     }
     await set_setting("pricing_volume_tiers", json.dumps(tiers_data))
+    await set_setting("pricing_volume_tiers_enabled", "1")
     invalidate_pricing_cache()
 
 
@@ -181,6 +191,9 @@ async def calculate_data_price(gb: int) -> int:
         return 0
 
     config = await get_pricing_config()
+    if not config.get("volume_tiers_enabled", True):
+        return gb * config["base_gb_rate"]
+
     tiers: list[tuple[int, int]] = config["volume_tiers"]
     fallback_rate: int = config["fallback_gb_rate"]
 
