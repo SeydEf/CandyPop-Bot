@@ -43,8 +43,9 @@ def guide_apps_keyboard(os_key: str) -> InlineKeyboardMarkup:
         return guide_os_keyboard()
 
     apps = os_info.get("apps", [])
+    recommended = set(os_info.get("recommended", []))
     buttons: list[list[InlineKeyboardButton]] = []
-    row: list[InlineKeyboardButton] = []
+    other_buttons: list[InlineKeyboardButton] = []
 
     for app_key in apps:
         app_data = get_client_info(app_key, os_key)
@@ -52,12 +53,26 @@ def guide_apps_keyboard(os_key: str) -> InlineKeyboardMarkup:
             continue
         icon = app_data.get("icon", "📱")
         name = app_data.get("name", app_key)
-        row.append(
-            InlineKeyboardButton(
-                text=f"{icon} {name}",
-                callback_data=f"guide_app:{os_key}:{app_key}",
+        if app_key in recommended:
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"⭐️ {icon} {name} (پیشنهادی)",
+                        callback_data=f"guide_app:{os_key}:{app_key}",
+                    )
+                ]
             )
-        )
+        else:
+            other_buttons.append(
+                InlineKeyboardButton(
+                    text=f"{icon} {name}",
+                    callback_data=f"guide_app:{os_key}:{app_key}",
+                )
+            )
+
+    row: list[InlineKeyboardButton] = []
+    for btn in other_buttons:
+        row.append(btn)
         if len(row) == 2:
             buttons.append(row)
             row = []

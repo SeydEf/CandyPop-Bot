@@ -7,31 +7,36 @@ OS_DATA: dict[str, dict[str, Any]] = {
         "title": "📱 اندروید (Android)",
         "badge": "Android",
         "description": "سیستم‌عامل اندروید از طیف گسترده‌ای از نرم‌افزارهای استاندارد و سریع پشتیبانی می‌کند. یکی از برنامه‌های زیر را انتخاب نمایید:",
-        "apps": ["v2rayng", "hiddify", "nekobox", "singbox"],
+        "apps": ["happ", "v2rayng", "hiddify", "nekobox", "singbox"],
+        "recommended": ["happ", "v2rayng"],
     },
     "ios": {
         "title": "🍏 آیفون و آیپد (iOS)",
         "badge": "iOS",
         "description": "برای دستگاه‌های آیفون و آیپد، برنامه‌های زیر با عملکرد عالی و اتصال پایدار پیشنهاد می‌شوند:",
-        "apps": ["streisand", "v2box", "hiddify"],
+        "apps": ["happ", "streisand", "v2box", "hiddify"],
+        "recommended": ["happ"],
     },
     "windows": {
         "title": "💻 ویندوز (Windows)",
         "badge": "Windows",
         "description": "نرم‌افزارهای مخصوص سیستم‌عامل ویندوز برای کامپیوتر و لپ‌تاپ:",
-        "apps": ["v2rayn", "hiddify", "nekoray", "singbox"],
+        "apps": ["happ", "v2rayn", "hiddify", "nekoray", "singbox"],
+        "recommended": ["happ", "v2rayn"],
     },
     "macos": {
         "title": "🍎 مک (macOS)",
         "badge": "macOS",
         "description": "نرم‌افزارهای سازگار با سیستم‌عامل macOS (اینتل و پردازنده‌های سری M اپل):",
-        "apps": ["v2box", "hiddify", "streisand", "foxray"],
+        "apps": ["happ", "v2box", "hiddify", "streisand"],
+        "recommended": ["happ"],
     },
     "linux": {
         "title": "🐧 لینوکس (Linux)",
         "badge": "Linux",
         "description": "نرم‌افزارهای گرافیکی و خط فرمانی متناسب با توزیع‌های مختلف لینوکس:",
-        "apps": ["hiddify", "v2raya", "singbox"],
+        "apps": ["happ", "hiddify", "v2raya", "singbox"],
+        "recommended": ["happ"],
     },
 }
 
@@ -180,6 +185,21 @@ CLIENT_DATA: dict[str, dict[str, Any]] = {
         ],
         "tip": "در تنظیمات وب می‌توانید شفاف‌سازی پورت‌ها (Transparent Proxy) را فعال کنید.",
     },
+    "happ": {
+        "name": "Happ",
+        "icon": "⚡️",
+        "desc": "کلاینت مدرن، سبک و چندسکویی بر پایه هسته قدرتمند Xray با رابط کاربری ساده و اتصال فوق‌العاده سریع و پایدار.",
+        "direct_link": "https://github.com/Happ-proxy/happ-android/releases/latest",
+        "store_link": "https://play.google.com/store/apps/details?id=com.happproxy",
+        "store_name": "Google Play",
+        "steps": [
+            "ابتدا لینک ساب‌اسکریپشن اشتراک خود را در تلگرام کپی کنید.",
+            "برنامه <b>Happ</b> را باز کنید.",
+            "گزینه <b>Add from Clipboard</b> را لمس کنید تا سرورها اضافه شوند.",
+            "یک سرور را انتخاب نموده و دکمه اتصال را روشن فرمایید.",
+        ],
+        "tip": "برنامه Happ از تمامی پروتکل‌های نوین نظیر VLESS (Reality)، VMess، Trojan و Hysteria2 پشتیبانی می‌کند.",
+    },
 }
 
 
@@ -201,10 +221,22 @@ def get_client_info(app_key: str, os_key: str | None = None) -> dict[str, Any] |
                 "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532"
             )
             info["store_name"] = "App Store"
+        elif app_key == "happ":
+            info["direct_link"] = None
+            info["store_link"] = (
+                "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215"
+            )
+            info["store_name"] = "App Store"
     elif os_key == "windows":
         if app_key == "hiddify":
             info["direct_link"] = (
                 "https://github.com/hiddify/hiddify-next/releases/latest"
+            )
+            info["store_link"] = None
+            info["store_name"] = None
+        elif app_key == "happ":
+            info["direct_link"] = (
+                "https://github.com/Happ-proxy/happ-desktop/releases/latest"
             )
             info["store_link"] = None
             info["store_name"] = None
@@ -215,6 +247,14 @@ def get_client_info(app_key: str, os_key: str | None = None) -> dict[str, Any] |
                 "https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532"
             )
             info["store_name"] = "App Store"
+        elif app_key == "happ":
+            info["direct_link"] = (
+                "https://github.com/Happ-proxy/happ-desktop/releases/latest"
+            )
+            info["store_link"] = (
+                "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215"
+            )
+            info["store_name"] = "App Store"
     elif os_key == "linux":
         if app_key == "hiddify":
             info["direct_link"] = (
@@ -222,5 +262,27 @@ def get_client_info(app_key: str, os_key: str | None = None) -> dict[str, Any] |
             )
             info["store_link"] = None
             info["store_name"] = None
+        elif app_key == "happ":
+            info["direct_link"] = (
+                "https://github.com/Happ-proxy/happ-desktop/releases/latest"
+            )
+            info["store_link"] = None
+            info["store_name"] = None
+    elif os_key == "android":
+        if app_key == "happ":
+            info["direct_link"] = (
+                "https://github.com/Happ-proxy/happ-android/releases/latest"
+            )
+            info["store_link"] = (
+                "https://play.google.com/store/apps/details?id=com.happproxy"
+            )
+            info["store_name"] = "Google Play"
 
     return info
+
+
+def is_app_recommended(app_key: str, os_key: str) -> bool:
+    os_info = get_os_info(os_key)
+    if not os_info:
+        return False
+    return app_key in os_info.get("recommended", [])

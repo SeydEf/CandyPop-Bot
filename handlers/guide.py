@@ -30,9 +30,19 @@ def build_app_list_text(os_key: str) -> str:
 
     title = os_info.get("title", os_key)
     description = os_info.get("description", "")
+    recommended = os_info.get("recommended", [])
+    rec_names = []
+    for k in recommended:
+        c = get_client_info(k, os_key)
+        if c:
+            rec_names.append(f"<b>{c.get('name', k)}</b>")
+    rec_str = (
+        f"⭐️ <b>پیشنهاد ویژه ما:</b> {' و '.join(rec_names)}\n\n" if rec_names else ""
+    )
     return (
         f"📱 <b>راهنمای اتصال | {title}</b>\n\n"
         f"{description}\n\n"
+        f"{rec_str}"
         "👇 <i>برای مشاهده آموزش گام‌به‌گام و دانلود آخرین نسخه، روی برنامه مورد نظر کلیک کنید:</i>"
     )
 
@@ -50,9 +60,11 @@ def build_app_detail_text(os_key: str, app_key: str) -> str:
     desc = app_info.get("desc", "")
     steps = app_info.get("steps", [])
     tip = app_info.get("tip")
+    is_rec = app_key in os_info.get("recommended", []) if os_info else False
+    rec_badge = " ⭐️ <b>(پیشنهادی)</b>" if is_rec else ""
 
     text_lines = [
-        f"{icon} <b>آموزش اتصال به برنامه {name} ({badge})</b>",
+        f"{icon} <b>آموزش اتصال به برنامه {name} ({badge}){rec_badge}</b>",
         "",
         f"📝 <b>درباره برنامه:</b>\n{desc}",
         "",
