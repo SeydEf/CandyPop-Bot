@@ -6103,10 +6103,12 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
 
     from db.models import get_bot_statistics
     from keyboards.inline_kb import admin_stats_keyboard
-    from services.xui_api import get_server_status
+    from services.xui_api import get_online_clients, get_server_status
 
     stats = await get_bot_statistics()
     server_status = await get_server_status()
+    online_clients = await get_online_clients()
+    online_count = len(online_clients)
 
     net_traffic = server_status.get("netTraffic") or {}
     sent_bytes = net_traffic.get("sent", 0) if isinstance(net_traffic, dict) else 0
@@ -6124,6 +6126,7 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     text = (
         f"📊 <b>آمار و گزارشات جامع ربات</b>\n\n"
         f"👥 <b>آمار کاربران</b>\n"
+        f"  • 🟢 کاربران آنلاین هم‌اکنون: <b>{to_persian_digits(online_count)}</b> نفر\n"
         f"  • کل کاربران: <b>{to_persian_digits(stats['total_users'])}</b> نفر\n"
         f"  • امروز: <b>{to_persian_digits(stats['users_today'])}</b> نفر\n"
         f"  • ۷ روز اخیر: <b>{to_persian_digits(stats['users_week'])}</b> نفر\n"
@@ -6149,9 +6152,146 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
     await safe_edit_text(
         callback.message,
         text,
-        reply_markup=admin_stats_keyboard(),
+        reply_markup=admin_stats_keyboard(online_count=online_count),
         parse_mode="HTML",
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_online_clients_"))
+async def admin_online_clients_list(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+
+    page_str = callback.data[len("admin_online_clients_") :]
+    try:
+        page = int(page_str)
+    except ValueError:
+        page = 0
+
+    import asyncio
+    import math
+    from db.models import get_user
+    from keyboards.inline_kb import admin_online_clients_keyboard
+    from services.xui_api import get_client, get_client_traffic, get_online_clients
+
+    online_emails = await get_online_clients()
+    total_onlines = len(online_emails)
+
+    if total_onlines == 0:
+        empty_text = (
+            "🟢 <b>کاربران آنلاین سرور</b>\n\n"
+            "<i>در حال حاضر هیچ کاربری به سرور متصل نیست.</i>"
+        )
+        empty_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔄 بروزرسانی",
+                        callback_data="admin_online_clients_0",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به آمار",
+                        callback_data="admin_stats_menu",
+                    )
+                ],
+            ]
+        )
+        await safe_edit_text(
+            callback.message,
+            empty_text,
+            reply_markup=empty_kb,
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    page_size = 5
+    total_pages = max(1, math.ceil(total_onlines / page_size))
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * page_size
+    page_emails = online_emails[start_idx : start_idx + page_size]
+
+    await state.update_data(sub_back_callback=f"admin_online_clients_{page}")
+
+    lines = [
+        f"🟢 <b>لیست کاربران آنلاین سرور</b> ({to_persian_digits(total_onlines)} نفر آنلاین)\n",
+        f"<i>صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}</i>\n",
+    ]
+
+    async def _fetch_client_and_traffic(email: str):
+        c_res, tr_res = await asyncio.gather(
+            get_client(email),
+            get_client_traffic(email),
+            return_exceptions=True,
+        )
+        c_dict = c_res if isinstance(c_res, dict) else None
+        tr_dict = tr_res if isinstance(tr_res, dict) else None
+        return email, c_dict, tr_dict
+
+    fetched_items = await asyncio.gather(
+        *[_fetch_client_and_traffic(em) for em in page_emails]
+    )
+
+    clients_page_data = []
+    for idx, (email, client, traffic) in enumerate(fetched_items, start=start_idx + 1):
+        clients_page_data.append(client or {"email": email})
+
+        total_bytes = 0
+        if client:
+            total_bytes = client.get("totalGB", 0) or 0
+        if not total_bytes and traffic:
+            total_bytes = traffic.get("total", 0) or 0
+
+        used_bytes = 0
+        if traffic:
+            used_bytes = (traffic.get("up", 0) or 0) + (traffic.get("down", 0) or 0)
+        elif client and "usedTraffic" in client:
+            used_bytes = client.get("usedTraffic", 0) or 0
+
+        used_str = format_size(used_bytes)
+        total_str = format_size(total_bytes) if total_bytes > 0 else "نامحدود"
+
+        if total_bytes > 0:
+            rem_bytes = max(0, total_bytes - used_bytes)
+            vol_line = f"   📊 مصرف: <b>{used_str}</b> از <b>{total_str}</b> (🔋 باقیمانده: <b>{format_size(rem_bytes)}</b>)"
+        else:
+            vol_line = f"   📊 مصرف: <b>{used_str}</b> (سقف: <b>نامحدود</b>)"
+
+        tg_id = client.get("tgId", 0) or 0 if client else 0
+        tg_info = ""
+        if tg_id > 0:
+            u = await get_user(tg_id)
+            if u:
+                uname = (
+                    f"@{u['username']}"
+                    if u.get("username")
+                    else (u.get("full_name") or "")
+                )
+                tg_info = f"\n   👤 کاربر: <code>{tg_id}</code> ({uname})"
+            else:
+                tg_info = f"\n   👤 کاربر: <code>{tg_id}</code>"
+
+        grp = client.get("group") if client else ""
+        grp_str = f" | گروه: <code>{grp}</code>" if grp else ""
+
+        lines.append(
+            f"<b>{to_persian_digits(idx)}.</b> <code>{email}</code>{grp_str}\n"
+            f"{vol_line}{tg_info}\n"
+        )
+
+    lines.append(
+        "<i>جهت مشاهده مشخصات کامل و مدیریت هر اشتراک، روی دکمه آن کلیک کنید:</i>"
+    )
+    text = "\n".join(lines)
+
+    kb = admin_online_clients_keyboard(clients_page_data, page, total_pages)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
 

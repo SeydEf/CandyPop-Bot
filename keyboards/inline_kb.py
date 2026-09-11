@@ -822,23 +822,87 @@ def admin_remove_admins_keyboard(admins: list[dict[str, Any]]) -> InlineKeyboard
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def admin_stats_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def admin_stats_keyboard(online_count: int = 0) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"🟢 مشاهده کاربران آنلاین ({to_persian_digits(online_count)})",
+                callback_data="admin_online_clients_0",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔄 بروزرسانی آمار",
+                callback_data="admin_stats_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پنل اصلی",
+                callback_data="admin_price_main",
+            )
+        ],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_online_clients_keyboard(
+    clients_page: list[dict[str, Any]],
+    current_page: int,
+    total_pages: int,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for c in clients_page:
+        email = c.get("email", "")
+        if not email:
+            continue
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text="🔄 بروزرسانی آمار",
-                    callback_data="admin_stats_menu",
+                    text=f"⚙️ مدیریت: {email}",
+                    callback_data=f"admin_manage_sub_{email}",
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به پنل اصلی",
-                    callback_data="admin_price_main",
-                )
-            ],
+            ]
+        )
+
+    nav_row: list[InlineKeyboardButton] = []
+    if current_page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="◀️ صفحه قبل",
+                callback_data=f"admin_online_clients_{current_page - 1}",
+            )
+        )
+    nav_row.append(
+        InlineKeyboardButton(
+            text=f"صفحه {to_persian_digits(current_page + 1)} از {to_persian_digits(total_pages)}",
+            callback_data="admin_users_list_noop",
+        )
+    )
+    if current_page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="صفحه بعد ▶️",
+                callback_data=f"admin_online_clients_{current_page + 1}",
+            )
+        )
+    if nav_row:
+        rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔄 بروزرسانی لیست",
+                callback_data=f"admin_online_clients_{current_page}",
+            ),
+            InlineKeyboardButton(
+                text="🔙 بازگشت به آمار",
+                callback_data="admin_stats_menu",
+            ),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def admin_users_list_keyboard(

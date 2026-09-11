@@ -343,6 +343,8 @@ async def _render_sub_dashboard(
     if sub_back:
         if "admin_user_subs_" in sub_back:
             back_btn_text = "🔙 بازگشت به اشتراک‌های کاربر"
+        elif "admin_online_clients_" in sub_back:
+            back_btn_text = "🔙 بازگشت به لیست آنلاین‌ها"
         else:
             back_btn_text = "🔙 بازگشت به مدیریت کاربر"
         back_btn_callback = sub_back
@@ -1524,6 +1526,17 @@ async def admin_sub_delete(callback: types.CallbackQuery, state: FSMContext) -> 
             except Exception as e:
                 logger.warning(
                     "Failed to return to admin notif view after delete: %s", e
+                )
+        elif sub_back.startswith("admin_online_clients_"):
+            callback.data = sub_back
+            try:
+                from handlers.admin_control import admin_online_clients_list
+
+                await admin_online_clients_list(callback, state)
+                return
+            except Exception as e:
+                logger.warning(
+                    "Failed to return to admin online clients list after delete: %s", e
                 )
 
     if manage_user_id:

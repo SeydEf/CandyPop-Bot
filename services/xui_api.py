@@ -23,6 +23,7 @@ def _get_client() -> httpx.AsyncClient:
                 "Content-Type": "application/json",
             },
             verify=False,
+            trust_env=False,
             timeout=30.0,
         )
     return _client
@@ -168,7 +169,10 @@ async def get_client(email: str) -> dict[str, Any] | None:
         if obj is None:
             return None
         if isinstance(obj, dict) and "client" in obj:
-            return obj["client"]
+            c = dict(obj["client"])
+            if "usedTraffic" in obj:
+                c["usedTraffic"] = obj["usedTraffic"]
+            return c
         return obj
     except (RuntimeError, httpx.HTTPStatusError):
         return None
@@ -424,6 +428,18 @@ async def delete_client_group(name: str) -> dict[str, Any]:
     payload = {"name": name}
     data = await _request("POST", "/panel/api/clients/groups/delete", json_data=payload)
     return data
+
+
+async def get_online_clients() -> list[str]:
+    try:
+        data = await _request("POST", "/panel/api/clients/onlines")
+        obj = data.get("obj")
+        if isinstance(obj, list):
+            return [str(e) for e in obj if e]
+        return []
+    except Exception as e:
+        logger.error("Failed to fetch online clients from 3x-ui: %s", e)
+        return []
 
 
 async def bulk_grant_volume(extra_gb: int, bot: Any | None = None) -> tuple[int, int]:
