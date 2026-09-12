@@ -514,7 +514,7 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="🩺 پایش سلامت اینباندها (Health Check)",
-                    callback_data="admin_inbound_monitor_menu",
+                    callback_data="admin_inbound_monitor_menu:settings",
                 ),
             ],
             [
@@ -4095,7 +4095,7 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
         [
             InlineKeyboardButton(
                 text="🩺 پایش سلامت اینباندها (Health Check)",
-                callback_data="admin_inbound_monitor_menu",
+                callback_data="admin_inbound_monitor_menu:inbounds",
             )
         ]
     )
@@ -4173,18 +4173,23 @@ async def admin_inbound_toggle_assign(
     await admin_inbounds_menu(callback, state)
 
 
-# ---------------------------------------------------------------------------
-# Inbound Health Monitor Submenu & Handlers
-# ---------------------------------------------------------------------------
-
-
-@router.callback_query(F.data == "admin_inbound_monitor_menu")
+@router.callback_query(F.data.startswith("admin_inbound_monitor_menu"))
 async def admin_inbound_monitor_menu(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     if not await _require_permission(callback, "inbounds"):
         return
-    await state.clear()
+
+    source = "settings"
+    parts = callback.data.split(":")
+    if len(parts) > 1 and parts[1] in ("settings", "inbounds"):
+        source = parts[1]
+        await state.update_data(monitor_source=source)
+    else:
+        st_data = await state.get_data()
+        source = st_data.get("monitor_source", "settings")
+
+    await state.set_state(None)
 
     from db.models import get_inbound_monitor_config
     from services.inbound_monitor import get_default_target_host
@@ -4224,6 +4229,21 @@ async def admin_inbound_monitor_menu(
         f"🎯 <b>اینباندهای تحت نظر:</b> {inbounds_display}\n\n"
         "جهت تغییر تنظیمات یا اجرای تست زنده، یکی از گزینه‌های زیر را انتخاب نمایید:"
     )
+
+    if source == "inbounds":
+        back_btn_row = [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به مدیریت اینباندها",
+                callback_data="admin_inbounds_menu",
+            )
+        ]
+    else:
+        back_btn_row = [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به تنظیمات",
+                callback_data="admin_settings_menu",
+            )
+        ]
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -4267,16 +4287,7 @@ async def admin_inbound_monitor_menu(
                     callback_data="admin_inbound_monitor_reset",
                 ),
             ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به مدیریت اینباندها",
-                    callback_data="admin_inbounds_menu",
-                ),
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به تنظیمات",
-                    callback_data="admin_settings_menu",
-                ),
-            ],
+            back_btn_row,
         ]
     )
 
