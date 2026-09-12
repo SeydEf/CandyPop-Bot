@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from datetime import datetime
+
 _PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 _PERSIAN_TO_ENGLISH = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
@@ -55,13 +59,31 @@ def format_remaining_days(expiry_ms: int) -> str:
     return f"{days} روز"
 
 
-def format_datetime(iso_str: str) -> str:
+def format_datetime(
+    val: str | int | float | datetime | None, with_seconds: bool = False
+) -> str:
     from datetime import datetime, timedelta, timezone
 
-    if not iso_str:
+    if val is None or val == "":
         return "نامشخص"
     try:
-        dt = datetime.fromisoformat(iso_str)
+        if isinstance(val, (int, float)):
+            ts = float(val)
+            if ts > 1e11:
+                ts /= 1000.0
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        elif isinstance(val, datetime):
+            dt = val
+        else:
+            s = str(val).strip()
+            try:
+                ts = float(s)
+                if ts > 1e11:
+                    ts /= 1000.0
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            except ValueError:
+                dt = datetime.fromisoformat(s)
+
         tz_iran = timezone(timedelta(hours=3, minutes=30))
 
         if dt.tzinfo is None:
@@ -69,15 +91,17 @@ def format_datetime(iso_str: str) -> str:
         else:
             dt = dt.astimezone(tz_iran)
 
+        time_fmt = "%Y/%m/%d — %H:%M:%S" if with_seconds else "%Y/%m/%d — %H:%M"
+
         try:
             import jdatetime
 
             jdt = jdatetime.datetime.fromgregorian(datetime=dt)
-            formatted_str = jdt.strftime("%Y/%m/%d — %H:%M")
+            formatted_str = jdt.strftime(time_fmt)
         except ImportError:
-            formatted_str = dt.strftime("%Y/%m/%d — %H:%M")
+            formatted_str = dt.strftime(time_fmt)
 
         return to_persian_digits(formatted_str)
     except Exception:
-        clean_str = str(iso_str)[:16].replace("-", "/")
+        clean_str = str(val)[:16].replace("-", "/")
         return to_persian_digits(clean_str)

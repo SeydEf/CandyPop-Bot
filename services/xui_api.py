@@ -51,6 +51,19 @@ async def list_inbounds() -> list[dict[str, Any]]:
     return data.get("obj", [])
 
 
+async def list_inbound_options() -> list[dict[str, Any]]:
+    try:
+        data = await _request("GET", "/panel/api/inbounds/options")
+        obj = data.get("obj")
+        if isinstance(obj, list):
+            return obj
+    except Exception as e:
+        logger.warning(
+            "Failed to fetch inbounds from /panel/api/inbounds/options: %s", e
+        )
+    return await list_inbounds()
+
+
 async def get_server_status() -> dict[str, Any]:
     try:
         data = await _request("GET", "/panel/api/server/status")

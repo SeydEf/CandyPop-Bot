@@ -1202,6 +1202,81 @@ async def set_ip_checker_config(
         await set_setting("ip_checker_interval_minutes", str(interval_minutes))
 
 
+DEFAULT_INBOUND_MONITOR_CONFIG: dict[str, Any] = {
+    "enabled": False,
+    "interval_seconds": 60,
+    "timeout_seconds": 5.0,
+    "target_host": "",
+    "monitored_inbound_ids": [],
+}
+
+
+async def get_inbound_monitor_config() -> dict[str, Any]:
+    enabled_str = await get_setting("inbound_monitor_enabled", "0") or "0"
+    interval_str = await get_setting("inbound_monitor_interval_seconds", "60") or "60"
+    timeout_str = await get_setting("inbound_monitor_timeout_seconds", "5.0") or "5.0"
+    target_host = (await get_setting("inbound_monitor_target_host", "")) or ""
+    ids_str = (await get_setting("inbound_monitor_ids", "")) or ""
+
+    try:
+        interval_seconds = max(5, int(interval_str))
+    except ValueError:
+        interval_seconds = 60
+
+    try:
+        timeout_seconds = max(0.5, float(timeout_str))
+    except ValueError:
+        timeout_seconds = 5.0
+
+    monitored_inbound_ids = []
+    if ids_str.strip():
+        for x in ids_str.split(","):
+            x_str = x.strip()
+            if x_str.isdigit():
+                monitored_inbound_ids.append(int(x_str))
+
+    return {
+        "enabled": enabled_str == "1",
+        "interval_seconds": interval_seconds,
+        "timeout_seconds": timeout_seconds,
+        "target_host": target_host.strip(),
+        "monitored_inbound_ids": monitored_inbound_ids,
+    }
+
+
+async def set_inbound_monitor_config(
+    enabled: bool | None = None,
+    interval_seconds: int | None = None,
+    timeout_seconds: float | None = None,
+    target_host: str | None = None,
+    monitored_inbound_ids: list[int] | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("inbound_monitor_enabled", "1" if enabled else "0")
+    if interval_seconds is not None:
+        await set_setting(
+            "inbound_monitor_interval_seconds", str(max(5, interval_seconds))
+        )
+    if timeout_seconds is not None:
+        await set_setting(
+            "inbound_monitor_timeout_seconds",
+            str(max(0.5, float(timeout_seconds))),
+        )
+    if target_host is not None:
+        await set_setting("inbound_monitor_target_host", target_host.strip())
+    if monitored_inbound_ids is not None:
+        ids_str = ",".join(str(i) for i in monitored_inbound_ids)
+        await set_setting("inbound_monitor_ids", ids_str)
+
+
+async def reset_inbound_monitor_config() -> None:
+    await set_setting("inbound_monitor_enabled", "0")
+    await set_setting("inbound_monitor_interval_seconds", "60")
+    await set_setting("inbound_monitor_timeout_seconds", "5.0")
+    await set_setting("inbound_monitor_target_host", "")
+    await set_setting("inbound_monitor_ids", "")
+
+
 def is_owner(tg_id: int) -> bool:
     from config import ADMIN_CHAT_ID
 
@@ -1273,6 +1348,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "test_sub": "تنظیمات اشتراک تست",
     "bulk_gift": "اعمال هدیه همگانی",
     "alerts": "هشدارها و پایش IP",
+    "inbound_alerts": "دریافت هشدارهای قطعی اینباند",
     "card_config": "تنظیمات کارت بانکی",
     "receipt_config": "تنظیمات دریافت رسید واریز",
     "inbounds": "مدیریت اینباندهای سرور",
@@ -1300,6 +1376,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "test_sub": True,
     "bulk_gift": True,
     "alerts": True,
+    "inbound_alerts": True,
     "card_config": False,
     "receipt_config": False,
     "inbounds": False,

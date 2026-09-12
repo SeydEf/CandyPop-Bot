@@ -29,6 +29,7 @@ from handlers import (
 from middlewares.banned_check import BannedCheckMiddleware
 from middlewares.channel_check import ChannelCheckMiddleware
 from services.alert_scheduler import start_alert_scheduler
+from services.inbound_monitor import start_inbound_monitor_scheduler
 from services.ip_checker_scheduler import start_ip_checker_scheduler
 from services.xui_api import close_client
 
@@ -69,6 +70,7 @@ async def on_startup(bot: Bot) -> None:
     logger.info("Bot started: @%s (%s)", me.username, me.full_name)
     asyncio.create_task(start_alert_scheduler(bot))
     asyncio.create_task(start_ip_checker_scheduler(bot))
+    asyncio.create_task(start_inbound_monitor_scheduler(bot))
 
 
 async def on_shutdown(bot: Bot) -> None:

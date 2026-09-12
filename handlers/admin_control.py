@@ -88,6 +88,10 @@ class AdminControlStates(StatesGroup):
     waiting_disc_expiry_custom = State()
     waiting_disc_user_limit = State()
 
+    waiting_inbound_monitor_interval = State()
+    waiting_inbound_monitor_timeout = State()
+    waiting_inbound_monitor_target_host = State()
+
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
     from db.models import is_owner
@@ -505,6 +509,12 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="📡 مدیریت اینباندها (Inbounds)",
                     callback_data="admin_inbounds_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🩺 پایش سلامت اینباندها (Health Check)",
+                    callback_data="admin_inbound_monitor_menu",
                 ),
             ],
             [
@@ -4084,6 +4094,14 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
     keyboard_rows.append(
         [
             InlineKeyboardButton(
+                text="🩺 پایش سلامت اینباندها (Health Check)",
+                callback_data="admin_inbound_monitor_menu",
+            )
+        ]
+    )
+    keyboard_rows.append(
+        [
+            InlineKeyboardButton(
                 text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
             )
         ]
@@ -4153,6 +4171,827 @@ async def admin_inbound_toggle_assign(
     await callback.answer(f"✅ اینباند #{inbound_id} {status_str}.", show_alert=True)
 
     await admin_inbounds_menu(callback, state)
+
+
+# ---------------------------------------------------------------------------
+# Inbound Health Monitor Submenu & Handlers
+# ---------------------------------------------------------------------------
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_menu")
+async def admin_inbound_monitor_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.clear()
+
+    from db.models import get_inbound_monitor_config
+    from services.inbound_monitor import get_default_target_host
+
+    cfg = await get_inbound_monitor_config()
+    enabled = cfg.get("enabled", False)
+    interval = cfg.get("interval_seconds", 60)
+    timeout = cfg.get("timeout_seconds", 5.0)
+    target_host = cfg.get("target_host") or ""
+    monitored_ids = cfg.get("monitored_inbound_ids", [])
+    default_host = get_default_target_host()
+
+    status_icon = "🟢 فعال" if enabled else "🔴 غیرفعال"
+    toggle_text = "🔴 غیرفعال‌سازی پایش" if enabled else "🟢 فعال‌سازی پایش"
+
+    active_host_display = target_host if target_host else f"پیش‌فرض ({default_host})"
+    if monitored_ids:
+        inbounds_display = (
+            f"<b>{to_persian_digits(len(monitored_ids))}</b> اینباند اختصاصی"
+        )
+    else:
+        inbounds_display = "<b>تمامی اینباندهای فعال سرور</b>"
+
+    if interval >= 60 and interval % 60 == 0:
+        interval_display = f"{to_persian_digits(interval // 60)} دقیقه ({to_persian_digits(interval)} ثانیه)"
+    else:
+        interval_display = f"{to_persian_digits(interval)} ثانیه"
+
+    text = (
+        "🩺 <b>پایش سلامت و تست خودکار اینباندها (Health Check)</b>\n\n"
+        "این سیستم به صورت خودکار و در بازه‌های زمانی مشخص، پورت و پاسخگویی تک‌تک اینباندها را از طریق اتصال سوکت TCP پایش می‌کند.\n"
+        "در صورت قطعی یا عدم پاسخگویی پورت، بلافاصله اخطار به مدیران ارسال شده و پس از رفع مشکل و اتصال مجدد نیز اعلان وصل شدن ارسال می‌گردد.\n\n"
+        f"📊 <b>وضعیت سیستم:</b> {status_icon}\n"
+        f"⏱ <b>بازه بررسی:</b> <b>{interval_display}</b>\n"
+        f"⏳ <b>مهلت تایم‌اوت:</b> <b>{to_persian_digits(timeout)} ثانیه</b>\n"
+        f"🖥 <b>آدرس سرور پایش:</b> <code>{active_host_display}</code>\n"
+        f"🎯 <b>اینباندهای تحت نظر:</b> {inbounds_display}\n\n"
+        "جهت تغییر تنظیمات یا اجرای تست زنده، یکی از گزینه‌های زیر را انتخاب نمایید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_text,
+                    callback_data="admin_inbound_monitor_toggle",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚡️ تست فوری سلامت اینباندها",
+                    callback_data="admin_inbound_monitor_run_check",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🎯 انتخاب اینباندها جهت پایش",
+                    callback_data="admin_inbound_monitor_select_inbounds",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⏱ بازه بررسی ({to_persian_digits(interval)}s)",
+                    callback_data="admin_inbound_monitor_interval_menu",
+                ),
+                InlineKeyboardButton(
+                    text=f"⏳ تایم‌اوت ({to_persian_digits(timeout)}s)",
+                    callback_data="admin_inbound_monitor_timeout_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🖥 تنظیم آدرس / IP سرور",
+                    callback_data="admin_inbound_monitor_host_prompt",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی تنظیمات پایش به پیش‌فرض",
+                    callback_data="admin_inbound_monitor_reset",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به مدیریت اینباندها",
+                    callback_data="admin_inbounds_menu",
+                ),
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات",
+                    callback_data="admin_settings_menu",
+                ),
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_toggle")
+async def admin_inbound_monitor_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    from db.models import get_inbound_monitor_config, set_inbound_monitor_config
+
+    cfg = await get_inbound_monitor_config()
+    new_state = not cfg.get("enabled", False)
+    await set_inbound_monitor_config(enabled=new_state)
+
+    msg = "فعال" if new_state else "غیرفعال"
+    await callback.answer(
+        f"✅ سیستم پایش سلامت اینباندها {msg} گردید.", show_alert=True
+    )
+    await admin_inbound_monitor_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_run_check")
+async def admin_inbound_monitor_run_check(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+
+    await callback.answer("⏳ در حال بررسی و تست پورت‌های اینباندها...")
+
+    from services.inbound_monitor import check_inbounds_health
+
+    results = await check_inbounds_health()
+    if not results:
+        await safe_edit_text(
+            callback.message,
+            "⚠️ <b>هیچ اینباندی جهت بررسی یافت نشد یا ارتباط با پنل برقرار نیست.</b>",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔙 بازگشت به تنظیمات پایش",
+                            callback_data="admin_inbound_monitor_menu",
+                        )
+                    ]
+                ]
+            ),
+            parse_mode="HTML",
+        )
+        return
+
+    now_str = format_datetime(datetime.now(timezone.utc), with_seconds=True)
+    lines = []
+    ok_count = 0
+    fail_count = 0
+
+    for item in results:
+        ib_id = item["id"]
+        remark = item["remark"]
+        protocol = item["protocol"]
+        port = item["port"]
+        is_ok = item["is_ok"]
+        is_enabled = item["enable"]
+        latency = item["latency_ms"]
+        err = item["error"]
+
+        if not is_enabled:
+            status_desc = "⚪️ <b>غیرفعال در پنل</b>"
+        elif is_ok:
+            ok_count += 1
+            status_desc = f"🟢 <b>آنلاین و متصل</b> (پینگ: <b>{to_persian_digits(round(latency))} ms</b>)"
+        else:
+            fail_count += 1
+            status_desc = f"🔴 <b>قطعی / خطا:</b> <code>{err}</code>"
+
+        lines.append(
+            f"• <b>#{to_persian_digits(ib_id)} | {remark}</b> ({protocol}:{to_persian_digits(port)})\n"
+            f"  🌐 <b>آدرس پایش:</b> <code>{item['host']}</code>\n"
+            f"  وضعیت: {status_desc}"
+        )
+
+    summary_status = (
+        "🟢 وضعیت کلی: پایدار و عادی"
+        if fail_count == 0
+        else f"🚨 وضعیت کلی: دارای {to_persian_digits(fail_count)} قطعی!"
+    )
+
+    text = (
+        "⚡️ <b>گزارش لحظه‌ای تست سلامت اینباندها (Live Test)</b>\n\n"
+        "🖥 <b>آدرس‌های تست‌شده:</b> بر اساس <code>shareAddr</code> اختصاصی هر اینباند\n"
+        f"📅 <b>زمان تست:</b> {now_str}\n"
+        f"📊 <b>خلاصه وضعیت:</b> {summary_status}\n"
+        f"✅ <b>سالم:</b> {to_persian_digits(ok_count)} | ❌ <b>قطعی:</b> {to_persian_digits(fail_count)}\n\n"
+        + "\n\n".join(lines)
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 تست مجدد لحظه‌ای",
+                    callback_data="admin_inbound_monitor_run_check",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات پایش",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_select_inbounds")
+async def admin_inbound_monitor_select_inbounds(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.clear()
+
+    from db.models import get_inbound_monitor_config
+    from services import xui_api
+
+    cfg = await get_inbound_monitor_config()
+    all_inbounds = await xui_api.list_inbound_options()
+
+    if not all_inbounds:
+        await callback.answer("اینباندی در پنل یافت نشد.", show_alert=True)
+        return
+
+    all_ids = [int(ib["id"]) for ib in all_inbounds if "id" in ib]
+    saved_ids = set(cfg.get("monitored_inbound_ids", []))
+    is_all = len(saved_ids) == 0 or saved_ids == set(all_ids)
+
+    buttons = []
+    for ib in all_inbounds:
+        ib_id = int(ib.get("id", 0))
+        remark = ib.get("remark") or ib.get("tag") or f"Inbound #{ib_id}"
+        port = ib.get("port", 0)
+        share_addr = (ib.get("shareAddr") or "").strip()
+        addr_suffix = f" [{share_addr}]" if share_addr else ""
+        is_checked = is_all or (ib_id in saved_ids)
+        icon = "✅" if is_checked else "⬜️"
+        btn_text = f"{icon} #{to_persian_digits(ib_id)} {remark} ({to_persian_digits(port)}){addr_suffix}"
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"admin_inbound_monitor_toggle_ib_{ib_id}",
+                )
+            ]
+        )
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="✅ انتخاب همه",
+                callback_data="admin_inbound_monitor_select_all",
+            ),
+            InlineKeyboardButton(
+                text="⬜️ لغو انتخاب همه",
+                callback_data="admin_inbound_monitor_unselect_all",
+            ),
+        ]
+    )
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به تنظیمات پایش",
+                callback_data="admin_inbound_monitor_menu",
+            )
+        ]
+    )
+
+    text = (
+        "🎯 <b>انتخاب اینباندهای مورد نظر جهت پایش سلامت:</b>\n\n"
+        "روی هر اینباند کلیک کنید تا وضعیت پایش آن (فعال ✅ / غیرفعال ⬜️) تغییر کند.\n"
+        "آدرس تست هر اینباند در پرانتز کروشه‌ای [shareAddr] مشخص شده است.\n"
+        "در صورتی که همه انتخاب شوند، تمامی اینباندهای فعلی و جدید پایش خواهند شد."
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inbound_monitor_toggle_ib_"))
+async def admin_inbound_monitor_toggle_ib(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+
+    ib_id = int(callback.data.split("_")[-1])
+    from db.models import get_inbound_monitor_config, set_inbound_monitor_config
+    from services import xui_api
+
+    cfg = await get_inbound_monitor_config()
+    all_inbounds = await xui_api.list_inbound_options()
+    all_ids = [int(ib["id"]) for ib in all_inbounds if "id" in ib]
+
+    saved_ids = set(cfg.get("monitored_inbound_ids", []))
+    if len(saved_ids) == 0:
+        current_set = set(all_ids)
+    else:
+        current_set = set(saved_ids)
+
+    if ib_id in current_set:
+        current_set.remove(ib_id)
+    else:
+        current_set.add(ib_id)
+
+    if current_set == set(all_ids):
+        new_list: list[int] = []
+    else:
+        new_list = sorted(list(current_set))
+
+    await set_inbound_monitor_config(monitored_inbound_ids=new_list)
+    await admin_inbound_monitor_select_inbounds(callback, state)
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_select_all")
+async def admin_inbound_monitor_select_all(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    from db.models import set_inbound_monitor_config
+
+    await set_inbound_monitor_config(monitored_inbound_ids=[])
+    await callback.answer("✅ تمام اینباندها جهت پایش انتخاب شدند.")
+    await admin_inbound_monitor_select_inbounds(callback, state)
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_unselect_all")
+async def admin_inbound_monitor_unselect_all(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    from db.models import set_inbound_monitor_config
+
+    await set_inbound_monitor_config(monitored_inbound_ids=[-1])
+    await callback.answer("⬜️ انتخاب تمامی اینباندها لغو شد.")
+    await admin_inbound_monitor_select_inbounds(callback, state)
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_interval_menu")
+async def admin_inbound_monitor_interval_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.clear()
+
+    from db.models import get_inbound_monitor_config
+
+    cfg = await get_inbound_monitor_config()
+    current_interval = cfg.get("interval_seconds", 60)
+
+    text = (
+        "⏱ <b>تنظیم بازه زمانی پایش سلامت اینباندها:</b>\n\n"
+        f"بازه فعلی: <b>{to_persian_digits(current_interval)} ثانیه</b>\n\n"
+        "یکی از بازه‌های آماده زیر را انتخاب کنید یا عدد دلخواه خود (به ثانیه) را وارد نمایید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="۳۰ ثانیه" + (" 🔘" if current_interval == 30 else ""),
+                    callback_data="admin_inbound_monitor_set_interval_30",
+                ),
+                InlineKeyboardButton(
+                    text="۱ دقیقه" + (" 🔘" if current_interval == 60 else ""),
+                    callback_data="admin_inbound_monitor_set_interval_60",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۲ دقیقه" + (" 🔘" if current_interval == 120 else ""),
+                    callback_data="admin_inbound_monitor_set_interval_120",
+                ),
+                InlineKeyboardButton(
+                    text="۵ دقیقه" + (" 🔘" if current_interval == 300 else ""),
+                    callback_data="admin_inbound_monitor_set_interval_300",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۱۰ دقیقه" + (" 🔘" if current_interval == 600 else ""),
+                    callback_data="admin_inbound_monitor_set_interval_600",
+                ),
+                InlineKeyboardButton(
+                    text="✏️ ورود دستی بازه (ثانیه)",
+                    callback_data="admin_inbound_monitor_interval_prompt",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات پایش",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inbound_monitor_set_interval_"))
+async def admin_inbound_monitor_set_interval(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    sec = int(callback.data.split("_")[-1])
+    from db.models import set_inbound_monitor_config
+
+    await set_inbound_monitor_config(interval_seconds=sec)
+    await callback.answer(f"✅ بازه پایش به {sec} ثانیه تنظیم شد.", show_alert=True)
+    await admin_inbound_monitor_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_interval_prompt")
+async def admin_inbound_monitor_interval_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.set_state(AdminControlStates.waiting_inbound_monitor_interval)
+    text = (
+        "✏️ <b>لطفاً بازه زمانی بررسی را به ثانیه وارد نمایید:</b>\n\n"
+        "حداقل مقدار مجاز: ۵ ثانیه (پیشنهادی: ۳۰ الی ۳۰۰ ثانیه)\n\n"
+        "💡 <i>جهت انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_inbound_monitor_interval, F.text)
+async def admin_inbound_monitor_interval_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() in ("/cancel", "انصراف"):
+        await state.clear()
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به تنظیمات پایش",
+                        callback_data="admin_inbound_monitor_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer("❌ عملیات لغو شد.", reply_markup=cancel_kb)
+        return
+
+    raw = persian_to_english_digits(message.text.strip())
+    try:
+        sec = int(raw)
+        if sec < 5:
+            raise ValueError()
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_inbound_monitor_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "⚠️ لطفاً یک عدد معتبر بزرگتر یا مساوی ۵ (به ثانیه) وارد کنید:",
+            reply_markup=err_kb,
+        )
+        return
+
+    await state.clear()
+    from db.models import set_inbound_monitor_config
+
+    await set_inbound_monitor_config(interval_seconds=sec)
+    success_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات پایش",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        f"✅ بازه زمانی پایش سلامت با موفقیت به <b>{to_persian_digits(sec)} ثانیه</b> تغییر یافت.",
+        reply_markup=success_kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_timeout_menu")
+async def admin_inbound_monitor_timeout_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.clear()
+
+    from db.models import get_inbound_monitor_config
+
+    cfg = await get_inbound_monitor_config()
+    current_timeout = cfg.get("timeout_seconds", 5.0)
+
+    text = (
+        "⏳ <b>تنظیم مهلت زمان تایم‌اوت اتصال (Connection Timeout):</b>\n\n"
+        f"تایم‌اوت فعلی: <b>{to_persian_digits(current_timeout)} ثانیه</b>\n\n"
+        "در صورتی که پورت اینباند در این مدت پاسخ ندهد، قطعی ثبت شده و هشدار ارسال می‌شود.\n"
+        "یکی از مقادیر آماده زیر را انتخاب کنید یا عدد دلخواه خود را وارد نمایید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="۲ ثانیه" + (" 🔘" if current_timeout == 2.0 else ""),
+                    callback_data="admin_inbound_monitor_set_timeout_2",
+                ),
+                InlineKeyboardButton(
+                    text="۳ ثانیه" + (" 🔘" if current_timeout == 3.0 else ""),
+                    callback_data="admin_inbound_monitor_set_timeout_3",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۵ ثانیه" + (" 🔘" if current_timeout == 5.0 else ""),
+                    callback_data="admin_inbound_monitor_set_timeout_5",
+                ),
+                InlineKeyboardButton(
+                    text="۱۰ ثانیه" + (" 🔘" if current_timeout == 10.0 else ""),
+                    callback_data="admin_inbound_monitor_set_timeout_10",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ ورود دستی تایم‌اوت",
+                    callback_data="admin_inbound_monitor_timeout_prompt",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات پایش",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_inbound_monitor_set_timeout_"))
+async def admin_inbound_monitor_set_timeout(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    sec = float(callback.data.split("_")[-1])
+    from db.models import set_inbound_monitor_config
+
+    await set_inbound_monitor_config(timeout_seconds=sec)
+    await callback.answer(f"✅ مهلت تایم‌اوت به {sec} ثانیه تنظیم شد.", show_alert=True)
+    await admin_inbound_monitor_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_timeout_prompt")
+async def admin_inbound_monitor_timeout_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.set_state(AdminControlStates.waiting_inbound_monitor_timeout)
+    text = (
+        "✏️ <b>لطفاً مهلت تایم‌اوت را به ثانیه وارد نمایید (مثلاً 2.5 یا 5):</b>\n\n"
+        "حداقل مقدار مجاز: ۰.۵ ثانیه\n\n"
+        "💡 <i>جهت انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_inbound_monitor_timeout, F.text)
+async def admin_inbound_monitor_timeout_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() in ("/cancel", "انصراف"):
+        await state.clear()
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به تنظیمات پایش",
+                        callback_data="admin_inbound_monitor_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer("❌ عملیات لغو شد.", reply_markup=cancel_kb)
+        return
+
+    raw = persian_to_english_digits(message.text.strip())
+    try:
+        sec = float(raw)
+        if sec < 0.5:
+            raise ValueError()
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_inbound_monitor_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "⚠️ لطفاً یک عدد معتبر بزرگتر یا مساوی ۰.۵ (به ثانیه) وارد کنید:",
+            reply_markup=err_kb,
+        )
+        return
+
+    await state.clear()
+    from db.models import set_inbound_monitor_config
+
+    await set_inbound_monitor_config(timeout_seconds=sec)
+    success_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات پایش",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        f"✅ زمان تایم‌اوت پایش با موفقیت به <b>{to_persian_digits(sec)} ثانیه</b> تغییر یافت.",
+        reply_markup=success_kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_host_prompt")
+async def admin_inbound_monitor_host_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    await state.set_state(AdminControlStates.waiting_inbound_monitor_target_host)
+
+    from db.models import get_inbound_monitor_config
+    from services.inbound_monitor import get_default_target_host
+
+    cfg = await get_inbound_monitor_config()
+    current_host = cfg.get("target_host") or ""
+    default_host = get_default_target_host()
+
+    text = (
+        "🖥 <b>تنظیم آدرس سرور جهت تست اتصال اینباندها (Target Host):</b>\n\n"
+        f"آدرس فعلی تنظیم‌شده: <code>{current_host if current_host else 'خالی (استفاده از پیش‌فرض)'}</code>\n"
+        f"آدرس پیش‌فرض استخراج‌شده از پنل: <code>{default_host}</code>\n\n"
+        "لطفاً IP یا دامنه مورد نظر را ارسال نمایید.\n"
+        "برای بازگشت به آدرس پیش‌فرض پنل، عبارت <code>default</code> را ارسال کنید.\n\n"
+        "💡 <i>جهت انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_inbound_monitor_target_host, F.text)
+async def admin_inbound_monitor_host_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() in ("/cancel", "انصراف"):
+        await state.clear()
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به تنظیمات پایش",
+                        callback_data="admin_inbound_monitor_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer("❌ عملیات لغو شد.", reply_markup=cancel_kb)
+        return
+
+    raw = message.text.strip()
+    from db.models import set_inbound_monitor_config
+
+    await state.clear()
+    if raw.lower() in ("default", "پیشفرض", "پیش‌فرض", "reset"):
+        await set_inbound_monitor_config(target_host="")
+        msg = "✅ آدرس سرور پایش به حالت پیش‌فرض پنل بازنشانی گردید."
+    else:
+        clean_host = (
+            raw.replace("http://", "")
+            .replace("https://", "")
+            .split("/")[0]
+            .split(":")[0]
+        )
+        await set_inbound_monitor_config(target_host=clean_host)
+        msg = f"✅ آدرس سرور پایش با موفقیت به <code>{clean_host}</code> تغییر یافت."
+
+    success_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات پایش",
+                    callback_data="admin_inbound_monitor_menu",
+                )
+            ]
+        ]
+    )
+    await message.answer(msg, reply_markup=success_kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_inbound_monitor_reset")
+async def admin_inbound_monitor_reset(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "inbounds"):
+        return
+    from db.models import reset_inbound_monitor_config
+
+    await reset_inbound_monitor_config()
+    await callback.answer(
+        "🔄 تنظیمات پایش سلامت اینباندها به حالت پیش‌فرض بازنشانی گردید.",
+        show_alert=True,
+    )
+    await admin_inbound_monitor_menu(callback, state)
 
 
 @router.callback_query(F.data == "admin_groups_menu")
