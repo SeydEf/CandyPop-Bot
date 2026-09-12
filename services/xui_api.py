@@ -435,7 +435,7 @@ async def get_online_clients() -> list[str]:
         data = await _request("POST", "/panel/api/clients/onlines")
         obj = data.get("obj")
         if isinstance(obj, list):
-            return [str(e) for e in obj if e]
+            return sorted([str(e) for e in obj if e], key=str.casefold)
         return []
     except Exception as e:
         logger.error("Failed to fetch online clients from 3x-ui: %s", e)
