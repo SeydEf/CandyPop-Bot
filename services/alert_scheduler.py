@@ -345,7 +345,6 @@ async def start_alert_scheduler(bot: Bot) -> None:
     while True:
         try:
             config = await get_alert_config()
-            print(config)
             if config.get("enabled", True):
                 await check_and_send_alerts(bot)
             else:

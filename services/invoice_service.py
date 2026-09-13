@@ -93,9 +93,6 @@ async def approve_invoice(
                 invoice_id=invoice_id,
                 bot=bot,
             )
-            action_msg = (
-                "بسته تمدید رزرو گردید" if is_reserved else "اشتراک تمدید گردید"
-            )
         else:
             user = await get_user(tg_id)
             username = user.get("username") if user else None
@@ -124,15 +121,27 @@ async def approve_invoice(
             )
             action_msg = "اشتراک فعال گردید"
 
+        if is_reserved:
+            user_text = (
+                f"{prefix_msg}بسته تمدید شما با موفقیت رزرو گردید!</b>\n\n"
+                f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                f"⏱ <b>مدت اعتبار بسته:</b> {duration} روز\n"
+                f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users_count)} کاربر\n"
+                f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n\n"
+                f"💡 <i>این بسته به صورت رزرو ذخیره شد و به محض اتمام اعتبار زمانی یا حجمی اشتراک فعلی، به صورت کاملاً خودکار فعال خواهد شد. همچنین می‌توانید در بخش مدیریت اشتراک، آن را در صورت نیاز زودتر فعال کنید.</i>"
+            )
+            await bot.send_message(
+                chat_id=tg_id,
+                text=user_text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
+            return True, f"بسته تمدید رزرو گردید ({email})", invoice
+
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
-
-        note_reserved = (
-            "\n\n💡 <i>این بسته رزرو گردید و به محض اتمام حجم یا زمان اشتراک فعلی شما، به صورت خودکار فعال خواهد شد.</i>"
-            if is_reserved
-            else ""
-        )
 
         user_text = (
             f"{prefix_msg}{action_msg}!</b>\n\n"
@@ -141,7 +150,7 @@ async def approve_invoice(
             f"⏱ مدت: {duration} روز\n"
             f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
             f"📊 حجم: {format_size_gb(gb)}\n\n"
-            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>{note_reserved}"
+            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
         )
 
         if sub_id:

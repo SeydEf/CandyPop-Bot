@@ -263,6 +263,7 @@ def subscription_manage_keyboard(
     is_test_sub: bool = False,
     has_reserved: bool = False,
     can_early_activate: bool = False,
+    is_reserve_mode: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = []
     if has_reserved and can_early_activate:
@@ -275,10 +276,11 @@ def subscription_manage_keyboard(
             ]
         )
     elif show_renew and not is_test_sub and not has_reserved:
+        renew_text = "📦 رزرو اشتراک" if is_reserve_mode else "🔄 تمدید اشتراک"
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="🔄 تمدید اشتراک",
+                    text=renew_text,
                     callback_data=f"sub_renew_{email}",
                 ),
             ]
@@ -331,18 +333,20 @@ def subscription_manage_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def renew_options_keyboard() -> InlineKeyboardMarkup:
+def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarkup:
+    same_text = "📦 رزرو با مشخصات فعلی" if is_reserve_mode else "🔄 تمدید پلن فعلی"
+    change_text = "⚙️ تغییر مشخصات و رزرو" if is_reserve_mode else "⚙️ تغییر پلن و تمدید"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔄 تمدید پلن فعلی",
+                    text=same_text,
                     callback_data="renew_same",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="⚙️ تغییر پلن و تمدید",
+                    text=change_text,
                     callback_data="renew_change",
                 ),
             ],

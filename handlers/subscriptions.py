@@ -199,6 +199,7 @@ async def _build_dashboard_info(
     res_rec = await get_reserved_renewal(email)
     has_reserved = bool(res_rec)
     reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
     can_early_activate = bool(reserve_cfg.get("allow_early_activation", True))
 
     if res_rec:
@@ -218,6 +219,8 @@ async def _build_dashboard_info(
 
     if is_test_sub:
         show_renew = False
+    elif reserve_enabled:
+        show_renew = True
     else:
         import time
         from db.models import get_alert_config
@@ -252,6 +255,7 @@ async def _build_dashboard_info(
         is_test_sub=is_test_sub,
         has_reserved=has_reserved,
         can_early_activate=can_early_activate,
+        is_reserve_mode=reserve_enabled,
     )
 
 
@@ -627,16 +631,32 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
     current_gb = max(1, client.get("totalGB", 0) // (1024**3))
     current_users = max(1, client.get("limitIp", 1))
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+
+    action_title = (
+        "📦 <b>رزرو اشتراک اختصاصی</b>"
+        if reserve_enabled
+        else "🔄 <b>تمدید اشتراک اختصاصی</b>"
+    )
+    prompt_desc = (
+        "💡 تمایل دارید با مشخصات قبلی رزرو شود یا مشخصات (مدت، حجم، کاربر) را تغییر می‌دهید؟"
+        if reserve_enabled
+        else "💡 تمایل دارید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم، کاربر) را تغییر می‌دهید؟"
+    )
+
     text = (
-        f"🔄 <b>تمدید اشتراک اختصاصی</b>\n\n"
+        f"{action_title}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{client.get('email', email)}</code>\n"
         f"📊 <b>حجم فعلی:</b> {format_size_gb(current_gb)}\n"
         f"👥 <b>ظرفیت کاربر فعلی:</b> {to_persian_digits(current_users)} کاربر\n\n"
-        f"💡 تمایل دارید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم، کاربر) را تغییر می‌دهید؟"
+        f"{prompt_desc}"
     )
     await callback.message.edit_text(
         text,
-        reply_markup=renew_options_keyboard(),
+        reply_markup=renew_options_keyboard(is_reserve_mode=reserve_enabled),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -679,8 +699,18 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    same_plan_title = (
+        "📋 <b>پیش‌فاکتور رزرو با مشخصات فعلی</b>"
+        if reserve_enabled
+        else "📋 <b>پیش‌فاکتور تمدید پلن فعلی</b>"
+    )
+
     text = (
-        f"📋 <b>پیش‌فاکتور تمدید پلن فعلی</b>\n\n"
+        f"{same_plan_title}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(current_users)} کاربر{user_str}\n"
@@ -705,8 +735,18 @@ async def renew_change_plan(callback: types.CallbackQuery, state: FSMContext) ->
     data = await state.get_data()
     email = data.get("renew_email", "")
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    change_plan_title = (
+        f"📦 <b>تغییر مشخصات و رزرو سرویس «{email}»</b>"
+        if reserve_enabled
+        else f"🔄 <b>تغییر پلن و تمدید سرویس «{email}»</b>"
+    )
+
     await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن و تمدید سرویس «{email}»</b>\n\n"
+        f"{change_plan_title}\n\n"
         f"<b>گام ۱ از ۳: انتخاب حجم ترافیک جدید</b>\n\n"
         f"لطفاً میزان ترافیک مورد نظر خود را برای این سرویس انتخاب نمایید:",
         reply_markup=await renew_volume_keyboard(duration=30, users=1),
@@ -773,8 +813,18 @@ async def renew_select_duration(
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    dur_inv_title = (
+        "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
+        if reserve_enabled
+        else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
+    )
+
     text = (
-        f"📋 <b>پیش‌فاکتور تمدید اشتراک</b>\n\n"
+        f"{dur_inv_title}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
@@ -917,8 +967,23 @@ async def renew_wallet_payment(
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    wallet_header = (
+        "👛 <b>تأیید پرداخت رزرو اشتراک از کیف پول</b>"
+        if reserve_enabled
+        else "👛 <b>تأیید پرداخت تمدید از کیف پول</b>"
+    )
+    wallet_question = (
+        "آیا برای کسر از کیف پول و رزرو بسته اشتراک مطمئن هستید؟"
+        if reserve_enabled
+        else "آیا برای کسر از کیف پول و تمدید فوری سرویس مطمئن هستید؟"
+    )
+
     text = (
-        f"👛 <b>تأیید پرداخت تمدید از کیف پول</b>\n\n"
+        f"{wallet_header}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
@@ -926,7 +991,7 @@ async def renew_wallet_payment(
         f"💎 <b>مبلغ فاکتور:</b> {format_price(price)}\n"
         f"💰 <b>موجودی فعلی شما:</b> {format_price(balance)}\n"
         f"📉 <b>موجودی پس از پرداخت:</b> {format_price(after_balance)}\n\n"
-        f"آیا برای کسر از کیف پول و تمدید فوری سرویس مطمئن هستید؟"
+        f"{wallet_question}"
     )
     await callback.message.edit_text(
         text,
@@ -1090,8 +1155,18 @@ async def renew_discount_apply_prompt(
             ]
         ]
     )
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    disc_title = (
+        "🏷️ <b>ورود کد تخفیف رزرو اشتراک</b>"
+        if reserve_enabled
+        else "🏷️ <b>ورود کد تخفیف تمدید اشتراک</b>"
+    )
+
     await callback.message.edit_text(
-        "🏷️ <b>ورود کد تخفیف تمدید اشتراک</b>\n\n"
+        f"{disc_title}\n\n"
         "لطفاً کد تخفیف خود را به صورت لاتین ارسال کنید:\n\n"
         "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=cancel_kb,
@@ -1253,8 +1328,18 @@ async def renew_discount_cancel_handler(
     user_str = (
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    summary_title = (
+        "📦 <b>خلاصه سفارش رزرو اشتراک</b>"
+        if reserve_enabled
+        else "📦 <b>خلاصه سفارش تمدید</b>"
+    )
+
     text = (
-        f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
+        f"{summary_title}\n\n"
         f"📦 نام سرویس: {email}\n"
         f"⏱ مدت جدید: {duration} روز{dur_str}\n"
         f"👤 تعداد کاربر جدید: {to_persian_digits(users)} کاربر{user_str}\n"
@@ -1303,8 +1388,18 @@ async def renew_discount_remove(
         f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
     )
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    cancel_disc_title = (
+        "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
+        if reserve_enabled
+        else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
+    )
+
     text = (
-        f"📋 <b>پیش‌فاکتور تمدید اشتراک</b>\n\n"
+        f"{cancel_disc_title}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
@@ -1388,8 +1483,14 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
             f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
         )
 
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    inv_type = "رزرو اشتراک" if reserve_enabled else "تمدید اشتراک"
+
     text = (
-        f"💳 <b>فاکتور پرداخت کارت به کارت (تمدید اشتراک)</b>\n\n"
+        f"💳 <b>فاکتور پرداخت کارت به کارت ({inv_type})</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"

@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 def is_client_expired(client: dict[str, Any]) -> bool:
-    """Check if client is expired by totalGB volume or expiryTime."""
     total = client.get("totalGB", 0) or 0
     up = client.get("up", 0) or 0
     down = client.get("down", 0) or 0
@@ -43,7 +42,6 @@ async def activate_fresh_plan(
     bot: Bot | None = None,
     tg_id: int | None = None,
 ) -> dict[str, Any]:
-    """Apply a fresh new plan directly to the client (reset traffic, set new volume & expiry)."""
     if not client:
         client = await xui_api.get_client(email)
     if not client:
@@ -83,8 +81,6 @@ async def activate_fresh_plan(
 
 
 class RenewalPurchaseResult(dict):
-    """Result of a renewal purchase, compatible with dict access and tuple unpacking."""
-
     def __init__(self, ok: bool, msg: str, is_reserved: bool):
         status = "reserved" if is_reserved else "active"
         super().__init__(status=status, success=ok, msg=msg, is_reserved=is_reserved)
@@ -94,8 +90,6 @@ class RenewalPurchaseResult(dict):
 
 
 class RenewalActivationResult(dict):
-    """Result of activating a reserved renewal, compatible with dict access and boolean check."""
-
     def __init__(self, ok: bool, status: str, msg: str):
         super().__init__(status=status, success=ok, msg=msg)
 
@@ -112,15 +106,10 @@ async def process_renewal_purchase(
     invoice_id: str | None = None,
     bot: Bot | None = None,
 ) -> RenewalPurchaseResult:
-    """Process a renewal purchase.
-
-    Returns: RenewalPurchaseResult (can be unpacked as (ok, msg, is_reserved) or accessed via dict keys)
-    """
     cfg = await get_reserve_renewal_config()
     reserve_enabled = cfg.get("enabled", True)
 
     if not reserve_enabled:
-        # Traditional renewal: add volume and days immediately
         await xui_api.renew_client(
             email=email,
             duration_days=duration_days,
@@ -130,10 +119,8 @@ async def process_renewal_purchase(
         msg = "اشتراک شما با موفقیت تمدید شد و به حجم و زمان فعلی اضافه گردید."
         return RenewalPurchaseResult(True, msg, False)
 
-    # Reserved Renewal mode is enabled:
     client = await xui_api.get_client(email)
     if not client:
-        # Fallback to standard renew if client info not available
         await xui_api.renew_client(
             email=email,
             duration_days=duration_days,
@@ -142,9 +129,7 @@ async def process_renewal_purchase(
         )
         return RenewalPurchaseResult(True, "اشتراک شما با موفقیت تمدید شد.", False)
 
-    # Check if client has already expired
     if is_client_expired(client):
-        # Client already expired -> Activate fresh plan immediately!
         await activate_fresh_plan(
             email=email,
             duration_days=duration_days,
@@ -157,7 +142,6 @@ async def process_renewal_purchase(
         msg = "اشتراک منقضی‌شده شما با موفقیت تمدید و فعال گردید."
         return RenewalPurchaseResult(True, msg, False)
 
-    # Client is still active -> Queue as a Reserved Renewal
     await create_reserved_renewal(
         email=email,
         tg_id=tg_id,
@@ -178,10 +162,6 @@ async def activate_reserved_renewal(
     force: bool = False,
     bot: Bot | None = None,
 ) -> RenewalActivationResult:
-    """Activate a reserved renewal package for client.
-
-    If force is False, only activates if client is currently expired.
-    """
     reserved = await get_reserved_renewal(email)
     if not reserved:
         return RenewalActivationResult(False, "no_reserved", "بسته رزروی یافت نشد.")
