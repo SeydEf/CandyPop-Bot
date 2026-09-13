@@ -537,6 +537,12 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text="📦 تنظیمات تمدید رزرو شده (Queued Renewal)",
+                    callback_data="admin_reserve_renewal_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔙 بازگشت به پنل اصلی",
                     callback_data="admin_price_main",
                 ),
@@ -9490,5 +9496,187 @@ async def admin_channel_lock_reset(
     )
     await callback.answer(
         "✅ تنظیمات عضویت اجباری به مقادیر پیش‌فرض .env بازنشانی شد.",
+        show_alert=True,
+    )
+
+
+async def _build_reserve_renewal_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_reserve_renewal_config
+
+    config = await get_reserve_renewal_config()
+    enabled = config["enabled"]
+    rollover = config["rollover_days"]
+    early_act = config["allow_early_activation"]
+
+    status_icon = "🟢 فعال" if enabled else "🔴 غیرفعال"
+    rollover_icon = "🟢 فعال" if rollover else "🔴 غیرفعال"
+    early_icon = "🟢 مجاز" if early_act else "🔴 غیرمجاز"
+
+    text = (
+        f"📦 <b>تنظیمات تمدید رزرو شده (Queued Renewal)</b>\n\n"
+        f"در حالت رزرو، با خرید تمدید توسط کاربر، مشخصات بسته جدید به عنوان رزرو ثبت شده و اشتراک جاری دست‌نخورده به کار خود ادامه می‌دهد. به محض انقضای زمانی یا حجمی، بسته رزرو فعال شده و حجم صفر و روزهای جدید اعمال می‌گردد.\n\n"
+        f"⚙️ <b>وضعیت تنظیمات فعلی:</b>\n"
+        f"▫️ سیستم تمدید رزرو: <b>{status_icon}</b>\n"
+        f"▫️ انتقال روزهای باقیمانده به بسته جدید: <b>{rollover_icon}</b>\n"
+        f"▫️ امکان فعال‌سازی زودهنگام توسط کاربر: <b>{early_icon}</b>\n\n"
+        f"👇 برای تغییر، روی دکمه‌های زیر کلیک کنید:"
+    )
+
+    toggle_btn_text = (
+        "🔴 غیرفعال‌سازی سیستم رزرو" if enabled else "🟢 فعال‌سازی سیستم رزرو"
+    )
+    rollover_btn_text = (
+        "📅 انتقال روزهای باقیمانده: [فعال 🟢]"
+        if rollover
+        else "📅 انتقال روزهای باقیمانده: [غیرفعال 🔴]"
+    )
+    early_btn_text = (
+        "⚡️ فعال‌سازی زودهنگام کاربر: [مجاز 🟢]"
+        if early_act
+        else "⚡️ فعال‌سازی زودهنگام کاربر: [غیرمجاز 🔴]"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text,
+                    callback_data="admin_reserve_renewal_toggle",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=rollover_btn_text,
+                    callback_data="admin_reserve_renewal_toggle_rollover",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=early_btn_text,
+                    callback_data="admin_reserve_renewal_toggle_early",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی به پیش‌فرض",
+                    callback_data="admin_reserve_renewal_reset",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات",
+                    callback_data="admin_settings_menu",
+                ),
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_reserve_renewal_menu")
+async def admin_reserve_renewal_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reserve_renewal"):
+        return
+    await state.clear()
+    text, keyboard = await _build_reserve_renewal_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_reserve_renewal_toggle")
+async def admin_reserve_renewal_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reserve_renewal"):
+        return
+    from db.models import get_reserve_renewal_config, set_reserve_renewal_config
+
+    config = await get_reserve_renewal_config()
+    new_val = not config["enabled"]
+    await set_reserve_renewal_config(enabled=new_val)
+
+    text, keyboard = await _build_reserve_renewal_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    toast = "فعال شد 🟢" if new_val else "غیرفعال شد 🔴"
+    await callback.answer(f"سیستم تمدید رزرو {toast}")
+
+
+@router.callback_query(F.data == "admin_reserve_renewal_toggle_rollover")
+async def admin_reserve_renewal_toggle_rollover(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reserve_renewal"):
+        return
+    from db.models import get_reserve_renewal_config, set_reserve_renewal_config
+
+    config = await get_reserve_renewal_config()
+    new_val = not config["rollover_days"]
+    await set_reserve_renewal_config(rollover_days=new_val)
+
+    text, keyboard = await _build_reserve_renewal_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    toast = "فعال شد 🟢" if new_val else "غیرفعال شد 🔴"
+    await callback.answer(f"انتقال روزهای باقیمانده {toast}")
+
+
+@router.callback_query(F.data == "admin_reserve_renewal_toggle_early")
+async def admin_reserve_renewal_toggle_early(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reserve_renewal"):
+        return
+    from db.models import get_reserve_renewal_config, set_reserve_renewal_config
+
+    config = await get_reserve_renewal_config()
+    new_val = not config["allow_early_activation"]
+    await set_reserve_renewal_config(allow_early_activation=new_val)
+
+    text, keyboard = await _build_reserve_renewal_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    toast = "مجاز شد 🟢" if new_val else "غیرمجاز شد 🔴"
+    await callback.answer(f"فعال‌سازی زودهنگام توسط کاربر {toast}")
+
+
+@router.callback_query(F.data == "admin_reserve_renewal_reset")
+async def admin_reserve_renewal_reset(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "reserve_renewal"):
+        return
+    from db.models import reset_reserve_renewal_config
+
+    await reset_reserve_renewal_config()
+    await state.clear()
+    text, keyboard = await _build_reserve_renewal_panel()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        "✅ تنظیمات تمدید رزرو به مقادیر پیش‌فرض بازنشانی شد.",
         show_alert=True,
     )

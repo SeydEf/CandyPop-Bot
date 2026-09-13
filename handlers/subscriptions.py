@@ -137,6 +137,18 @@ async def _build_dashboard_info(
     if not client:
         return None
 
+    from db.models import get_reserve_renewal_config, get_reserved_renewal
+    from services.renewal_service import activate_reserved_renewal, is_client_expired
+
+    if is_client_expired(client):
+        res_rec = await get_reserved_renewal(email)
+        if res_rec:
+            await activate_reserved_renewal(email, force=True, bot=None)
+            client = await xui_api.get_client(email)
+            client_full = await xui_api.get_client_full(email)
+            if not client:
+                return None
+
     total_bytes = client.get("totalGB", 0)
     expiry_ms = client.get("expiryTime", 0)
     used_traffic = client_full.get("usedTraffic", 0) if client_full else 0
@@ -184,6 +196,24 @@ async def _build_dashboard_info(
         f"💡 <i>از دکمه‌های زیر می‌توانید برای تمدید، تغییر نام و ... سرویس استفاده کنید.</i>"
     )
 
+    res_rec = await get_reserved_renewal(email)
+    has_reserved = bool(res_rec)
+    reserve_cfg = await get_reserve_renewal_config()
+    can_early_activate = bool(reserve_cfg.get("allow_early_activation", True))
+
+    if res_rec:
+        res_dur = res_rec.get("duration_days", 0)
+        res_gb = res_rec.get("data_gb", 0)
+        res_users = res_rec.get("users_count", 1)
+        text += (
+            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 <b>بسته تمدید رزرو شده:</b>\n"
+            f"⏱ <b>مدت اعتبار:</b> {res_dur} روز\n"
+            f"📊 <b>حجم ترافیک:</b> {format_size_gb(res_gb)}\n"
+            f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(res_users)} کاربر\n"
+            f"💡 <i>این بسته پس از پایان حجم یا زمان سرویس فعلی به صورت خودکار فعال خواهد شد.</i>"
+        )
+
     is_test_sub = email.endswith("_test") or "_test" in email
 
     if is_test_sub:
@@ -217,7 +247,11 @@ async def _build_dashboard_info(
         show_renew = is_low_gb or is_low_days
 
     return text, subscription_manage_keyboard(
-        email, show_renew=show_renew, is_test_sub=is_test_sub
+        email,
+        show_renew=show_renew,
+        is_test_sub=is_test_sub,
+        has_reserved=has_reserved,
+        can_early_activate=can_early_activate,
     )
 
 
@@ -572,6 +606,17 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
 
     if not email:
         await callback.answer("❌ متأسفانه اشتراک پیدا نشد.", show_alert=True)
+        return
+
+    from db.models import get_reserved_renewal
+
+    res_rec = await get_reserved_renewal(email)
+    if res_rec:
+        await callback.answer(
+            "⚠️ شما در حال حاضر یک بسته تمدید رزرو شده برای این سرویس دارید.\n"
+            "امکان رزرو بیش از یک بسته وجود ندارد.",
+            show_alert=True,
+        )
         return
 
     client = await xui_api.get_client(email)
@@ -944,51 +989,73 @@ async def renew_wallet_confirm(
     )
 
     try:
-        await xui_api.renew_client(
+        from services.renewal_service import process_renewal_purchase
+
+        renewal_result = await process_renewal_purchase(
             email=email,
+            tg_id=tg_id,
             duration_days=duration,
             data_gb=gb,
             users_count=users,
+            invoice_id=invoice["id"],
+            bot=callback.bot,
         )
         await state.clear()
 
-        client = await xui_api.get_client(email)
-        sub_id = client.get("subId", "") if client else ""
-        sub_link = _build_sub_link(sub_id)
-
-        success_text = (
-            f"🎉 <b>اشتراک شما با موفقیت تمدید شد!</b>\n\n"
-            f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-            f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز\n"
-            f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر\n"
-            f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)}\n"
-            f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
-            f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
-            f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
-            f"🚀 <i>ترافیک و زمان جدید به سرویس شما اضافه شد. نیازی به تغییر کانفیگ‌ها ندارید و اتصال شما برقرار خواهد ماند.</i>"
-        )
-
-        if sub_id:
-            from aiogram.types import BufferedInputFile
-
-            qr_buf = generate_qr(sub_link)
-            photo = BufferedInputFile(qr_buf.getvalue(), filename="qrcode.png")
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
-            await callback.message.answer_photo(
-                photo=photo,
-                caption=success_text,
-                reply_markup=sub_config_links_keyboard(email),
-                parse_mode="HTML",
+        if renewal_result.get("status") == "reserved":
+            success_text = (
+                f"📦 <b>بسته تمدید شما با موفقیت رزرو شد!</b>\n\n"
+                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                f"⏱ <b>مدت اعتبار بسته:</b> {duration} روز\n"
+                f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر\n"
+                f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n"
+                f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
+                f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
+                f"💡 <i>این بسته به صورت رزرو ذخیره شد و به محض اتمام اعتبار زمانی یا حجمی اشتراک فعلی، به صورت کاملاً خودکار فعال خواهد شد. همچنین می‌توانید در بخش مدیریت اشتراک، آن را در صورت نیاز زودتر فعال کنید.</i>"
             )
-        else:
             await callback.message.edit_text(
                 success_text,
                 reply_markup=sub_config_links_keyboard(email),
                 parse_mode="HTML",
             )
+        else:
+            client = await xui_api.get_client(email)
+            sub_id = client.get("subId", "") if client else ""
+            sub_link = _build_sub_link(sub_id)
+
+            success_text = (
+                f"🎉 <b>اشتراک شما با موفقیت تمدید شد!</b>\n\n"
+                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز\n"
+                f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر\n"
+                f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)}\n"
+                f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
+                f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
+                f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
+                f"🚀 <i>ترافیک و زمان جدید به سرویس شما اضافه شد. نیازی به تغییر کانفیگ‌ها ندارید و اتصال شما برقرار خواهد ماند.</i>"
+            )
+
+            if sub_id:
+                from aiogram.types import BufferedInputFile
+
+                qr_buf = generate_qr(sub_link)
+                photo = BufferedInputFile(qr_buf.getvalue(), filename="qrcode.png")
+                try:
+                    await callback.message.delete()
+                except Exception:
+                    pass
+                await callback.message.answer_photo(
+                    photo=photo,
+                    caption=success_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
+            else:
+                await callback.message.edit_text(
+                    success_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
 
     except Exception as e:
         logger.exception("Failed to renew client %s for user %d", email, tg_id)
@@ -1342,4 +1409,71 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         reply_markup=card_payment_keyboard(invoice_id, card_number, payable_amount),
         parse_mode="HTML",
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sub_act_res_confirm_"))
+async def sub_act_res_confirm_handler(callback: types.CallbackQuery) -> None:
+    email = callback.data[len("sub_act_res_confirm_") :]
+    from services.renewal_service import activate_reserved_renewal
+
+    res = await activate_reserved_renewal(email, force=True, bot=callback.bot)
+    if res.get("status") == "activated":
+        await callback.answer("✅ بسته رزرو با موفقیت فعال شد!", show_alert=True)
+    elif res.get("status") == "no_reserved":
+        await callback.answer(
+            "❌ هیچ بسته رزروی برای این سرویس یافت نشد.", show_alert=True
+        )
+    else:
+        await callback.answer(
+            f"❌ خطا در فعال‌سازی: {res.get('msg', 'ناشناخته')}", show_alert=True
+        )
+
+    info = await _build_dashboard_info(email)
+    if info:
+        text, keyboard = info
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("sub_act_res_"))
+async def sub_act_res_prompt_handler(callback: types.CallbackQuery) -> None:
+    email = callback.data[len("sub_act_res_") :]
+    from db.models import get_reserved_renewal
+
+    res_rec = await get_reserved_renewal(email)
+    if not res_rec:
+        await callback.answer(
+            "❌ هیچ بسته رزروی برای این سرویس یافت نشد.", show_alert=True
+        )
+        return
+
+    text = (
+        f"⚡️ <b>فعال‌سازی زودهنگام بسته تمدید</b>\n\n"
+        f"🏷 <b>سرویس:</b> <code>{email}</code>\n"
+        f"⏱ <b>مدت اعتبار بسته:</b> {res_rec.get('duration_days', 0)} روز\n"
+        f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(res_rec.get('data_gb', 0))}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(res_rec.get('users_count', 1))} کاربر\n\n"
+        f"⚠️ <b>توجه مهم:</b>\n"
+        f"با فعال‌سازی زودهنگام، میزان مصرف فعلی صفر شده و بسته رزرو از همین لحظه فعال خواهد شد.\n\n"
+        f"آیا برای فعال‌سازی فوری این بسته مطمئن هستید؟"
+    )
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚡️ بله، فعال شود",
+                    callback_data=f"sub_act_res_confirm_{email}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data=f"sub_view_{email}",
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()

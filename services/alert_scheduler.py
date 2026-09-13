@@ -93,6 +93,20 @@ async def _process_single_client(
             return
 
         if is_expired:
+            from db.models import get_reserved_renewal
+            from services.renewal_service import activate_reserved_renewal
+
+            res_rec = await get_reserved_renewal(email)
+            if res_rec:
+                logger.info(
+                    "Found reserved renewal for expired client %s, auto-activating...",
+                    email,
+                )
+                act_res = await activate_reserved_renewal(email, force=True, bot=bot)
+                if act_res.get("status") == "activated":
+                    logger.info("Successfully activated reserved renewal for %s", email)
+                    return
+
             if expired_notice_enabled and (email, "expired_notice") not in notified_set:
                 reason = (
                     "اتمام کامل حجم ترافیک"
@@ -331,6 +345,7 @@ async def start_alert_scheduler(bot: Bot) -> None:
     while True:
         try:
             config = await get_alert_config()
+            print(config)
             if config.get("enabled", True):
                 await check_and_send_alerts(bot)
             else:

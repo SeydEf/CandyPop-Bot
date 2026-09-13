@@ -79,15 +79,23 @@ async def approve_invoice(
 
         await process_referral_commission(tg_id, amount, bot)
 
+        is_reserved = False
         if target_email:
             email = target_email
-            await xui_api.renew_client(
+            from services.renewal_service import process_renewal_purchase
+
+            ok, renewal_msg, is_reserved = await process_renewal_purchase(
                 email=email,
+                tg_id=tg_id,
                 duration_days=duration,
                 data_gb=gb,
                 users_count=users_count,
+                invoice_id=invoice_id,
+                bot=bot,
             )
-            action_msg = "اشتراک تمدید گردید"
+            action_msg = (
+                "بسته تمدید رزرو گردید" if is_reserved else "اشتراک تمدید گردید"
+            )
         else:
             user = await get_user(tg_id)
             username = user.get("username") if user else None
@@ -120,6 +128,12 @@ async def approve_invoice(
         sub_id = client.get("subId", "") if client else ""
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
+        note_reserved = (
+            "\n\n💡 <i>این بسته رزرو گردید و به محض اتمام حجم یا زمان اشتراک فعلی شما، به صورت خودکار فعال خواهد شد.</i>"
+            if is_reserved
+            else ""
+        )
+
         user_text = (
             f"{prefix_msg}{action_msg}!</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
@@ -127,7 +141,7 @@ async def approve_invoice(
             f"⏱ مدت: {duration} روز\n"
             f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
             f"📊 حجم: {format_size_gb(gb)}\n\n"
-            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
+            f"🔗 لینک اشتراک:\n<code>{sub_link}</code>{note_reserved}"
         )
 
         if sub_id:

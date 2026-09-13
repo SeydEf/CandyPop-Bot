@@ -258,10 +258,23 @@ def subscriptions_list_keyboard(
 
 
 def subscription_manage_keyboard(
-    email: str, show_renew: bool = True, is_test_sub: bool = False
+    email: str,
+    show_renew: bool = True,
+    is_test_sub: bool = False,
+    has_reserved: bool = False,
+    can_early_activate: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = []
-    if show_renew and not is_test_sub:
+    if has_reserved and can_early_activate:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="⚡️ فعال‌سازی زودهنگام بسته رزرو",
+                    callback_data=f"sub_act_res_{email}",
+                ),
+            ]
+        )
+    elif show_renew and not is_test_sub and not has_reserved:
         rows.append(
             [
                 InlineKeyboardButton(

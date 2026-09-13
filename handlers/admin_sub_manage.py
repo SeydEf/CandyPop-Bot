@@ -348,6 +348,24 @@ async def _render_sub_dashboard(
         f"🔗 <b>لینک ساب‌اسکریپشن:</b>\n<code>{sub_link}</code>"
     )
 
+    from db.models import get_reserved_renewal
+
+    res_rec = await get_reserved_renewal(email)
+    if res_rec:
+        res_dur = res_rec.get("duration_days", 0)
+        res_gb = res_rec.get("data_gb", 0)
+        res_users = res_rec.get("users_count", 1)
+        res_inv = res_rec.get("invoice_id")
+        inv_str = f" (فاکتور: <code>{res_inv}</code>)" if res_inv else ""
+        text += (
+            f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 <b>بسته تمدید رزرو شده:</b>\n"
+            f"   • ⏱ مدت زمان: {res_dur} روز\n"
+            f"   • 📊 حجم ترافیک: {format_size_gb(res_gb)}\n"
+            f"   • 👥 سقف کاربر: {to_persian_digits(res_users)} کاربر{inv_str}\n"
+            f"   • 💡 <i>این بسته پس از انقضای فعلی به صورت خودکار فعال می‌شود.</i>"
+        )
+
     toggle_btn_text = "🔴 غیرفعال‌سازی سرویس" if is_enabled else "🟢 فعال‌سازی سرویس"
 
     data = await state.get_data()
@@ -364,48 +382,65 @@ async def _render_sub_dashboard(
         back_btn_text = "🔙 بازگشت به جستجو"
         back_btn_callback = "admin_search_back"
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="📊 افزودن / تغییر حجم",
+                callback_data=f"admin_sub_gb_menu_{email}",
+            ),
+            InlineKeyboardButton(
+                text="⏱ تمدید / تغییر زمان",
+                callback_data=f"admin_sub_days_menu_{email}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="👥 سقف کاربر (IP)",
+                callback_data=f"admin_sub_ip_menu_{email}",
+            ),
+            InlineKeyboardButton(
+                text="✏️ تغییر نام (Email)",
+                callback_data=f"admin_sub_rename_menu_{email}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="🏷 تغییر گروه",
+                callback_data=f"admin_sub_group_menu_{email}",
+            ),
+            InlineKeyboardButton(
+                text="👤 تغییر کاربر (Telegram ID)",
+                callback_data=f"admin_sub_tgid_menu_{email}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=toggle_btn_text,
+                callback_data=f"admin_sub_toggle_enable_{email}",
+            ),
+            InlineKeyboardButton(
+                text="🔄 صفر کردن مصرف",
+                callback_data=f"admin_sub_reset_traffic_{email}",
+            ),
+        ],
+    ]
+
+    if res_rec:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text="📊 افزودن / تغییر حجم",
-                    callback_data=f"admin_sub_gb_menu_{email}",
+                    text="⚡️ فعال‌سازی آنی بسته رزرو",
+                    callback_data=f"admin_sub_res_act_{email}",
                 ),
                 InlineKeyboardButton(
-                    text="⏱ تمدید / تغییر زمان",
-                    callback_data=f"admin_sub_days_menu_{email}",
+                    text="❌ حذف بسته رزرو",
+                    callback_data=f"admin_sub_res_del_{email}",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 سقف کاربر (IP)",
-                    callback_data=f"admin_sub_ip_menu_{email}",
-                ),
-                InlineKeyboardButton(
-                    text="✏️ تغییر نام (Email)",
-                    callback_data=f"admin_sub_rename_menu_{email}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏷 تغییر گروه",
-                    callback_data=f"admin_sub_group_menu_{email}",
-                ),
-                InlineKeyboardButton(
-                    text="👤 تغییر کاربر (Telegram ID)",
-                    callback_data=f"admin_sub_tgid_menu_{email}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=toggle_btn_text,
-                    callback_data=f"admin_sub_toggle_enable_{email}",
-                ),
-                InlineKeyboardButton(
-                    text="🔄 صفر کردن مصرف",
-                    callback_data=f"admin_sub_reset_traffic_{email}",
-                ),
-            ],
+            ]
+        )
+
+    rows.extend(
+        [
             [
                 InlineKeyboardButton(
                     text="🔗 بارکد (QR) و ارسال لینک",
@@ -419,6 +454,8 @@ async def _render_sub_dashboard(
             [InlineKeyboardButton(text=back_btn_text, callback_data=back_btn_callback)],
         ]
     )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
     if isinstance(event, types.CallbackQuery):
         await safe_edit_text(
@@ -1452,6 +1489,38 @@ async def admin_sub_reset_traffic(
         logger.error("Failed to reset traffic for %s: %s", email, e)
         notice = f"❌ <b>خطا در صفر کردن مصرف:</b> {e}"
 
+    await _render_sub_dashboard(callback, email, state, notice=notice)
+
+
+@router.callback_query(F.data.startswith("admin_sub_res_act_"))
+async def admin_sub_res_act(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_sub_res_act_") :]
+    from services.renewal_service import activate_reserved_renewal
+
+    res = await activate_reserved_renewal(email, force=True, bot=callback.bot)
+    if res.get("status") == "activated":
+        notice = f"✅ <b>بسته رزرو اشتراک «{email}» با موفقیت فعال شد.</b>"
+    elif res.get("status") == "no_reserved":
+        notice = "❌ <b>هیچ بسته رزروی برای این اشتراک وجود ندارد.</b>"
+    else:
+        notice = f"❌ <b>خطا در فعال‌سازی:</b> {res.get('msg', 'ناشناخته')}"
+
+    await _render_sub_dashboard(callback, email, state, notice=notice)
+
+
+@router.callback_query(F.data.startswith("admin_sub_res_del_"))
+async def admin_sub_res_del(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    email = callback.data[len("admin_sub_res_del_") :]
+    from db.models import delete_reserved_renewal
+
+    await delete_reserved_renewal(email)
+    notice = f"🗑 <b>بسته رزرو اشتراک «{email}» حذف شد.</b>"
     await _render_sub_dashboard(callback, email, state, notice=notice)
 
 

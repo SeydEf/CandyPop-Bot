@@ -111,6 +111,17 @@ async def init_db() -> None:
             permissions TEXT DEFAULT '{}',
             added_at    TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS reserved_renewals (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT NOT NULL UNIQUE,
+            tg_id         INTEGER NOT NULL,
+            duration_days INTEGER NOT NULL,
+            data_gb       INTEGER NOT NULL,
+            users_count   INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            invoice_id    TEXT
+        );
     """)
 
     try:

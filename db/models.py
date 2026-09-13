@@ -1277,6 +1277,102 @@ async def reset_inbound_monitor_config() -> None:
     await set_setting("inbound_monitor_ids", "")
 
 
+DEFAULT_RESERVE_RENEWAL_CONFIG: dict[str, Any] = {
+    "enabled": True,
+    "rollover_days": False,
+    "allow_early_activation": True,
+}
+
+
+async def get_reserve_renewal_config() -> dict[str, Any]:
+    enabled_str = await get_setting("reserve_renewal_enabled", "1") or "1"
+    rollover_str = await get_setting("reserve_rollover_days", "0") or "0"
+    early_str = await get_setting("reserve_allow_early_activation", "1") or "1"
+    return {
+        "enabled": enabled_str == "1",
+        "rollover_days": rollover_str == "1",
+        "allow_early_activation": early_str == "1",
+    }
+
+
+async def set_reserve_renewal_config(
+    enabled: bool | None = None,
+    rollover_days: bool | None = None,
+    allow_early_activation: bool | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("reserve_renewal_enabled", "1" if enabled else "0")
+    if rollover_days is not None:
+        await set_setting("reserve_rollover_days", "1" if rollover_days else "0")
+    if allow_early_activation is not None:
+        await set_setting(
+            "reserve_allow_early_activation",
+            "1" if allow_early_activation else "0",
+        )
+
+
+async def reset_reserve_renewal_config() -> None:
+    await set_setting("reserve_renewal_enabled", "1")
+    await set_setting("reserve_rollover_days", "0")
+    await set_setting("reserve_allow_early_activation", "1")
+
+
+async def get_reserved_renewal(email: str) -> dict[str, Any] | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id FROM reserved_renewals WHERE email = ?",
+        (email,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_all_reserved_renewals() -> list[dict[str, Any]]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id FROM reserved_renewals ORDER BY id ASC"
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_reserved_renewals_by_user(tg_id: int) -> list[dict[str, Any]]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id FROM reserved_renewals WHERE tg_id = ? ORDER BY id ASC",
+        (tg_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def create_reserved_renewal(
+    email: str,
+    tg_id: int,
+    duration_days: int,
+    data_gb: int,
+    users_count: int = 1,
+    invoice_id: str | None = None,
+) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        """
+        INSERT OR REPLACE INTO reserved_renewals (email, tg_id, duration_days, data_gb, users_count, invoice_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        """,
+        (email, tg_id, duration_days, data_gb, users_count, invoice_id),
+    )
+    await db.commit()
+    return cursor.lastrowid or 0
+
+
+async def delete_reserved_renewal(email: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute("DELETE FROM reserved_renewals WHERE email = ?", (email,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
 def is_owner(tg_id: int) -> bool:
     from config import ADMIN_CHAT_ID
 
@@ -1344,6 +1440,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "delete_invoices": "حذف فاکتورها از دیتابیس",
     "pricing": "قیمت‌گذاری و تغییر نرخ‌ها",
     "shop_status": "وضعیت فروش و تمدید",
+    "reserve_renewal": "تنظیمات تمدید رزرو شده",
     "discounts": "مدیریت کدهای تخفیف",
     "test_sub": "تنظیمات اشتراک تست",
     "bulk_gift": "اعمال هدیه همگانی",
@@ -1372,6 +1469,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "delete_invoices": False,
     "pricing": False,
     "shop_status": True,
+    "reserve_renewal": True,
     "discounts": True,
     "test_sub": True,
     "bulk_gift": True,
