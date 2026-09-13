@@ -1373,6 +1373,34 @@ async def delete_reserved_renewal(email: str) -> bool:
     return cursor.rowcount > 0
 
 
+async def rename_client_references(old_email: str, new_email: str) -> None:
+    if not old_email or not new_email or old_email == new_email:
+        return
+    db = await get_db()
+    await db.execute(
+        "UPDATE OR REPLACE reserved_renewals SET email = ? WHERE email = ?",
+        (new_email, old_email),
+    )
+    await db.execute(
+        "UPDATE OR IGNORE notified_alerts SET email = ? WHERE email = ?",
+        (new_email, old_email),
+    )
+    await db.execute(
+        "UPDATE OR REPLACE ip_violations SET email = ? WHERE email = ?",
+        (new_email, old_email),
+    )
+    await db.execute(
+        "UPDATE invoices SET target_email = ? WHERE target_email = ?",
+        (new_email, old_email),
+    )
+    await db.commit()
+    logger.info(
+        "Cascaded rename from '%s' to '%s' across database tables",
+        old_email,
+        new_email,
+    )
+
+
 def is_owner(tg_id: int) -> bool:
     from config import ADMIN_CHAT_ID
 

@@ -1058,6 +1058,9 @@ async def admin_sub_rename_save(message: types.Message, state: FSMContext) -> No
 
     try:
         await xui_api.update_client(old_email, update_data)
+        from db.models import rename_client_references
+
+        await rename_client_references(old_email, new_email)
         await state.clear()
         await _render_sub_dashboard(
             message,

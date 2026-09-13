@@ -360,6 +360,9 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
 
     try:
         await xui_api.update_client(old_email, update_data)
+        from db.models import rename_client_references
+
+        await rename_client_references(old_email, new_name)
         await state.clear()
 
         info = await _build_dashboard_info(new_name)
