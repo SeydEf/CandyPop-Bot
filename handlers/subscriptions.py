@@ -41,6 +41,7 @@ from utils.formatting import (
     format_remaining_days,
     format_size,
     format_size_gb,
+    persian_to_english_digits,
     to_persian_digits,
 )
 from utils.helpers import generate_qr
@@ -52,6 +53,8 @@ router = Router(name="subscriptions")
 class SubStates(StatesGroup):
     waiting_rename = State()
     waiting_renew_discount = State()
+    waiting_custom_gb = State()
+    waiting_custom_days = State()
 
 
 async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
@@ -784,13 +787,143 @@ async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) 
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=renew_duration_keyboard(),
+        reply_markup=await renew_duration_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("renew_dur_"))
+@router.callback_query(F.data == "renew_dur_custom")
+async def renew_custom_duration_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.set_state(SubStates.waiting_custom_days)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="renew_back_to_duration",
+                )
+            ]
+        ]
+    )
+    await callback.message.edit_text(
+        "✍️ <b>مدت زمان دلخواه تمدید را وارد کنید:</b>\n\n"
+        "تعداد روز اشتراک را بصورت عددی ارسال کنید.\n"
+        "🔸 <b>حداقل مدت:</b> <code>30</code> روز\n"
+        "🔸 <b>حداکثر مدت:</b> <code>365</code> روز (۱ سال)\n"
+        "🔸 <b>مثال:</b> <code>45</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(SubStates.waiting_custom_days, F.text)
+async def renew_custom_duration_input(
+    message: types.Message, state: FSMContext
+) -> None:
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("🚫 فرایند تمدید لغو شد.")
+        return
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="renew_back_to_duration",
+                )
+            ]
+        ]
+    )
+
+    try:
+        raw_text = (
+            persian_to_english_digits(message.text.strip()) if message.text else ""
+        )
+        clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
+        days = int(clean_text)
+        if days < 30:
+            await message.answer(
+                "⚠️ <b>حداقل مدت زمان قابل تمدید ۳۰ روز می‌باشد.</b>\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+        if days > 365:
+            await message.answer(
+                "⚠️ <b>حداکثر مدت زمان قابل تمدید ۳۶۵ روز می‌باشد.</b>\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+    except (ValueError, TypeError):
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر ارسال کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    duration = days
+    await state.update_data(duration=duration)
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    gb = data.get("gb", 30)
+    users = data.get("users", 1)
+
+    bd = await get_price_breakdown(gb, duration, users)
+    price = bd["total_price"]
+    await state.update_data(price=price)
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    from db.models import get_reserve_renewal_config
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    dur_inv_title = (
+        "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
+        if reserve_enabled
+        else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
+    )
+
+    text = (
+        f"{dur_inv_title}\n\n"
+        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
+        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+    )
+    from keyboards.inline_kb import renew_payment_method_keyboard
+
+    card_cfg = await get_card_config()
+    await message.answer(
+        text,
+        reply_markup=renew_payment_method_keyboard(
+            is_change_plan=True, card_enabled=card_cfg.get("enabled", True)
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.regexp(r"^renew_dur_\d+$"))
 async def renew_select_duration(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
@@ -863,7 +996,7 @@ async def renew_back_to_duration(
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=renew_duration_keyboard(),
+        reply_markup=await renew_duration_keyboard(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -889,6 +1022,7 @@ async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) 
 
 @router.callback_query(F.data == "renew_vol_custom")
 async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(SubStates.waiting_custom_gb)
     data = await state.get_data()
     email = data.get("renew_email", "")
 
@@ -906,12 +1040,78 @@ async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) 
         f"✍️ <b>ورود حجم دلخواه برای تمدید سرویس «{email}»</b>\n\n"
         "لطفاً حجم ترافیک مورد نیاز خود را به <b>گیگابایت (عدد انگلیسی)</b> ارسال نمایید:\n"
         "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
+        "🔸 <b>حداکثر حجم:</b> <code>150</code> گیگابایت\n"
         "<i>(مثال: برای ۲۵ گیگابایت عدد <code>25</code> را ارسال کنید)</i>\n\n"
         "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.message(SubStates.waiting_custom_gb, F.text)
+async def renew_custom_volume_input(message: types.Message, state: FSMContext) -> None:
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("🚫 فرایند تمدید لغو شد.")
+        return
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="renew_change",
+                )
+            ]
+        ]
+    )
+
+    try:
+        raw_text = (
+            persian_to_english_digits(message.text.strip()) if message.text else ""
+        )
+        clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
+        gb = int(clean_text)
+        if gb < 10:
+            await message.answer(
+                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت می‌باشد.</b>\n"
+                "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+        if gb > 150:
+            await message.answer(
+                "⚠️ <b>حداکثر حجم قابل سفارش ۱۵۰ گیگابایت هست.</b>\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+    except (ValueError, TypeError):
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر ارسال کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await state.update_data(gb=gb)
+    data = await state.get_data()
+    email = data.get("renew_email", "")
+    users = data.get("users", 1)
+
+    from handlers.buy import _get_users_step_text
+
+    text = await _get_users_step_text(gb, users)
+    await message.answer(
+        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+        reply_markup=renew_users_keyboard(gb, users),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data.startswith("renew_vol_"))

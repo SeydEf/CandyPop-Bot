@@ -16,7 +16,6 @@ from services.pricing import (
     get_pricing_config,
     reset_pricing_config_to_defaults,
     update_base_gb_rate,
-    update_duration_surcharge,
     update_user_surcharge,
     update_volume_tiers,
 )
@@ -43,6 +42,15 @@ class AdminControlStates(StatesGroup):
     waiting_user_surcharge = State()
     waiting_dur_60 = State()
     waiting_dur_90 = State()
+    waiting_vol_plan_add_gb = State()
+    waiting_vol_plan_add_price = State()
+    waiting_vol_plan_edit_gb = State()
+    waiting_vol_plan_edit_price = State()
+    waiting_vol_plan_edit_text = State()
+    waiting_dur_plan_add_days = State()
+    waiting_dur_plan_add_surcharge = State()
+    waiting_dur_plan_edit_days = State()
+    waiting_dur_plan_edit_surcharge = State()
     waiting_tiers_text = State()
     waiting_test_gb = State()
     waiting_test_dur = State()
@@ -403,7 +411,13 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="⏱ تغییر حق‌الزحمه مدت زمان",
+                    text="📦 مدیریت پلن‌های حجم",
+                    callback_data="admin_volume_plans_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏱ مدیریت پلن‌های مدت زمان",
                     callback_data="admin_price_dur_menu",
                 ),
             ],
@@ -838,73 +852,1316 @@ async def admin_price_user_save(message: types.Message, state: FSMContext) -> No
         )
 
 
-@router.callback_query(F.data == "admin_price_dur_menu")
-async def admin_price_dur_menu(callback: types.CallbackQuery) -> None:
-    if not await _require_permission(callback, "pricing"):
-        return
-    config = await get_pricing_config()
-    durs = config["duration_surcharges"]
+# ---------------------------------------------------------
+# Duration Plans Management
+# ---------------------------------------------------------
+
+
+async def _build_duration_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from services.pricing import get_duration_plans, is_custom_duration_enabled
+
+    dur_plans = await get_duration_plans()
+    custom_enabled = await is_custom_duration_enabled()
+    custom_str = "🟢 فعال" if custom_enabled else "🔴 غیرفعال"
+    custom_btn_text = (
+        "🔴 غیرفعال‌سازی مدت دلخواه خریدار"
+        if custom_enabled
+        else "🟢 فعال‌سازی مدت دلخواه خریدار"
+    )
+
+    lines = []
+    for i, p in enumerate(dur_plans):
+        surch = p.get("surcharge", 0)
+        surch_str = f"+{format_price(surch)}" if surch > 0 else "۰ تومان (پایه)"
+        lines.append(
+            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(p['days'])} روز</b> ── اضافه بها: <code>{surch_str}</code>"
+        )
+
+    list_desc = "\n".join(lines) if lines else "<i>هیچ مدتی تعریف نشده است.</i>"
 
     text = (
-        "⏱ <b>تنظیم حق‌الزحمه مدت زمان اشتراک</b>\n\n"
-        f"• ۶۰ روزه: +{format_price(durs.get(60, 0))}\n"
-        f"• ۹۰ روزه: +{format_price(durs.get(90, 0))}\n\n"
-        "مدت مورد نظر را جهت ویرایش انتخاب کنید:"
+        "⏱ <b>مدیریت پلن‌های مدت زمان اشتراک</b>\n\n"
+        f"🔘 <b>وضعیت دکمه مدت دلخواه خریدار:</b> <b>{custom_str}</b>\n\n"
+        f"📋 <b>لیست مدت‌های تعریف‌شده:</b>\n{list_desc}\n\n"
+        "💡 <i>برای جابجایی جایگاه (بالا/پایین)، تغییر تعداد روز، تغییر اضافه بها یا حذف، روی مدت مورد نظر کلیک کنید:</i>"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    plan_btns = []
+    for i, p in enumerate(dur_plans):
+        surch = p.get("surcharge", 0)
+        surch_tag = f" (+{format_price(surch)})" if surch > 0 else ""
+        plan_btns.append(
+            InlineKeyboardButton(
+                text=f"⏱ {p['days']} روز{surch_tag}",
+                callback_data=f"admin_dur_plan_view_{i}",
+            )
+        )
+    for i in range(0, len(plan_btns), 2):
+        rows.append(plan_btns[i : i + 2])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن مدت جدید",
+                callback_data="admin_dur_plan_add",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=custom_btn_text,
+                callback_data="admin_dur_plan_toggle_custom",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔄 بازنشانی مدت‌ها به پیش‌فرض",
+                callback_data="admin_dur_plan_reset",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به قیمت و مالی",
+                callback_data="admin_pricing_menu",
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _build_duration_plan_details(
+    idx: int,
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    from services.pricing import get_duration_plans
+
+    dur_plans = await get_duration_plans()
+    if not (0 <= idx < len(dur_plans)):
+        return None
+
+    p = dur_plans[idx]
+    days = p.get("days", 0)
+    surch = p.get("surcharge", 0)
+    surch_str = f"+{format_price(surch)}" if surch > 0 else "۰ تومان (پایه)"
+
+    text = (
+        f"⏱ <b>جزئیات پلن مدت زمان: {to_persian_digits(days)} روز</b>\n\n"
+        f"📍 <b>موقعیت در لیست:</b> جایگاه {to_persian_digits(idx + 1)} از {to_persian_digits(len(dur_plans))}\n"
+        f"💰 <b>اضافه بها (حق‌الزحمه):</b> <code>{surch_str}</code>\n\n"
+        "عملیات مورد نظر را انتخاب کنید:"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    reorder_row = []
+    if idx > 0:
+        reorder_row.append(
+            InlineKeyboardButton(
+                text="⬆️ انتقال به بالا",
+                callback_data=f"admin_dur_plan_move_{idx}_up",
+            )
+        )
+    if idx < len(dur_plans) - 1:
+        reorder_row.append(
+            InlineKeyboardButton(
+                text="⬇️ انتقال به پایین",
+                callback_data=f"admin_dur_plan_move_{idx}_down",
+            )
+        )
+    if reorder_row:
+        rows.append(reorder_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="✏️ ویرایش تعداد روز",
+                callback_data=f"admin_dur_plan_edit_days_{idx}",
+            ),
+            InlineKeyboardButton(
+                text="💰 تغییر اضافه بها",
+                callback_data=f"admin_dur_plan_edit_surcharge_{idx}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🗑️ حذف این مدت زمان",
+                callback_data=f"admin_dur_plan_delete_{idx}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به لیست مدت‌ها",
+                callback_data="admin_price_dur_menu",
+            )
+        ]
+    )
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin_price_dur_menu")
+async def admin_price_dur_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    text, keyboard = await _build_duration_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_dur_plan_toggle_custom")
+async def admin_dur_plan_toggle_custom(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import is_custom_duration_enabled, set_custom_duration_enabled
+
+    current = await is_custom_duration_enabled()
+    await set_custom_duration_enabled(not current)
+    text, keyboard = await _build_duration_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ وضعیت ورود مدت دلخواه تغییر یافت.")
+
+
+@router.callback_query(F.data == "admin_dur_plan_reset")
+async def admin_dur_plan_reset(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import DEFAULT_DURATION_PLANS, set_duration_plans
+
+    await set_duration_plans(DEFAULT_DURATION_PLANS)
+    text, keyboard = await _build_duration_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ مدت‌های پیش‌فرض با موفقیت بازنشانی شدند.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_view_\d+$"))
+async def admin_dur_plan_view(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    idx = int(callback.data.split("_")[-1])
+    res = await _build_duration_plan_details(idx)
+    if not res:
+        await callback.answer("❌ مدت مورد نظر یافت نشد.", show_alert=True)
+        return
+    text, keyboard = res
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_move_\d+_(up|down)$"))
+async def admin_dur_plan_move(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import move_duration_plan
+
+    parts = callback.data.split("_")
+    idx = int(parts[4])
+    direction = -1 if parts[5] == "up" else 1
+    ok = await move_duration_plan(idx, direction)
+    if not ok:
+        await callback.answer("❌ امکان جابجایی وجود ندارد.", show_alert=True)
+        return
+
+    new_idx = idx + direction
+    res = await _build_duration_plan_details(new_idx)
+    if res:
+        text, keyboard = res
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
+    await callback.answer("✅ جایگاه تغییر یافت.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_delete_\d+$"))
+async def admin_dur_plan_delete(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import get_duration_plans, set_duration_plans
+
+    idx = int(callback.data.split("_")[-1])
+    dur_plans = await get_duration_plans()
+    if not (0 <= idx < len(dur_plans)):
+        await callback.answer("❌ مدت یافت نشد.", show_alert=True)
+        return
+
+    if len(dur_plans) <= 1:
+        await callback.answer(
+            "⚠️ حداقل یک مدت زمان باید در ربات فعال بماند.", show_alert=True
+        )
+        return
+
+    del dur_plans[idx]
+    await set_duration_plans(dur_plans)
+    text, keyboard = await _build_duration_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ مدت زمان حذف شد.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_edit_days_\d+$"))
+async def admin_dur_plan_edit_days_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    await state.set_state(AdminControlStates.waiting_dur_plan_edit_days)
+    await state.update_data(edit_dur_idx=idx)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_dur_plan_view_{idx}",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "✏️ <b>تعداد روز جدید را وارد کنید:</b>\n\n"
+        "یک عدد صحیح ارسال نمایید (مثال: <code>45</code>)\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_dur_plan_edit_days, F.text)
+async def admin_dur_plan_edit_days_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    data = await state.get_data()
+    idx = data.get("edit_dur_idx", 0)
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val <= 0:
+            raise ValueError
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_dur_plan_view_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح مثبت معتبر ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_duration_plans, set_duration_plans
+
+    dur_plans = await get_duration_plans()
+    if 0 <= idx < len(dur_plans):
+        dur_plans[idx]["days"] = val
+        await set_duration_plans(dur_plans)
+
+    await state.clear()
+    res = await _build_duration_plan_details(idx)
+    if res:
+        text, keyboard = res
+        await message.answer(
+            f"✅ تعداد روز با موفقیت به <b>{to_persian_digits(val)} روز</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_edit_surcharge_\d+$"))
+async def admin_dur_plan_edit_surcharge_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    await state.set_state(AdminControlStates.waiting_dur_plan_edit_surcharge)
+    await state.update_data(edit_dur_idx=idx)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_dur_plan_view_{idx}",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "💰 <b>مبلغ اضافه بها (حق‌الزحمه) جدید را به تومان وارد کنید:</b>\n\n"
+        "برای بدون اضافه بها عدد <code>0</code> را ارسال کنید.\n"
+        "مثال: <code>50000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_dur_plan_edit_surcharge, F.text)
+async def admin_dur_plan_edit_surcharge_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    data = await state.get_data()
+    idx = data.get("edit_dur_idx", 0)
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_dur_plan_view_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_duration_plans, set_duration_plans
+
+    dur_plans = await get_duration_plans()
+    if 0 <= idx < len(dur_plans):
+        dur_plans[idx]["surcharge"] = val
+        await set_duration_plans(dur_plans)
+
+    await state.clear()
+    res = await _build_duration_plan_details(idx)
+    if res:
+        text, keyboard = res
+        await message.answer(
+            f"✅ اضافه بها با موفقیت به <b>+{format_price(val)}</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data == "admin_dur_plan_add")
+async def admin_dur_plan_add_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_dur_plan_add_days)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_price_dur_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "➕ <b>افزودن مدت زمان جدید</b>\n\n"
+        "تعداد روز این پلن را ارسال کنید (مثال: <code>45</code>):\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_dur_plan_add_days, F.text)
+async def admin_dur_plan_add_days_received(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        days = int(clean)
+        if days <= 0:
+            raise ValueError
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_price_dur_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح مثبت ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await state.set_state(AdminControlStates.waiting_dur_plan_add_surcharge)
+    await state.update_data(new_dur_days=days)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_price_dur_menu",
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        f"مدت <b>{to_persian_digits(days)} روز</b> ثبت شد.\n\n"
+        "حالا مبلغ اضافه بها (حق‌الزحمه) این مدت را به تومان ارسال کنید (برای مدت بدون اضافه بها عدد <code>0</code> بفرستید):\n"
+        "مثال: <code>30000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminControlStates.waiting_dur_plan_add_surcharge, F.text)
+async def admin_dur_plan_add_surcharge_received(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    data = await state.get_data()
+    days = data.get("new_dur_days", 30)
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        surch = int(clean)
+        if surch < 0:
+            raise ValueError
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_price_dur_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_duration_plans, set_duration_plans
+
+    dur_plans = await get_duration_plans()
+    dur_plans.append({"days": days, "surcharge": surch})
+    await set_duration_plans(dur_plans)
+    await state.clear()
+
+    text, keyboard = await _build_duration_plans_panel()
+    await message.answer(
+        f"✅ پلن مدت زمان <b>{to_persian_digits(days)} روز</b> با اضافه بهای <b>+{format_price(surch)}</b> با موفقیت اضافه شد.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+# ---------------------------------------------------------
+# Volume Plans Management
+# ---------------------------------------------------------
+
+
+async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from services.pricing import (
+        calculate_data_price,
+        get_volume_plans,
+        is_custom_volume_enabled,
+    )
+
+    vol_plans = await get_volume_plans()
+    custom_enabled = await is_custom_volume_enabled()
+    custom_str = "🟢 فعال" if custom_enabled else "🔴 غیرفعال"
+    custom_btn_text = (
+        "🔴 غیرفعال‌سازی حجم دلخواه خریدار"
+        if custom_enabled
+        else "🟢 فعال‌سازی حجم دلخواه خریدار"
+    )
+
+    lines = []
+    for i, p in enumerate(vol_plans):
+        gb = p.get("gb", 0)
+        is_manual = p.get("price_type") == "manual" and p.get("price", 0) > 0
+        cur_price = await calculate_data_price(gb)
+        if is_manual:
+            mode_desc = f"قیمت دستی: {format_price(p['price'])}"
+        else:
+            mode_desc = f"محاسبه خودکار: {format_price(cur_price)}"
+        btn_txt = p.get("button_text", "").strip()
+        txt_note = f" ╸ «<code>{btn_txt}</code>»" if btn_txt else ""
+        lines.append(
+            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(gb)} گیگ</b> ── <code>{mode_desc}</code>{txt_note}"
+        )
+
+    list_desc = "\n".join(lines) if lines else "<i>هیچ پلنی تعریف نشده است.</i>"
+
+    text = (
+        "📦 <b>مدیریت پلن‌های حجم اشتراک</b>\n\n"
+        f"🔘 <b>وضعیت دکمه حجم دلخواه خریدار:</b> <b>{custom_str}</b>\n\n"
+        f"📋 <b>لیست پلن‌های تعریف‌شده:</b>\n{list_desc}\n\n"
+        "💡 <i>برای جابجایی جایگاه (بالا/پایین)، ویرایش حجم، تغییر قیمت (دستی یا خودکار)، شخصی‌سازی متن یا حذف، روی پلن مورد نظر کلیک کنید:</i>"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    plan_btns = []
+    for i, p in enumerate(vol_plans):
+        gb = p.get("gb", 0)
+        is_manual = p.get("price_type") == "manual" and p.get("price", 0) > 0
+        tag = f" ({format_price(p['price'])})" if is_manual else " (خودکار)"
+        btn_label = p.get("button_text", "").strip() or f"{gb} گیگ{tag}"
+        plan_btns.append(
+            InlineKeyboardButton(
+                text=f"📦 {btn_label}",
+                callback_data=f"admin_vol_plan_view_{i}",
+            )
+        )
+    for i in range(0, len(plan_btns), 2):
+        rows.append(plan_btns[i : i + 2])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن پلن حجم جدید",
+                callback_data="admin_vol_plan_add",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=custom_btn_text,
+                callback_data="admin_vol_plan_toggle_custom",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔄 بازنشانی پلن‌ها به پیش‌فرض",
+                callback_data="admin_vol_plan_reset",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به قیمت و مالی",
+                callback_data="admin_pricing_menu",
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _build_volume_plan_details(
+    idx: int,
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    from services.pricing import calculate_data_price, get_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        return None
+
+    p = vol_plans[idx]
+    gb = p.get("gb", 0)
+    is_manual = p.get("price_type") == "manual" and p.get("price", 0) > 0
+    cur_price = await calculate_data_price(gb)
+    type_str = "قیمت مشخص (دستی)" if is_manual else "محاسبه خودکار بر اساس نرخ هر گیگ"
+    custom_btn_txt = p.get("button_text", "").strip()
+    btn_text_display = (
+        f"«<code>{custom_btn_txt}</code>»" if custom_btn_txt else "<i>پیش‌فرض سیستم</i>"
+    )
+
+    text = (
+        f"📦 <b>جزئیات پلن حجم: {to_persian_digits(gb)} گیگابایت</b>\n\n"
+        f"📍 <b>موقعیت در لیست:</b> جایگاه {to_persian_digits(idx + 1)} از {to_persian_digits(len(vol_plans))}\n"
+        f"🔘 <b>نحوه قیمت‌گذاری:</b> <b>{type_str}</b>\n"
+        f"💵 <b>مبلغ موثر:</b> <code>{format_price(cur_price)}</code>\n"
+        f"📝 <b>متن دکمه کیبورد:</b> {btn_text_display}\n\n"
+        "عملیات مورد نظر را انتخاب کنید:"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    reorder_row = []
+    if idx > 0:
+        reorder_row.append(
+            InlineKeyboardButton(
+                text="⬆️ انتقال به بالا",
+                callback_data=f"admin_vol_plan_move_{idx}_up",
+            )
+        )
+    if idx < len(vol_plans) - 1:
+        reorder_row.append(
+            InlineKeyboardButton(
+                text="⬇️ انتقال به پایین",
+                callback_data=f"admin_vol_plan_move_{idx}_down",
+            )
+        )
+    if reorder_row:
+        rows.append(reorder_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="✏️ ویرایش حجم (GB)",
+                callback_data=f"admin_vol_plan_edit_gb_{idx}",
+            ),
+            InlineKeyboardButton(
+                text="💵 تغییر قیمت‌گذاری",
+                callback_data=f"admin_vol_plan_edit_pricing_{idx}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📝 ویرایش متن کیبورد",
+                callback_data=f"admin_vol_plan_edit_text_{idx}",
+            ),
+            InlineKeyboardButton(
+                text="🗑️ حذف این پلن",
+                callback_data=f"admin_vol_plan_delete_{idx}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به لیست پلن‌ها",
+                callback_data="admin_volume_plans_menu",
+            )
+        ]
+    )
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin_volume_plans_menu")
+async def admin_volume_plans_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    text, keyboard = await _build_volume_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_vol_plan_toggle_custom")
+async def admin_vol_plan_toggle_custom(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import is_custom_volume_enabled, set_custom_volume_enabled
+
+    current = await is_custom_volume_enabled()
+    await set_custom_volume_enabled(not current)
+    text, keyboard = await _build_volume_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ وضعیت ورود حجم دلخواه تغییر یافت.")
+
+
+@router.callback_query(F.data == "admin_vol_plan_reset")
+async def admin_vol_plan_reset(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import DEFAULT_VOLUME_PLANS, set_volume_plans
+
+    await set_volume_plans(DEFAULT_VOLUME_PLANS)
+    text, keyboard = await _build_volume_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ پلن‌های پیش‌فرض با موفقیت بازنشانی شدند.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_view_\d+$"))
+async def admin_vol_plan_view(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    idx = int(callback.data.split("_")[-1])
+    res = await _build_volume_plan_details(idx)
+    if not res:
+        await callback.answer("❌ پلن مورد نظر یافت نشد.", show_alert=True)
+        return
+    text, keyboard = res
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_move_\d+_(up|down)$"))
+async def admin_vol_plan_move(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import move_volume_plan
+
+    parts = callback.data.split("_")
+    idx = int(parts[4])
+    direction = -1 if parts[5] == "up" else 1
+    ok = await move_volume_plan(idx, direction)
+    if not ok:
+        await callback.answer("❌ امکان جابجایی وجود ندارد.", show_alert=True)
+        return
+
+    new_idx = idx + direction
+    res = await _build_volume_plan_details(new_idx)
+    if res:
+        text, keyboard = res
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
+    await callback.answer("✅ جایگاه تغییر یافت.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_delete_\d+$"))
+async def admin_vol_plan_delete(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    idx = int(callback.data.split("_")[-1])
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("❌ پلن یافت نشد.", show_alert=True)
+        return
+
+    if len(vol_plans) <= 1:
+        await callback.answer(
+            "⚠️ حداقل یک پلن حجم باید در ربات فعال بماند.", show_alert=True
+        )
+        return
+
+    del vol_plans[idx]
+    await set_volume_plans(vol_plans)
+    text, keyboard = await _build_volume_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ پلن حجم حذف شد.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_edit_gb_\d+$"))
+async def admin_vol_plan_edit_gb_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    await state.set_state(AdminControlStates.waiting_vol_plan_edit_gb)
+    await state.update_data(edit_vol_idx=idx)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_vol_plan_view_{idx}",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "✏️ <b>حجم جدید پلن را به گیگابایت (GB) وارد کنید:</b>\n\n"
+        "یک عدد صحیح ارسال نمایید (مثال: <code>40</code>)\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_vol_plan_edit_gb, F.text)
+async def admin_vol_plan_edit_gb_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    data = await state.get_data()
+    idx = data.get("edit_vol_idx", 0)
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val <= 0:
+            raise ValueError
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_vol_plan_view_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح مثبت معتبر ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if 0 <= idx < len(vol_plans):
+        vol_plans[idx]["gb"] = val
+        await set_volume_plans(vol_plans)
+
+    await state.clear()
+    res = await _build_volume_plan_details(idx)
+    if res:
+        text, keyboard = res
+        await message.answer(
+            f"✅ حجم پلن با موفقیت به <b>{to_persian_digits(val)} گیگابایت</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_edit_pricing_\d+$"))
+async def admin_vol_plan_edit_pricing_menu(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import calculate_data_price, get_volume_plans
+
+    idx = int(callback.data.split("_")[-1])
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("❌ پلن یافت نشد.", show_alert=True)
+        return
+
+    p = vol_plans[idx]
+    gb = p.get("gb", 0)
+    cur_price = await calculate_data_price(gb)
+    is_manual = p.get("price_type") == "manual" and p.get("price", 0) > 0
+
+    text = (
+        f"💵 <b>تنظیم نحوه قیمت‌گذاری پلن {to_persian_digits(gb)} گیگابایت</b>\n\n"
+        f"وضعیت فعلی: <b>{'قیمت دستی (' + format_price(p['price']) + ')' if is_manual else 'محاسبه خودکار (' + format_price(cur_price) + ')'}</b>\n\n"
+        "روش مورد نظر برای قیمت‌گذاری این پلن را انتخاب کنید:"
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"۶۰ روزه (+{format_price(durs.get(60, 0))})",
-                    callback_data="admin_price_dur_60",
+                    text="⚙️ محاسبه خودکار (بر مبنای نرخ گیگ)",
+                    callback_data=f"admin_vol_plan_set_auto_{idx}",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text=f"۹۰ روزه (+{format_price(durs.get(90, 0))})",
-                    callback_data="admin_price_dur_90",
+                    text="✍️ ورود قیمت مشخص (دستی به تومان)",
+                    callback_data=f"admin_vol_plan_set_manual_{idx}",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به قیمت و مالی",
-                    callback_data="admin_pricing_menu",
+                    text="🔙 بازگشت",
+                    callback_data=f"admin_vol_plan_view_{idx}",
                 )
             ],
         ]
     )
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data == "admin_price_dur_60")
-async def admin_price_dur_60_start(
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_set_auto_\d+$"))
+async def admin_vol_plan_set_auto(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    idx = int(callback.data.split("_")[-1])
+    vol_plans = await get_volume_plans()
+    if 0 <= idx < len(vol_plans):
+        vol_plans[idx]["price_type"] = "auto"
+        vol_plans[idx]["price"] = 0
+        await set_volume_plans(vol_plans)
+
+    res = await _build_volume_plan_details(idx)
+    if res:
+        text, keyboard = res
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
+    await callback.answer("✅ قیمت‌گذاری به حالت خودکار تغییر یافت.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_set_manual_\d+$"))
+async def admin_vol_plan_set_manual_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     if not await _require_permission(callback, "pricing"):
         return
-    await state.set_state(AdminControlStates.waiting_dur_60)
-    await callback.message.edit_text(
-        "⏱ <b>مبلغ اضافه برای اشتراک ۶۰ روزه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>50000</code>\n\n"
-        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_pricing",
-                    )
-                ]
+    idx = int(callback.data.split("_")[-1])
+    await state.set_state(AdminControlStates.waiting_vol_plan_edit_price)
+    await state.update_data(edit_vol_idx=idx)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_vol_plan_edit_pricing_{idx}",
+                )
             ]
-        ),
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "✍️ <b>قیمت مشخص این پلن را به تومان وارد کنید:</b>\n\n"
+        "مثال: <code>65000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-@router.message(AdminControlStates.waiting_dur_60, F.text)
-async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> None:
+@router.message(AdminControlStates.waiting_vol_plan_edit_price, F.text)
+async def admin_vol_plan_edit_price_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    data = await state.get_data()
+    idx = data.get("edit_vol_idx", 0)
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val <= 0:
+            raise ValueError
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_vol_plan_view_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if 0 <= idx < len(vol_plans):
+        vol_plans[idx]["price_type"] = "manual"
+        vol_plans[idx]["price"] = val
+        await set_volume_plans(vol_plans)
+
+    await state.clear()
+    res = await _build_volume_plan_details(idx)
+    if res:
+        text, keyboard = res
+        await message.answer(
+            f"✅ قیمت مشخص پلن به <b>{format_price(val)}</b> تغییر یافت.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_edit_text_\d+$"))
+async def admin_vol_plan_edit_text_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    plan = vol_plans[idx]
+    cur_text = plan.get("button_text", "").strip()
+    cur_display = f"«<code>{cur_text}</code>»" if cur_text else "<i>پیش‌فرض سیستم</i>"
+
+    await state.set_state(AdminControlStates.waiting_vol_plan_edit_text)
+    await state.update_data(vol_plan_edit_idx=idx)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی به متن پیش‌فرض",
+                    callback_data=f"admin_vol_plan_reset_text_{idx}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_vol_plan_view_{idx}",
+                )
+            ],
+        ]
+    )
+
+    prompt = (
+        f"📝 <b>ویرایش متن دکمه کیبورد پلن {to_persian_digits(plan.get('gb', 0))} گیگابایت</b>\n\n"
+        f"🔘 <b>متن فعلی:</b> {cur_display}\n\n"
+        "متن دلخواه جدید برای این دکمه را ارسال کنید.\n\n"
+        "💡 <b>متغیرهای قابل استفاده در متن:</b>\n"
+        "• <code>{gb}</code> ╸ مقدار گیگابایت (مثال: 50)\n"
+        "• <code>{price}</code> ╸ قیمت فرمت‌شده با تومان (مثال: ۱۰۰,۰۰۰ تومان)\n"
+        "• <code>{raw_price}</code> ╸ فقط عدد قیمت (مثال: ۱۰۰,۰۰۰)\n\n"
+        "<i>مثال‌ها:</i>\n"
+        "<code>🔥 پلن اقتصادی {gb} گیگ ({price})</code>\n"
+        "<code>⭐ {gb}GB ╸ {price}</code>\n\n"
+        "یا برای بازگشت به متن پیش‌فرض سیستم، روی دکمه <b>بازنشانی</b> کلیک کنید."
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, prompt, reply_markup=keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_reset_text_\d+$"))
+async def admin_vol_plan_reset_text(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    vol_plans[idx]["button_text"] = ""
+    await set_volume_plans(vol_plans)
+    await state.clear()
+
+    res = await _build_volume_plan_details(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(
+            callback.message,
+            f"✅ متن دکمه پلن به پیش‌فرض سیستم بازنشانی شد.\n\n{text}",
+            reply_markup=markup,
+        )
+    await callback.answer("متن دکمه به پیش‌فرض بازنشانی شد.")
+
+
+@router.message(AdminControlStates.waiting_vol_plan_edit_text)
+async def admin_vol_plan_edit_text_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    data = await state.get_data()
+    idx = data.get("vol_plan_edit_idx")
+    if idx is None:
+        await state.clear()
+        await message.answer("❌ خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+        return
+
+    raw_text = (message.text or "").strip()
+    if not raw_text:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_vol_plan_view_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ متن نمی‌تواند خالی باشد. لطفاً یک متن وارد کنید یا روی انصراف بزنید.",
+            reply_markup=cancel_kb,
+        )
+        return
+
+    if len(raw_text) > 60:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_vol_plan_view_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ طول متن دکمه نمی‌تواند بیشتر از ۶۰ کاراکتر باشد. لطفاً متن کوتاه‌تری وارد کنید.",
+            reply_markup=cancel_kb,
+        )
+        return
+
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if 0 <= idx < len(vol_plans):
+        vol_plans[idx]["button_text"] = raw_text
+        await set_volume_plans(vol_plans)
+
+    await state.clear()
+    res = await _build_volume_plan_details(idx)
+    if res:
+        text, keyboard = res
+        await message.answer(
+            f"✅ متن دکمه پلن با موفقیت ذخیره شد:\n«<code>{raw_text}</code>»\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data == "admin_vol_plan_add")
+async def admin_vol_plan_add_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_vol_plan_add_gb)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "➕ <b>افزودن پلن حجم جدید</b>\n\n"
+        "میزان حجم پلن را به گیگابایت (GB) ارسال کنید (مثال: <code>35</code>):\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_vol_plan_add_gb, F.text)
+async def admin_vol_plan_add_gb_received(
+    message: types.Message, state: FSMContext
+) -> None:
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
@@ -917,67 +2174,120 @@ async def admin_price_dur_60_save(message: types.Message, state: FSMContext) -> 
             .replace("،", "")
             .replace(" ", "")
         )
-        val = int(clean)
-        if val < 0:
+        gb = int(clean)
+        if gb <= 0:
             raise ValueError
-        await update_duration_surcharge(60, val)
-        await state.clear()
-        text, keyboard = await _build_pricing_panel()
-        await message.answer(
-            f"✅ مبلغ اضافه اشتراک ۶۰ روزه به <b>+{format_price(val)}</b> تغییر یافت.\n\n{text}",
-            reply_markup=keyboard,
-            parse_mode="HTML",
-        )
     except ValueError:
-        err_kb = InlineKeyboardMarkup(
+        cancel_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_pricing",
+                        callback_data="admin_volume_plans_menu",
                     )
                 ]
             ]
         )
         await message.answer(
-            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
-            reply_markup=err_kb,
+            "❌ لطفاً یک عدد صحیح مثبت معتبر ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
+        return
+
+    await state.update_data(new_vol_gb=gb)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚙️ محاسبه خودکار (نرخ هر گیگ)",
+                    callback_data="admin_vol_plan_add_auto",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✍️ ورود قیمت مشخص (دستی)",
+                    callback_data="admin_vol_plan_add_manual",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
+            ],
+        ]
+    )
+    await message.answer(
+        f"حجم <b>{to_persian_digits(gb)} گیگابایت</b> ثبت شد.\n\n"
+        "نحوه قیمت‌گذاری این پلن جدید را انتخاب کنید:",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
-@router.callback_query(F.data == "admin_price_dur_90")
-async def admin_price_dur_90_start(
+@router.callback_query(F.data == "admin_vol_plan_add_auto")
+async def admin_vol_plan_add_auto(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     if not await _require_permission(callback, "pricing"):
         return
-    await state.set_state(AdminControlStates.waiting_dur_90)
-    await callback.message.edit_text(
-        "⏱ <b>مبلغ اضافه برای اشتراک ۹۰ روزه (به تومان) را وارد کنید:</b>\n"
-        "مثال: <code>100000</code>\n\n"
-        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_pricing",
-                    )
-                ]
+    data = await state.get_data()
+    gb = data.get("new_vol_gb", 10)
+
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    vol_plans.append({"gb": gb, "price_type": "auto", "price": 0})
+    await set_volume_plans(vol_plans)
+    await state.clear()
+
+    text, keyboard = await _build_volume_plans_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("✅ پلن حجم جدید با موفقیت اضافه شد.")
+
+
+@router.callback_query(F.data == "admin_vol_plan_add_manual")
+async def admin_vol_plan_add_manual_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_vol_plan_add_price)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
             ]
-        ),
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "✍️ <b>قیمت مشخص این پلن را به تومان وارد کنید:</b>\n\n"
+        "مثال: <code>80000</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
         parse_mode="HTML",
     )
     await callback.answer()
 
 
-@router.message(AdminControlStates.waiting_dur_90, F.text)
-async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> None:
+@router.message(AdminControlStates.waiting_vol_plan_add_price, F.text)
+async def admin_vol_plan_add_price_received(
+    message: types.Message, state: FSMContext
+) -> None:
     if not message.text or message.text.strip() == "/cancel":
         await state.clear()
         await message.answer("❌ عملیات لغو شد.")
         return
+
+    data = await state.get_data()
+    gb = data.get("new_vol_gb", 10)
 
     try:
         clean = (
@@ -987,32 +2297,39 @@ async def admin_price_dur_90_save(message: types.Message, state: FSMContext) -> 
             .replace(" ", "")
         )
         val = int(clean)
-        if val < 0:
+        if val <= 0:
             raise ValueError
-        await update_duration_surcharge(90, val)
-        await state.clear()
-        text, keyboard = await _build_pricing_panel()
-        await message.answer(
-            f"✅ مبلغ اضافه اشتراک ۹۰ روزه به <b>+{format_price(val)}</b> تغییر یافت.\n\n{text}",
-            reply_markup=keyboard,
-            parse_mode="HTML",
-        )
     except ValueError:
-        err_kb = InlineKeyboardMarkup(
+        cancel_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_pricing",
+                        callback_data="admin_volume_plans_menu",
                     )
                 ]
             ]
         )
         await message.answer(
-            "❌ لطفاً یک عدد صحیح معتبر وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
-            reply_markup=err_kb,
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
             parse_mode="HTML",
         )
+        return
+
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    vol_plans.append({"gb": gb, "price_type": "manual", "price": val})
+    await set_volume_plans(vol_plans)
+    await state.clear()
+
+    text, keyboard = await _build_volume_plans_panel()
+    await message.answer(
+        f"✅ پلن حجم <b>{to_persian_digits(gb)} گیگابایت</b> با قیمت مشخص <b>{format_price(val)}</b> با موفقیت اضافه شد.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
 async def _build_price_tiers_panel() -> tuple[str, InlineKeyboardMarkup]:

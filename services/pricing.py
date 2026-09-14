@@ -22,6 +22,21 @@ DEFAULT_VOLUME_TIERS: list[tuple[int, int]] = [
 ]
 DEFAULT_FALLBACK_GB_RATE = 3_500
 
+DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
+    {"gb": 10, "price_type": "auto", "price": 0, "button_text": ""},
+    {"gb": 30, "price_type": "auto", "price": 0, "button_text": ""},
+    {"gb": 50, "price_type": "auto", "price": 0, "button_text": ""},
+    {"gb": 70, "price_type": "auto", "price": 0, "button_text": ""},
+    {"gb": 90, "price_type": "auto", "price": 0, "button_text": ""},
+    {"gb": 100, "price_type": "auto", "price": 0, "button_text": ""},
+]
+
+DEFAULT_DURATION_PLANS: list[dict[str, Any]] = [
+    {"days": 30, "surcharge": 0},
+    {"days": 60, "surcharge": 50_000},
+    {"days": 90, "surcharge": 100_000},
+]
+
 _pricing_cache: dict[str, Any] | None = None
 
 
@@ -54,6 +69,51 @@ async def load_pricing_config() -> dict[str, Any]:
     else:
         duration_surcharges = dict(DEFAULT_DURATION_SURCHARGES)
 
+    dur_plans_str = await get_setting("pricing_duration_plans")
+    if dur_plans_str:
+        try:
+            raw_dur_plans = json.loads(dur_plans_str)
+            duration_plans = [
+                {
+                    "days": int(p.get("days", 0)),
+                    "surcharge": int(p.get("surcharge", 0)),
+                }
+                for p in raw_dur_plans
+                if int(p.get("days", 0)) > 0
+            ]
+        except Exception:
+            duration_plans = [dict(p) for p in DEFAULT_DURATION_PLANS]
+    else:
+        duration_plans = [dict(p) for p in DEFAULT_DURATION_PLANS]
+
+    for dp in duration_plans:
+        duration_surcharges[dp["days"]] = dp["surcharge"]
+
+    vol_plans_str = await get_setting("pricing_volume_plans")
+    if vol_plans_str:
+        try:
+            raw_vol_plans = json.loads(vol_plans_str)
+            volume_plans = [
+                {
+                    "gb": int(p.get("gb", 0)),
+                    "price_type": str(p.get("price_type", "auto")),
+                    "price": int(p.get("price", 0)),
+                    "button_text": str(p.get("button_text", "")).strip(),
+                }
+                for p in raw_vol_plans
+                if int(p.get("gb", 0)) > 0
+            ]
+        except Exception:
+            volume_plans = [dict(p) for p in DEFAULT_VOLUME_PLANS]
+    else:
+        volume_plans = [dict(p) for p in DEFAULT_VOLUME_PLANS]
+
+    custom_vol_str = await get_setting("pricing_custom_volume_enabled", "1")
+    custom_vol_enabled = custom_vol_str != "0"
+
+    custom_dur_str = await get_setting("pricing_custom_duration_enabled", "1")
+    custom_dur_enabled = custom_dur_str != "0"
+
     tiers_str = await get_setting("pricing_volume_tiers")
     if tiers_str:
         try:
@@ -81,6 +141,10 @@ async def load_pricing_config() -> dict[str, Any]:
         "volume_tiers": volume_tiers,
         "fallback_gb_rate": fallback_rate,
         "volume_tiers_enabled": volume_tiers_enabled,
+        "volume_plans": volume_plans,
+        "duration_plans": duration_plans,
+        "custom_volume_enabled": custom_vol_enabled,
+        "custom_duration_enabled": custom_dur_enabled,
     }
     return _pricing_cache
 
@@ -171,6 +235,147 @@ async def set_volume_tiers_enabled(enabled: bool) -> None:
     invalidate_pricing_cache()
 
 
+async def get_volume_plans() -> list[dict[str, Any]]:
+    config = await get_pricing_config()
+    return [dict(p) for p in config.get("volume_plans", DEFAULT_VOLUME_PLANS)]
+
+
+async def set_volume_plans(plans: list[dict[str, Any]]) -> None:
+    cleaned = [
+        {
+            "gb": int(p.get("gb", 0)),
+            "price_type": str(p.get("price_type", "auto")),
+            "price": int(p.get("price", 0)),
+            "button_text": str(p.get("button_text", "")).strip(),
+        }
+        for p in plans
+        if int(p.get("gb", 0)) > 0
+    ]
+    await set_setting("pricing_volume_plans", json.dumps(cleaned))
+    invalidate_pricing_cache()
+
+
+def format_volume_button_text(plan: dict[str, Any], data_price: int) -> str:
+    from utils.formatting import format_price
+
+    btn_text = str(plan.get("button_text", "")).strip()
+    if not btn_text:
+        return f"📊 {plan.get('gb', 0)} گیگ ({format_price(data_price)})"
+
+    raw_price_str = f"{data_price:,}"
+    price_str = format_price(data_price)
+    gb_str = str(plan.get("gb", 0))
+
+    return (
+        btn_text.replace("{gb}", gb_str)
+        .replace("{price}", price_str)
+        .replace("{raw_price}", raw_price_str)
+    )
+
+
+async def get_duration_plans() -> list[dict[str, Any]]:
+    config = await get_pricing_config()
+    return [dict(p) for p in config.get("duration_plans", DEFAULT_DURATION_PLANS)]
+
+
+async def set_duration_plans(plans: list[dict[str, Any]]) -> None:
+    cleaned = [
+        {
+            "days": int(p.get("days", 0)),
+            "surcharge": int(p.get("surcharge", 0)),
+        }
+        for p in plans
+        if int(p.get("days", 0)) > 0
+    ]
+    await set_setting("pricing_duration_plans", json.dumps(cleaned))
+    dur_map = {p["days"]: p["surcharge"] for p in cleaned}
+    await set_setting("pricing_duration_surcharges", json.dumps(dur_map))
+    invalidate_pricing_cache()
+
+
+async def is_custom_volume_enabled() -> bool:
+    config = await get_pricing_config()
+    return bool(config.get("custom_volume_enabled", True))
+
+
+async def set_custom_volume_enabled(enabled: bool) -> None:
+    await set_setting("pricing_custom_volume_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
+async def is_custom_duration_enabled() -> bool:
+    config = await get_pricing_config()
+    return bool(config.get("custom_duration_enabled", True))
+
+
+async def set_custom_duration_enabled(enabled: bool) -> None:
+    await set_setting("pricing_custom_duration_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
+async def move_volume_plan(index: int, direction: int) -> bool:
+    plans = await get_volume_plans()
+    target_idx = index + direction
+    if 0 <= index < len(plans) and 0 <= target_idx < len(plans):
+        plans[index], plans[target_idx] = plans[target_idx], plans[index]
+        await set_volume_plans(plans)
+        return True
+    return False
+
+
+async def move_duration_plan(index: int, direction: int) -> bool:
+    plans = await get_duration_plans()
+    target_idx = index + direction
+    if 0 <= index < len(plans) and 0 <= target_idx < len(plans):
+        plans[index], plans[target_idx] = plans[target_idx], plans[index]
+        await set_duration_plans(plans)
+        return True
+    return False
+
+
+async def calculate_duration_surcharge(duration_days: int) -> int:
+    dur_plans = await get_duration_plans()
+    if not dur_plans:
+        return 0
+
+    for p in dur_plans:
+        if p["days"] == duration_days:
+            return p.get("surcharge", 0)
+
+    sorted_plans = sorted(dur_plans, key=lambda x: x["days"])
+    if duration_days <= sorted_plans[0]["days"]:
+        return sorted_plans[0].get("surcharge", 0)
+
+    if duration_days >= sorted_plans[-1]["days"]:
+        last = sorted_plans[-1]
+        prev = sorted_plans[-2] if len(sorted_plans) > 1 else None
+        if prev and (last["days"] - prev["days"]) > 0:
+            daily_rate = (last["surcharge"] - prev["surcharge"]) / (
+                last["days"] - prev["days"]
+            )
+            extra_days = duration_days - last["days"]
+            return int(round(last["surcharge"] + extra_days * daily_rate))
+        elif last["days"] > 0:
+            daily_rate = last["surcharge"] / last["days"]
+            return int(round(daily_rate * duration_days))
+        return last.get("surcharge", 0)
+
+    for i in range(len(sorted_plans) - 1):
+        p1 = sorted_plans[i]
+        p2 = sorted_plans[i + 1]
+        if p1["days"] <= duration_days <= p2["days"]:
+            span = p2["days"] - p1["days"]
+            if span > 0:
+                ratio = (duration_days - p1["days"]) / span
+                surcharge = p1["surcharge"] + ratio * (
+                    p2["surcharge"] - p1["surcharge"]
+                )
+                return int(round(surcharge))
+            return p1.get("surcharge", 0)
+
+    return 0
+
+
 async def reset_pricing_config_to_defaults() -> None:
     await set_setting("pricing_base_gb_rate", str(DEFAULT_BASE_GB_RATE))
     await set_setting("pricing_user_surcharge", str(DEFAULT_USER_SURCHARGE))
@@ -183,12 +388,21 @@ async def reset_pricing_config_to_defaults() -> None:
     }
     await set_setting("pricing_volume_tiers", json.dumps(tiers_data))
     await set_setting("pricing_volume_tiers_enabled", "1")
+    await set_setting("pricing_volume_plans", json.dumps(DEFAULT_VOLUME_PLANS))
+    await set_setting("pricing_duration_plans", json.dumps(DEFAULT_DURATION_PLANS))
+    await set_setting("pricing_custom_volume_enabled", "1")
+    await set_setting("pricing_custom_duration_enabled", "1")
     invalidate_pricing_cache()
 
 
 async def calculate_data_price(gb: int) -> int:
     if gb <= 0:
         return 0
+
+    vol_plans = await get_volume_plans()
+    for p in vol_plans:
+        if p["gb"] == gb and p.get("price_type") == "manual" and p.get("price", 0) > 0:
+            return int(p["price"])
 
     config = await get_pricing_config()
     if not config.get("volume_tiers_enabled", True):
@@ -212,9 +426,7 @@ async def calculate_total_price(gb: int, duration_days: int, users_count: int) -
     config = await get_pricing_config()
 
     data_price = await calculate_data_price(gb)
-
-    duration_surcharges: dict[int, int] = config["duration_surcharges"]
-    dur_surcharge = duration_surcharges.get(duration_days, 0)
+    dur_surcharge = await calculate_duration_surcharge(duration_days)
 
     user_surcharge: int = config["user_surcharge"]
     extra_users = max(0, users_count - 1)
@@ -229,7 +441,7 @@ async def get_price_breakdown(
     config = await get_pricing_config()
 
     data_price = await calculate_data_price(gb)
-    dur_surcharge = config["duration_surcharges"].get(duration_days, 0)
+    dur_surcharge = await calculate_duration_surcharge(duration_days)
     extra_users = max(0, users_count - 1)
     user_surcharge = extra_users * config["user_surcharge"]
     total_price = data_price + dur_surcharge + user_surcharge

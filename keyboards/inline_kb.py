@@ -4,32 +4,39 @@ from typing import Any
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import DURATION_OPTIONS, VOLUME_TIERS
-from utils.formatting import format_price, to_persian_digits
+from utils.formatting import to_persian_digits
 
 
 async def volume_keyboard() -> InlineKeyboardMarkup:
-    from services.pricing import calculate_data_price
+    from services.pricing import (
+        calculate_data_price,
+        format_volume_button_text,
+        get_volume_plans,
+        is_custom_volume_enabled,
+    )
 
     rows: list[list[InlineKeyboardButton]] = []
+    vol_plans = await get_volume_plans()
 
-    for gb, _ in VOLUME_TIERS.items():
+    for item in vol_plans:
+        gb = item.get("gb", 0)
         data_price = await calculate_data_price(gb)
-        label = f"📊 {gb} گیگ ({format_price(data_price)})"
+        label = format_volume_button_text(item, data_price)
         btn = InlineKeyboardButton(
             text=label,
             callback_data=f"buy_vol_{gb}",
         )
         rows.append([btn])
 
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="📝 حجم دلخواه",
-                callback_data="buy_vol_custom",
-            )
-        ]
-    )
+    if await is_custom_volume_enabled():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📝 حجم دلخواه",
+                    callback_data="buy_vol_custom",
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(text="❌ انصراف از خرید", callback_data="buy_cancel"),
@@ -73,15 +80,36 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     )
 
 
-def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
+async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
+    from services.pricing import (
+        get_duration_plans,
+        is_custom_duration_enabled,
+    )
+
     rows: list[list[InlineKeyboardButton]] = []
-    for days in DURATION_OPTIONS:
+    dur_plans = await get_duration_plans()
+
+    for item in dur_plans:
+        days = item.get("days", 0)
         months = days // 30
-        label = f"⏱ {days} روز ({to_persian_digits(months)} ماهه)"
+        if days % 30 == 0 and months > 0:
+            label = f"⏱ {days} روز ({to_persian_digits(months)} ماهه)"
+        else:
+            label = f"⏱ {days} روز"
         rows.append(
             [
                 InlineKeyboardButton(
                     text=label, callback_data=f"buy_dur_{gb}_{users}_{days}"
+                )
+            ]
+        )
+
+    if await is_custom_duration_enabled():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="⏱ مدت زمان دلخواه",
+                    callback_data=f"buy_dur_custom_{gb}_{users}",
                 )
             ]
         )
@@ -360,26 +388,42 @@ def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarku
     )
 
 
-def renew_duration_keyboard() -> InlineKeyboardMarkup:
+async def renew_duration_keyboard() -> InlineKeyboardMarkup:
+    from services.pricing import (
+        get_duration_plans,
+        is_custom_duration_enabled,
+    )
+
+    dur_plans = await get_duration_plans()
     buttons = []
-    for days in DURATION_OPTIONS:
+    for item in dur_plans:
+        days = item.get("days", 0)
         label = f"{days} روز"
         buttons.append(
             InlineKeyboardButton(text=label, callback_data=f"renew_dur_{days}")
         )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            buttons,
+
+    rows: list[list[InlineKeyboardButton]] = []
+    chunk_size = 3 if len(buttons) >= 3 else 2
+    for i in range(0, len(buttons), chunk_size):
+        rows.append(buttons[i : i + chunk_size])
+
+    if await is_custom_duration_enabled():
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت", callback_data="renew_back_to_users"
-                ),
-                InlineKeyboardButton(
-                    text="❌ انصراف", callback_data="sub_view_current"
-                ),
-            ],
+                    text="⏱ مدت زمان دلخواه", callback_data="renew_dur_custom"
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(text="🔙 بازگشت", callback_data="renew_back_to_users"),
+            InlineKeyboardButton(text="❌ انصراف", callback_data="sub_view_current"),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def renew_users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
@@ -420,31 +464,35 @@ def renew_users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
 async def renew_volume_keyboard(
     duration: int = 30, users: int = 1
 ) -> InlineKeyboardMarkup:
-    from services.pricing import calculate_data_price, get_pricing_config
+    from services.pricing import (
+        calculate_data_price,
+        format_volume_button_text,
+        get_volume_plans,
+        is_custom_volume_enabled,
+    )
 
-    config = await get_pricing_config()
-    volume_tiers = config["volume_tiers"]
-
+    vol_plans = await get_volume_plans()
     rows: list[list[InlineKeyboardButton]] = []
 
-    for item in volume_tiers:
-        gb = item[0] if isinstance(item, (list, tuple)) else item
+    for item in vol_plans:
+        gb = item.get("gb", 0)
         data_price = await calculate_data_price(gb)
-        label = f"📊 {gb} گیگ ({format_price(data_price)})"
+        label = format_volume_button_text(item, data_price)
         btn = InlineKeyboardButton(
             text=label,
             callback_data=f"renew_vol_{gb}",
         )
         rows.append([btn])
 
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text="📝 حجم دلخواه",
-                callback_data="renew_vol_custom",
-            )
-        ]
-    )
+    if await is_custom_volume_enabled():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📝 حجم دلخواه",
+                    callback_data="renew_vol_custom",
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(

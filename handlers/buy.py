@@ -62,6 +62,7 @@ router = Router(name="buy")
 
 class BuyStates(StatesGroup):
     waiting_custom_gb = State()
+    waiting_custom_days = State()
     waiting_discount_code = State()
     waiting_receipt = State()
 
@@ -343,7 +344,7 @@ async def buy_users_confirm(callback: types.CallbackQuery) -> None:
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         text,
-        reply_markup=duration_keyboard(gb, users),
+        reply_markup=await duration_keyboard(gb, users),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -360,10 +361,129 @@ async def buy_back_to_duration(
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         text,
-        reply_markup=duration_keyboard(gb, users),
+        reply_markup=await duration_keyboard(gb, users),
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^buy_dur_custom_\d+_\d+$"))
+async def buy_custom_duration_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    parts = callback.data.split("_")
+    gb = int(parts[3])
+    users = int(parts[4])
+    await state.set_state(BuyStates.waiting_custom_days)
+    await state.update_data(custom_dur_gb=gb, custom_dur_users=users)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"buy_back_duration_{gb}_{users}",
+                )
+            ]
+        ]
+    )
+    await callback.message.edit_text(
+        "✍️ <b>مدت زمان دلخواه را وارد کنید:</b>\n\n"
+        "تعداد روز اشتراک را بصورت عددی ارسال کنید.\n"
+        "🔸 <b>حداقل مدت:</b> <code>30</code> روز\n"
+        "🔸 <b>حداکثر مدت:</b> <code>365</code> روز (۱ سال)\n"
+        "🔸 <b>مثال:</b> <code>45</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(BuyStates.waiting_custom_days, F.text)
+async def buy_custom_duration_input(message: types.Message, state: FSMContext) -> None:
+    if message.text and message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer(
+            "🚫 فرایند خرید لغو شد.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    data = await state.get_data()
+    gb = data.get("custom_dur_gb", 30)
+    users = data.get("custom_dur_users", 1)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"buy_back_duration_{gb}_{users}",
+                )
+            ]
+        ]
+    )
+
+    try:
+        raw_text = (
+            persian_to_english_digits(message.text.strip()) if message.text else ""
+        )
+        clean_text = raw_text.replace(",", "").replace("،", "").replace(" ", "")
+        days = int(clean_text)
+        if days < 30:
+            await message.answer(
+                "⚠️ <b>حداقل مدت زمان قابل سفارش ۳۰ روز می‌باشد.</b>\n"
+                "لطفاً عددی معادل ۳۰ روز یا بیشتر وارد کنید.\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+        if days > 365:
+            await message.answer(
+                "⚠️ <b>حداکثر مدت زمان قابل سفارش ۳۶۵ روز (۱ سال) می‌باشد.</b>\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+    except (ValueError, TypeError):
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر ارسال کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await state.clear()
+    bd = await get_price_breakdown(gb, days, users)
+    price = bd["total_price"]
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    text = (
+        f"📋 <b>پیش‌فاکتور خرید اشتراک جدید</b>\n\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"⏱ <b>مدت زمان:</b> {days} روز{dur_str}\n\n"
+        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
+        f"💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
+    )
+    card_cfg = await get_card_config()
+    await message.answer(
+        text,
+        reply_markup=payment_method_keyboard(
+            days, users, gb, price, card_enabled=card_cfg.get("enabled", True)
+        ),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data.regexp(r"^buy_dur_\d+_\d+_\d+$"))
