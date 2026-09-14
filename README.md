@@ -75,11 +75,12 @@
 - **Direct Admin Messaging:** Send custom announcements, text, photos, videos, voice notes, audio, or documents directly to any user with interactive preview and toggleable headers.
 - **Dedicated User Subscription Hub:** View and manage any customer's active keys directly from their profile with smart single/multi-subscription routing.
 - **Dual Payment Workflows:** Automatic instant checkout via internal prepaid **Wallet**, or manual **Card-to-Card** transfers with receipt screenshot verification.
-- **Dynamic Pricing Engine:** Set tiered rates where high-volume purchases cost less per GB, plus customizable duration and multi-device surcharges.
+- **Dynamic Plan Builder & Scoping:** Define custom volume and duration packages, choose between fixed manual pricing or auto-calculated rates, reorder display position, customize button labels with dynamic template variables (`{gb}`, `{price}`, `{raw_price}`), and independently scope each plan for new purchases, renewals, or both.
+- **Renewal Reservation Engine:** Advanced renewal workflow supporting queued/reserved renewals that activate on first connection, preserving active traffic allowances with full cascade remark synchronization.
 - **Server Health & Traffic Metrics:** Live 3x-ui node telemetry, displaying CPU, memory, uptime, total upload, total download, and combined traffic consumption.
 - **Intelligent Anti-Abuse IP Limiter:** 3-strike multi-device detection that automatically suspends abusers and alerts administrators.
 - **Mass Gifting & Broadcasts:** Surprise your entire user base with bonus GB or extra days in one tap using an interactive stepper keyboard.
-- **Granular Sub-Admin RBAC:** Delegate responsibilities to staff members across **22 granular permission scopes** without risking root access.
+- **Granular Sub-Admin RBAC:** Delegate responsibilities to staff members across **26 granular permission scopes** without risking root access.
 - **High-Performance Async Stack:** Built with `aiogram 3.x`, `aiosqlite` in WAL mode, and non-blocking `httpx` connection pooling.
 
 ---
@@ -90,13 +91,13 @@
 
 | Feature | Description |
 |---|---|
-| **Flexible Purchase Flow** | Choose from pre-configured popular packages (10, 30, 50, 70, 90, 100 GB) or specify any **custom GB amount**. |
+| **Flexible Purchase Flow** | Choose from admin-configured dynamic volume packages with custom labels or specify any **custom GB amount**. |
 | **Multi-Device Selection** | Select concurrent device limits (1 to 10 users) with dynamic price calculation. |
-| **Duration Options** | Flexible durations (1 month / 30 days, 2 months / 60 days, 3 months / 90 days). |
+| **Dynamic Duration Options** | Select validity period from live admin-defined duration plans (e.g. 30, 60, 90 days or custom days) with real-time price calculation. |
 | **Instant Wallet System** | Pre-load funds via card transfer, then purchase or renew subscriptions instantly with zero waiting time. |
 | **Card-to-Card Payment** | Upload payment receipt photos directly; transactions expire automatically after 20 minutes if unpaid. |
 | **Subscription Dashboard** | Real-time traffic breakdown (used vs total GB), expiry dates, and service status for every owned key. |
-| **1-Click Renewal & Upgrade** | Extend expiration, add more data volume, or adjust device capacity on existing keys without changing links. |
+| **1-Click Renewal & Reservation** | Extend expiration or reserve a renewal pack (queued to activate upon first connection or expiry) without losing remaining data. |
 | **Instant QR & Config Delivery** | Scannable QR codes and raw subscription URLs for easy mobile imports (V2rayNG, Streisand, v2rayN, etc.). |
 | **Key Regeneration** | Compromised link? Users can re-generate their UUID / Subscription ID at any time. |
 | **Custom Remark / Renaming** | Tag configurations with personal names (e.g. `Laptop`, `Family Phone`) for easy identification. |
@@ -128,12 +129,13 @@
 | Module | Administrative Capability |
 |---|---|
 | **Categorized Control Panel** | Reorganized into 4 clean submenus (Users & Subs, Pricing & Sales, Marketing, System Settings) with hierarchical back navigation. |
-| **Role-Based Access (RBAC)** | Add sub-admins with selective access across **22 permission scopes** (invoices, users, ban, messaging, pricing, gifts, etc.). |
+| **Role-Based Access (RBAC)** | Add sub-admins with selective access across **26 granular permission scopes** (invoices, users, ban, messaging, pricing, gifts, renewal reserve, etc.). |
 | **Invoice Management & Search**| Paginated invoice registry with status filters (paid, pending, rejected), universal multi-field search, receipt inspection, and deletion. |
 | **User Ban & Suspension** | Two-step user ban system (bot-only or bot + server client suspension) with silent, default, or custom admin message delivery. |
 | **Direct User Messaging** | Dispatch direct messages, images, videos, audio, voice notes, or documents to individual users with live preview and toggleable headers. |
-| **Live Pricing Controls** | Adjust base GB price, duration surcharges, per-user multipliers, and volume discount tiers live without restarting. |
-| **Shop Master Switches** | Toggle master kill-switches for: **New Purchases**, **Renewals**, **Free Trials**, and **Start on First Use**. |
+| **Dynamic Plan Builder** | Full CRUD for volume and duration packages, 1-click reordering (`⬆️`/`⬇️`), manual vs auto pricing modes, and custom button label templating (`{gb}`, `{price}`, `{raw_price}`). |
+| **Buy & Renew Scoping** | Independently toggle any volume plan, duration plan, or custom input field for new purchases, renewals, or both with 1-click inline switches. |
+| **Shop Master Switches** | Toggle master kill-switches for: **New Purchases**, **Renewals**, **Renewal Reservations**, **Free Trials**, and **Start on First Use**. |
 | **Payment Review Queue** | Review pending card transfers with receipt photos; approve or reject in 1-click with automated customer notifications. |
 | **Subscription CRUD & Selector**| View any user's subscriptions directly from their profile with smart 1-click routing for single keys or paginated selectors for multi-keys. |
 | **Custom Manual Subscriptions**| Provision custom subscriptions for any Telegram ID with tailored volume, duration, inbounds, and device limits. |
@@ -484,7 +486,7 @@ Sending `/control` or `/admin_control` opens the administrative control dashboar
 └────────────────────────────────────────────────────────┘
 ```
 
-### 1. 👥 Users & Subscriptions (`admin_cat_users`)
+### 1. 👥 Users & Subscriptions
 
 - **Universal Search (`/search`):** Query subscribers by Telegram numeric ID, `@username`, or subscription email remark.
 - **Complete Users Registry:** Paginated list of all bot users with instant access to their wallet balance, test subscription status, and purchase history.
@@ -504,22 +506,31 @@ Sending `/control` or `/admin_control` opens the administrative control dashboar
 
 ---
 
-### 2. 💰 Pricing & Sales (`admin_cat_pricing`)
+### 2. 💰 Pricing & Sales
 
-- **Shop Master Switches:** Independently toggle customer capabilities for **New Purchases** and **Subscription Renewals**.
+- **Shop Master Switches:** Independently toggle customer capabilities for **New Purchases**, **Subscription Renewals**, and **Renewal Reservations**.
+- **Dynamic Volume Plan Manager:**
+  - **Plan CRUD & Reordering:** Add new volume plans, edit data capacity (GB), delete plans, or reorder their position (`⬆️` / `⬇️`) on customer keyboards.
+  - **Flexible Pricing Modes:** Choose between automatic rate calculation (based on per-GB rates) or fixed manual pricing per package.
+  - **Custom Keyboard Labels:** Personalize inline button labels with dynamic template placeholders (`{gb}` for gigabytes, `{price}` for formatted price with currency, and `{raw_price}` for digits), or reset to system default.
+  - **Buy vs Renew Scoping:** Independently toggle each package's visibility for new purchases, renewals, or both.
+- **Dynamic Duration Plan Manager:**
+  - **Duration CRUD & Reordering:** Add custom validity durations, edit days, delete, and reorder (`⬆️` / `⬇️`).
+  - **Custom Surcharges:** Set specific fee adjustments or surcharges per duration plan.
+  - **Buy vs Renew Scoping:** Independently toggle each duration plan for new purchases, renewals, or both.
+- **Custom Input Toggles:** Independently enable or disable the "Custom Volume" and "Custom Duration" buttons for new purchases and renewals.
 - **Dynamic Pricing Engine:**
   - **Base GB Rate:** Modify standard per-gigabyte pricing in Tomans.
   - **Extra User Surcharge:** Configure additional fees for multi-device (concurrent IP) capacity.
-  - **Duration Fees:** Set custom surcharges for 30-day, 60-day, and 90-day subscription validity.
   - **Volume Discount Tiers:** Create tiered rate steps (e.g. 20GB @ 5,000T, 50GB @ 4,500T, 100GB @ 4,000T).
 - **Payment Card Settings:** Live modification of the destination 16-digit card number and cardholder name for card-to-card deposits.
 - **Promotional Discount Codes:** Generate alphanumeric promo vouchers with customizable percentage discounts, expiration dates, and maximum usage quotas.
 - **Storefront Display Settings:** Customize promotional marketing copy and banner image displayed under `/pricing`.
-- **Factory Reset:** Restore default pricing tiers and surcharges with one click.
+- **Factory Reset:** Restore default pricing tiers, duration options, and volume plans with one click.
 
 ---
 
-### 3. 🎁 Marketing & Announcements (`admin_cat_marketing`)
+### 3. 🎁 Marketing & Announcements
 
 - **Free Trial Management:**
   - Configure trial data allowance (GB) and trial validity period (days).
@@ -534,7 +545,7 @@ Sending `/control` or `/admin_control` opens the administrative control dashboar
 
 ---
 
-### 4. ⚙️ Server & System Settings (`admin_cat_system`)
+### 4. ⚙️ Server & System Settings
 
 - **Server Telemetry & Network Load:** Live 3x-ui server statistics including CPU usage, memory consumption, system uptime, and combined network traffic:
   - ⬆️ **Total Upload:** Bandwidth consumed by server outbound traffic.
@@ -546,8 +557,8 @@ Sending `/control` or `/admin_control` opens the administrative control dashboar
   - Configure thresholds for low data warnings (e.g. `< 2 GB`) and expiration warnings (e.g. `< 3 days`).
   - Configure auto-deletion grace periods (`auto_delete_days`, default 3 days) after which expired keys are automatically purged.
 - **Multi-Device Anti-Abuse Limiter:** Set continuous IP check intervals and inspect current strike records.
-- **Sub-Admin Role-Based Access Control (RBAC):** Delegate operations to team members across **23 granular permission scopes**:
-  - `manage_subs`, `users_list`, `send_user_message`, `ban_users`, `create_sub`, `view_invoices`, `approve_invoices`, `delete_invoices`, `pricing`, `shop_status`, `discounts`, `test_sub`, `bulk_gift`, `alerts`, `card_config`, `receipt_config`, `inbounds`, `referral`, `broadcast`, `start_message`, `channel_lock`, `reset_configs`, `stats`.
+- **Sub-Admin Role-Based Access Control (RBAC):** Delegate operations to team members across **26 granular permission scopes**:
+  - `manage_subs`, `users_list`, `send_user_message`, `ban_users`, `create_sub`, `view_invoices`, `approve_invoices`, `reapprove_invoices`, `delete_invoices`, `pricing`, `shop_status`, `reserve_renewal`, `discounts`, `test_sub`, `bulk_gift`, `alerts`, `inbound_alerts`, `card_config`, `receipt_config`, `inbounds`, `referral`, `broadcast`, `start_message`, `channel_lock`, `reset_configs`, `stats`.
 
 ---
 
