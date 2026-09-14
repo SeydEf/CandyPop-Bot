@@ -301,21 +301,37 @@ async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) ->
 
 
 async def _get_duration_step_text(gb: int, users: int) -> str:
-    from services.pricing import calculate_data_price
+    from services.pricing import calculate_data_price, get_duration_plans
 
     config = await get_pricing_config()
-    durs = config["duration_surcharges"]
-    dur60 = durs.get(60, 0)
-    dur90 = durs.get(90, 0)
-
     data_price = await calculate_data_price(gb)
     extra_users = max(0, users - 1)
     users_surcharge_total = extra_users * config["user_surcharge"]
     base_sum = data_price + users_surcharge_total
 
-    price_30 = base_sum + durs.get(30, 0)
-    price_60 = base_sum + dur60
-    price_90 = base_sum + dur90
+    dur_plans = await get_duration_plans()
+    dur_lines = []
+    for item in dur_plans:
+        if not item.get("enabled_buy", True):
+            continue
+        days = item.get("days", 0)
+        surch = item.get("surcharge", 0)
+        total_price = base_sum + surch
+        surch_desc = f"+{format_price(surch)}" if surch > 0 else "بدون هزینه اضافه"
+        months = days // 30
+        if days % 30 == 0 and months > 0:
+            dur_title = (
+                f"{to_persian_digits(months)} ماهه ({to_persian_digits(days)} روز)"
+            )
+        else:
+            dur_title = f"{to_persian_digits(days)} روز"
+        dur_lines.append(
+            f"🔹 <b>{dur_title}:</b> {surch_desc} — <b>قیمت نهایی: {format_price(total_price)}</b>"
+        )
+
+    dur_section = (
+        "\n".join(dur_lines) if dur_lines else "<i>هیچ مدتی برای خرید فعال نیست.</i>"
+    )
 
     user_surcharge_str = (
         f" (+{format_price(users_surcharge_total)})"
@@ -330,9 +346,7 @@ async def _get_duration_step_text(gb: int, users: int) -> str:
         f"💵 <b>مجموع قیمت پایه (حجم + کاربر):</b> <b>{format_price(base_sum)}</b>\n\n"
         f"⏱ <b>گام ۳ از ۳: انتخاب مدت زمان اعتبار</b>\n\n"
         f"لطفاً مدت اعتبار سرویس خود را انتخاب کنید:\n\n"
-        f"🔹 <b>۱ ماهه (۳۰ روز):</b> بدون هزینه اضافه — <b>قیمت نهایی: {format_price(price_30)}</b>\n"
-        f"🔹 <b>۲ ماهه (۶۰ روز):</b> +{format_price(dur60)} — <b>قیمت نهایی: {format_price(price_60)}</b>\n"
-        f"🔹 <b>۳ ماهه (۹۰ روز):</b> +{format_price(dur90)} — <b>قیمت نهایی: {format_price(price_90)}</b>"
+        f"{dur_section}"
     )
 
 
