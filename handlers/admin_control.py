@@ -852,38 +852,57 @@ async def admin_price_user_save(message: types.Message, state: FSMContext) -> No
         )
 
 
-# ---------------------------------------------------------
-# Duration Plans Management
-# ---------------------------------------------------------
-
-
 async def _build_duration_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
-    from services.pricing import get_duration_plans, is_custom_duration_enabled
+    from services.pricing import (
+        get_duration_plans,
+        is_custom_duration_buy_enabled,
+        is_custom_duration_renew_enabled,
+    )
 
     dur_plans = await get_duration_plans()
-    custom_enabled = await is_custom_duration_enabled()
-    custom_str = "🟢 فعال" if custom_enabled else "🔴 غیرفعال"
-    custom_btn_text = (
-        "🔴 غیرفعال‌سازی مدت دلخواه خریدار"
-        if custom_enabled
-        else "🟢 فعال‌سازی مدت دلخواه خریدار"
+    custom_buy_enabled = await is_custom_duration_buy_enabled()
+    custom_renew_enabled = await is_custom_duration_renew_enabled()
+    custom_buy_str = "🟢 فعال" if custom_buy_enabled else "🔴 غیرفعال"
+    custom_renew_str = "🟢 فعال" if custom_renew_enabled else "🔴 غیرفعال"
+
+    custom_buy_btn = (
+        "🔴 غیرفعال‌سازی مدت دلخواه خرید"
+        if custom_buy_enabled
+        else "🟢 فعال‌سازی مدت دلخواه خرید"
+    )
+    custom_renew_btn = (
+        "🔴 غیرفعال‌سازی مدت دلخواه تمدید"
+        if custom_renew_enabled
+        else "🟢 فعال‌سازی مدت دلخواه تمدید"
     )
 
     lines = []
     for i, p in enumerate(dur_plans):
         surch = p.get("surcharge", 0)
         surch_str = f"+{format_price(surch)}" if surch > 0 else "۰ تومان (پایه)"
+        enb_buy = p.get("enabled_buy", True)
+        enb_renew = p.get("enabled_renew", True)
+        if enb_buy and enb_renew:
+            status_desc = "خرید و تمدید 🟢"
+        elif enb_buy:
+            status_desc = "فقط خرید 🛒"
+        elif enb_renew:
+            status_desc = "فقط تمدید 🔄"
+        else:
+            status_desc = "غیرفعال 🔴"
+
         lines.append(
-            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(p['days'])} روز</b> ── اضافه بها: <code>{surch_str}</code>"
+            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(p['days'])} روز</b> ── اضافه بها: <code>{surch_str}</code> ╸ <b>{status_desc}</b>"
         )
 
     list_desc = "\n".join(lines) if lines else "<i>هیچ مدتی تعریف نشده است.</i>"
 
     text = (
         "⏱ <b>مدیریت پلن‌های مدت زمان اشتراک</b>\n\n"
-        f"🔘 <b>وضعیت دکمه مدت دلخواه خریدار:</b> <b>{custom_str}</b>\n\n"
+        f"🔘 <b>مدت دلخواه خریدار (خرید جدید):</b> <b>{custom_buy_str}</b>\n"
+        f"🔘 <b>مدت دلخواه خریدار (تمدید اشتراک):</b> <b>{custom_renew_str}</b>\n\n"
         f"📋 <b>لیست مدت‌های تعریف‌شده:</b>\n{list_desc}\n\n"
-        "💡 <i>برای جابجایی جایگاه (بالا/پایین)، تغییر تعداد روز، تغییر اضافه بها یا حذف، روی مدت مورد نظر کلیک کنید:</i>"
+        "💡 <i>برای جابجایی جایگاه (بالا/پایین)، تغییر تعداد روز، تغییر اضافه بها، فعال/غیرفعال‌سازی (خرید/تمدید) یا حذف، روی مدت مورد نظر کلیک کنید:</i>"
     )
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -891,9 +910,20 @@ async def _build_duration_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     for i, p in enumerate(dur_plans):
         surch = p.get("surcharge", 0)
         surch_tag = f" (+{format_price(surch)})" if surch > 0 else ""
+        enb_buy = p.get("enabled_buy", True)
+        enb_renew = p.get("enabled_renew", True)
+        if enb_buy and enb_renew:
+            badge = " [🛒🔄]"
+        elif enb_buy:
+            badge = " [🛒]"
+        elif enb_renew:
+            badge = " [🔄]"
+        else:
+            badge = " [🔴]"
+
         plan_btns.append(
             InlineKeyboardButton(
-                text=f"⏱ {p['days']} روز{surch_tag}",
+                text=f"⏱ {p['days']} روز{surch_tag}{badge}",
                 callback_data=f"admin_dur_plan_view_{i}",
             )
         )
@@ -911,9 +941,13 @@ async def _build_duration_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     rows.append(
         [
             InlineKeyboardButton(
-                text=custom_btn_text,
-                callback_data="admin_dur_plan_toggle_custom",
-            )
+                text=custom_buy_btn,
+                callback_data="admin_dur_plan_toggle_custom_buy",
+            ),
+            InlineKeyboardButton(
+                text=custom_renew_btn,
+                callback_data="admin_dur_plan_toggle_custom_renew",
+            ),
         ]
     )
     rows.append(
@@ -949,11 +983,17 @@ async def _build_duration_plan_details(
     days = p.get("days", 0)
     surch = p.get("surcharge", 0)
     surch_str = f"+{format_price(surch)}" if surch > 0 else "۰ تومان (پایه)"
+    enb_buy = p.get("enabled_buy", True)
+    enb_renew = p.get("enabled_renew", True)
+    buy_status_str = "🟢 فعال" if enb_buy else "🔴 غیرفعال"
+    renew_status_str = "🟢 فعال" if enb_renew else "🔴 غیرفعال"
 
     text = (
         f"⏱ <b>جزئیات پلن مدت زمان: {to_persian_digits(days)} روز</b>\n\n"
         f"📍 <b>موقعیت در لیست:</b> جایگاه {to_persian_digits(idx + 1)} از {to_persian_digits(len(dur_plans))}\n"
-        f"💰 <b>اضافه بها (حق‌الزحمه):</b> <code>{surch_str}</code>\n\n"
+        f"💰 <b>اضافه بها (حق‌الزحمه):</b> <code>{surch_str}</code>\n"
+        f"🛒 <b>وضعیت در خرید جدید:</b> <b>{buy_status_str}</b>\n"
+        f"🔄 <b>وضعیت در تمدید اشتراک:</b> <b>{renew_status_str}</b>\n\n"
         "عملیات مورد نظر را انتخاب کنید:"
     )
 
@@ -976,6 +1016,18 @@ async def _build_duration_plan_details(
     if reorder_row:
         rows.append(reorder_row)
 
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"🛒 خرید: {'🟢 فعال' if enb_buy else '🔴 غیرفعال'}",
+                callback_data=f"admin_dur_plan_toggle_buy_{idx}",
+            ),
+            InlineKeyboardButton(
+                text=f"🔄 تمدید: {'🟢 فعال' if enb_renew else '🔴 غیرفعال'}",
+                callback_data=f"admin_dur_plan_toggle_renew_{idx}",
+            ),
+        ]
+    )
     rows.append(
         [
             InlineKeyboardButton(
@@ -1015,10 +1067,89 @@ async def admin_price_dur_menu(
         return
     await state.clear()
     text, keyboard = await _build_duration_plans_panel()
-    await safe_edit_text(
-        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
-    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
     await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_toggle_buy_\d+$"))
+async def admin_dur_plan_toggle_buy(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_duration_plans, set_duration_plans
+
+    dur_plans = await get_duration_plans()
+    if not (0 <= idx < len(dur_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    dur_plans[idx]["enabled_buy"] = not dur_plans[idx].get("enabled_buy", True)
+    await set_duration_plans(dur_plans)
+
+    res = await _build_duration_plan_details(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_dur_plan_toggle_renew_\d+$"))
+async def admin_dur_plan_toggle_renew(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_duration_plans, set_duration_plans
+
+    dur_plans = await get_duration_plans()
+    if not (0 <= idx < len(dur_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    dur_plans[idx]["enabled_renew"] = not dur_plans[idx].get("enabled_renew", True)
+    await set_duration_plans(dur_plans)
+
+    res = await _build_duration_plan_details(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_dur_plan_toggle_custom_buy")
+async def admin_dur_plan_toggle_custom_buy(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import (
+        is_custom_duration_buy_enabled,
+        set_custom_duration_buy_enabled,
+    )
+
+    cur = await is_custom_duration_buy_enabled()
+    await set_custom_duration_buy_enabled(not cur)
+    text, keyboard = await _build_duration_plans_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=keyboard)
+    await callback.answer("✅ وضعیت مدت دلخواه خرید تغییر یافت.")
+
+
+@router.callback_query(F.data == "admin_dur_plan_toggle_custom_renew")
+async def admin_dur_plan_toggle_custom_renew(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import (
+        is_custom_duration_renew_enabled,
+        set_custom_duration_renew_enabled,
+    )
+
+    cur = await is_custom_duration_renew_enabled()
+    await set_custom_duration_renew_enabled(not cur)
+    text, keyboard = await _build_duration_plans_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=keyboard)
+    await callback.answer("✅ وضعیت مدت دلخواه تمدید تغییر یافت.")
 
 
 @router.callback_query(F.data == "admin_dur_plan_toggle_custom")
@@ -1030,9 +1161,10 @@ async def admin_dur_plan_toggle_custom(callback: types.CallbackQuery) -> None:
     current = await is_custom_duration_enabled()
     await set_custom_duration_enabled(not current)
     text, keyboard = await _build_duration_plans_panel()
-    await safe_edit_text(
-        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
-    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
     await callback.answer("✅ وضعیت ورود مدت دلخواه تغییر یافت.")
 
 
@@ -1428,7 +1560,9 @@ async def admin_dur_plan_add_surcharge_received(
     from services.pricing import get_duration_plans, set_duration_plans
 
     dur_plans = await get_duration_plans()
-    dur_plans.append({"days": days, "surcharge": surch})
+    dur_plans.append(
+        {"days": days, "surcharge": surch, "enabled_buy": True, "enabled_renew": True}
+    )
     await set_duration_plans(dur_plans)
     await state.clear()
 
@@ -1440,25 +1574,29 @@ async def admin_dur_plan_add_surcharge_received(
     )
 
 
-# ---------------------------------------------------------
-# Volume Plans Management
-# ---------------------------------------------------------
-
-
 async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     from services.pricing import (
         calculate_data_price,
         get_volume_plans,
-        is_custom_volume_enabled,
+        is_custom_volume_buy_enabled,
+        is_custom_volume_renew_enabled,
     )
 
     vol_plans = await get_volume_plans()
-    custom_enabled = await is_custom_volume_enabled()
-    custom_str = "🟢 فعال" if custom_enabled else "🔴 غیرفعال"
-    custom_btn_text = (
-        "🔴 غیرفعال‌سازی حجم دلخواه خریدار"
-        if custom_enabled
-        else "🟢 فعال‌سازی حجم دلخواه خریدار"
+    custom_buy_enabled = await is_custom_volume_buy_enabled()
+    custom_renew_enabled = await is_custom_volume_renew_enabled()
+    custom_buy_str = "🟢 فعال" if custom_buy_enabled else "🔴 غیرفعال"
+    custom_renew_str = "🟢 فعال" if custom_renew_enabled else "🔴 غیرفعال"
+
+    custom_buy_btn = (
+        "🔴 غیرفعال‌سازی حجم دلخواه خرید"
+        if custom_buy_enabled
+        else "🟢 فعال‌سازی حجم دلخواه خرید"
+    )
+    custom_renew_btn = (
+        "🔴 غیرفعال‌سازی حجم دلخواه تمدید"
+        if custom_renew_enabled
+        else "🟢 فعال‌سازی حجم دلخواه تمدید"
     )
 
     lines = []
@@ -1472,17 +1610,30 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
             mode_desc = f"محاسبه خودکار: {format_price(cur_price)}"
         btn_txt = p.get("button_text", "").strip()
         txt_note = f" ╸ «<code>{btn_txt}</code>»" if btn_txt else ""
+
+        enb_buy = p.get("enabled_buy", True)
+        enb_renew = p.get("enabled_renew", True)
+        if enb_buy and enb_renew:
+            status_desc = "خرید و تمدید 🟢"
+        elif enb_buy:
+            status_desc = "فقط خرید 🛒"
+        elif enb_renew:
+            status_desc = "فقط تمدید 🔄"
+        else:
+            status_desc = "غیرفعال 🔴"
+
         lines.append(
-            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(gb)} گیگ</b> ── <code>{mode_desc}</code>{txt_note}"
+            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(gb)} گیگ</b> ── <code>{mode_desc}</code>{txt_note} ╸ <b>{status_desc}</b>"
         )
 
     list_desc = "\n".join(lines) if lines else "<i>هیچ پلنی تعریف نشده است.</i>"
 
     text = (
         "📦 <b>مدیریت پلن‌های حجم اشتراک</b>\n\n"
-        f"🔘 <b>وضعیت دکمه حجم دلخواه خریدار:</b> <b>{custom_str}</b>\n\n"
+        f"🔘 <b>حجم دلخواه خریدار (خرید جدید):</b> <b>{custom_buy_str}</b>\n"
+        f"🔘 <b>حجم دلخواه خریدار (تمدید اشتراک):</b> <b>{custom_renew_str}</b>\n\n"
         f"📋 <b>لیست پلن‌های تعریف‌شده:</b>\n{list_desc}\n\n"
-        "💡 <i>برای جابجایی جایگاه (بالا/پایین)، ویرایش حجم، تغییر قیمت (دستی یا خودکار)، شخصی‌سازی متن یا حذف، روی پلن مورد نظر کلیک کنید:</i>"
+        "💡 <i>برای جابجایی جایگاه (بالا/پایین)، ویرایش حجم، تغییر قیمت (دستی یا خودکار)، فعال/غیرفعال‌سازی (خرید/تمدید)، شخصی‌سازی متن یا حذف، روی پلن مورد نظر کلیک کنید:</i>"
     )
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -1492,9 +1643,21 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
         is_manual = p.get("price_type") == "manual" and p.get("price", 0) > 0
         tag = f" ({format_price(p['price'])})" if is_manual else " (خودکار)"
         btn_label = p.get("button_text", "").strip() or f"{gb} گیگ{tag}"
+
+        enb_buy = p.get("enabled_buy", True)
+        enb_renew = p.get("enabled_renew", True)
+        if enb_buy and enb_renew:
+            badge = " [🛒🔄]"
+        elif enb_buy:
+            badge = " [🛒]"
+        elif enb_renew:
+            badge = " [🔄]"
+        else:
+            badge = " [🔴]"
+
         plan_btns.append(
             InlineKeyboardButton(
-                text=f"📦 {btn_label}",
+                text=f"📦 {btn_label}{badge}",
                 callback_data=f"admin_vol_plan_view_{i}",
             )
         )
@@ -1512,9 +1675,13 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     rows.append(
         [
             InlineKeyboardButton(
-                text=custom_btn_text,
-                callback_data="admin_vol_plan_toggle_custom",
-            )
+                text=custom_buy_btn,
+                callback_data="admin_vol_plan_toggle_custom_buy",
+            ),
+            InlineKeyboardButton(
+                text=custom_renew_btn,
+                callback_data="admin_vol_plan_toggle_custom_renew",
+            ),
         ]
     )
     rows.append(
@@ -1556,12 +1723,19 @@ async def _build_volume_plan_details(
         f"«<code>{custom_btn_txt}</code>»" if custom_btn_txt else "<i>پیش‌فرض سیستم</i>"
     )
 
+    enb_buy = p.get("enabled_buy", True)
+    enb_renew = p.get("enabled_renew", True)
+    buy_status_str = "🟢 فعال" if enb_buy else "🔴 غیرفعال"
+    renew_status_str = "🟢 فعال" if enb_renew else "🔴 غیرفعال"
+
     text = (
         f"📦 <b>جزئیات پلن حجم: {to_persian_digits(gb)} گیگابایت</b>\n\n"
         f"📍 <b>موقعیت در لیست:</b> جایگاه {to_persian_digits(idx + 1)} از {to_persian_digits(len(vol_plans))}\n"
         f"🔘 <b>نحوه قیمت‌گذاری:</b> <b>{type_str}</b>\n"
         f"💵 <b>مبلغ موثر:</b> <code>{format_price(cur_price)}</code>\n"
-        f"📝 <b>متن دکمه کیبورد:</b> {btn_text_display}\n\n"
+        f"📝 <b>متن دکمه کیبورد:</b> {btn_text_display}\n"
+        f"🛒 <b>وضعیت در خرید جدید:</b> <b>{buy_status_str}</b>\n"
+        f"🔄 <b>وضعیت در تمدید اشتراک:</b> <b>{renew_status_str}</b>\n\n"
         "عملیات مورد نظر را انتخاب کنید:"
     )
 
@@ -1584,6 +1758,18 @@ async def _build_volume_plan_details(
     if reorder_row:
         rows.append(reorder_row)
 
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"🛒 خرید: {'🟢 فعال' if enb_buy else '🔴 غیرفعال'}",
+                callback_data=f"admin_vol_plan_toggle_buy_{idx}",
+            ),
+            InlineKeyboardButton(
+                text=f"🔄 تمدید: {'🟢 فعال' if enb_renew else '🔴 غیرفعال'}",
+                callback_data=f"admin_vol_plan_toggle_renew_{idx}",
+            ),
+        ]
+    )
     rows.append(
         [
             InlineKeyboardButton(
@@ -1627,10 +1813,89 @@ async def admin_volume_plans_menu(
         return
     await state.clear()
     text, keyboard = await _build_volume_plans_panel()
-    await safe_edit_text(
-        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
-    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
     await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_toggle_buy_\d+$"))
+async def admin_vol_plan_toggle_buy(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    vol_plans[idx]["enabled_buy"] = not vol_plans[idx].get("enabled_buy", True)
+    await set_volume_plans(vol_plans)
+
+    res = await _build_volume_plan_details(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_toggle_renew_\d+$"))
+async def admin_vol_plan_toggle_renew(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    vol_plans[idx]["enabled_renew"] = not vol_plans[idx].get("enabled_renew", True)
+    await set_volume_plans(vol_plans)
+
+    res = await _build_volume_plan_details(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_vol_plan_toggle_custom_buy")
+async def admin_vol_plan_toggle_custom_buy(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import (
+        is_custom_volume_buy_enabled,
+        set_custom_volume_buy_enabled,
+    )
+
+    cur = await is_custom_volume_buy_enabled()
+    await set_custom_volume_buy_enabled(not cur)
+    text, keyboard = await _build_volume_plans_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=keyboard)
+    await callback.answer("✅ وضعیت حجم دلخواه خرید تغییر یافت.")
+
+
+@router.callback_query(F.data == "admin_vol_plan_toggle_custom_renew")
+async def admin_vol_plan_toggle_custom_renew(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import (
+        is_custom_volume_renew_enabled,
+        set_custom_volume_renew_enabled,
+    )
+
+    cur = await is_custom_volume_renew_enabled()
+    await set_custom_volume_renew_enabled(not cur)
+    text, keyboard = await _build_volume_plans_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=keyboard)
+    await callback.answer("✅ وضعیت حجم دلخواه تمدید تغییر یافت.")
 
 
 @router.callback_query(F.data == "admin_vol_plan_toggle_custom")
@@ -1642,9 +1907,10 @@ async def admin_vol_plan_toggle_custom(callback: types.CallbackQuery) -> None:
     current = await is_custom_volume_enabled()
     await set_custom_volume_enabled(not current)
     text, keyboard = await _build_volume_plans_panel()
-    await safe_edit_text(
-        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
-    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
     await callback.answer("✅ وضعیت ورود حجم دلخواه تغییر یافت.")
 
 
@@ -2238,7 +2504,15 @@ async def admin_vol_plan_add_auto(
     from services.pricing import get_volume_plans, set_volume_plans
 
     vol_plans = await get_volume_plans()
-    vol_plans.append({"gb": gb, "price_type": "auto", "price": 0})
+    vol_plans.append(
+        {
+            "gb": gb,
+            "price_type": "auto",
+            "price": 0,
+            "enabled_buy": True,
+            "enabled_renew": True,
+        }
+    )
     await set_volume_plans(vol_plans)
     await state.clear()
 
@@ -2320,7 +2594,15 @@ async def admin_vol_plan_add_price_received(
     from services.pricing import get_volume_plans, set_volume_plans
 
     vol_plans = await get_volume_plans()
-    vol_plans.append({"gb": gb, "price_type": "manual", "price": val})
+    vol_plans.append(
+        {
+            "gb": gb,
+            "price_type": "manual",
+            "price": val,
+            "enabled_buy": True,
+            "enabled_renew": True,
+        }
+    )
     await set_volume_plans(vol_plans)
     await state.clear()
 

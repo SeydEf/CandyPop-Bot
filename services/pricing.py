@@ -23,18 +23,60 @@ DEFAULT_VOLUME_TIERS: list[tuple[int, int]] = [
 DEFAULT_FALLBACK_GB_RATE = 3_500
 
 DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
-    {"gb": 10, "price_type": "auto", "price": 0, "button_text": ""},
-    {"gb": 30, "price_type": "auto", "price": 0, "button_text": ""},
-    {"gb": 50, "price_type": "auto", "price": 0, "button_text": ""},
-    {"gb": 70, "price_type": "auto", "price": 0, "button_text": ""},
-    {"gb": 90, "price_type": "auto", "price": 0, "button_text": ""},
-    {"gb": 100, "price_type": "auto", "price": 0, "button_text": ""},
+    {
+        "gb": 10,
+        "price_type": "auto",
+        "price": 0,
+        "button_text": "",
+        "enabled_buy": True,
+        "enabled_renew": True,
+    },
+    {
+        "gb": 30,
+        "price_type": "auto",
+        "price": 0,
+        "button_text": "",
+        "enabled_buy": True,
+        "enabled_renew": True,
+    },
+    {
+        "gb": 50,
+        "price_type": "auto",
+        "price": 0,
+        "button_text": "",
+        "enabled_buy": True,
+        "enabled_renew": True,
+    },
+    {
+        "gb": 70,
+        "price_type": "auto",
+        "price": 0,
+        "button_text": "",
+        "enabled_buy": True,
+        "enabled_renew": True,
+    },
+    {
+        "gb": 90,
+        "price_type": "auto",
+        "price": 0,
+        "button_text": "",
+        "enabled_buy": True,
+        "enabled_renew": True,
+    },
+    {
+        "gb": 100,
+        "price_type": "auto",
+        "price": 0,
+        "button_text": "",
+        "enabled_buy": True,
+        "enabled_renew": True,
+    },
 ]
 
 DEFAULT_DURATION_PLANS: list[dict[str, Any]] = [
-    {"days": 30, "surcharge": 0},
-    {"days": 60, "surcharge": 50_000},
-    {"days": 90, "surcharge": 100_000},
+    {"days": 30, "surcharge": 0, "enabled_buy": True, "enabled_renew": True},
+    {"days": 60, "surcharge": 50_000, "enabled_buy": True, "enabled_renew": True},
+    {"days": 90, "surcharge": 100_000, "enabled_buy": True, "enabled_renew": True},
 ]
 
 _pricing_cache: dict[str, Any] | None = None
@@ -77,6 +119,8 @@ async def load_pricing_config() -> dict[str, Any]:
                 {
                     "days": int(p.get("days", 0)),
                     "surcharge": int(p.get("surcharge", 0)),
+                    "enabled_buy": bool(p.get("enabled_buy", True)),
+                    "enabled_renew": bool(p.get("enabled_renew", True)),
                 }
                 for p in raw_dur_plans
                 if int(p.get("days", 0)) > 0
@@ -99,6 +143,8 @@ async def load_pricing_config() -> dict[str, Any]:
                     "price_type": str(p.get("price_type", "auto")),
                     "price": int(p.get("price", 0)),
                     "button_text": str(p.get("button_text", "")).strip(),
+                    "enabled_buy": bool(p.get("enabled_buy", True)),
+                    "enabled_renew": bool(p.get("enabled_renew", True)),
                 }
                 for p in raw_vol_plans
                 if int(p.get("gb", 0)) > 0
@@ -110,9 +156,33 @@ async def load_pricing_config() -> dict[str, Any]:
 
     custom_vol_str = await get_setting("pricing_custom_volume_enabled", "1")
     custom_vol_enabled = custom_vol_str != "0"
+    custom_vol_buy_str = await get_setting("pricing_custom_volume_buy_enabled")
+    custom_vol_buy_enabled = (
+        custom_vol_buy_str != "0"
+        if custom_vol_buy_str is not None
+        else custom_vol_enabled
+    )
+    custom_vol_renew_str = await get_setting("pricing_custom_volume_renew_enabled")
+    custom_vol_renew_enabled = (
+        custom_vol_renew_str != "0"
+        if custom_vol_renew_str is not None
+        else custom_vol_enabled
+    )
 
     custom_dur_str = await get_setting("pricing_custom_duration_enabled", "1")
     custom_dur_enabled = custom_dur_str != "0"
+    custom_dur_buy_str = await get_setting("pricing_custom_duration_buy_enabled")
+    custom_dur_buy_enabled = (
+        custom_dur_buy_str != "0"
+        if custom_dur_buy_str is not None
+        else custom_dur_enabled
+    )
+    custom_dur_renew_str = await get_setting("pricing_custom_duration_renew_enabled")
+    custom_dur_renew_enabled = (
+        custom_dur_renew_str != "0"
+        if custom_dur_renew_str is not None
+        else custom_dur_enabled
+    )
 
     tiers_str = await get_setting("pricing_volume_tiers")
     if tiers_str:
@@ -144,7 +214,11 @@ async def load_pricing_config() -> dict[str, Any]:
         "volume_plans": volume_plans,
         "duration_plans": duration_plans,
         "custom_volume_enabled": custom_vol_enabled,
+        "custom_volume_buy_enabled": custom_vol_buy_enabled,
+        "custom_volume_renew_enabled": custom_vol_renew_enabled,
         "custom_duration_enabled": custom_dur_enabled,
+        "custom_duration_buy_enabled": custom_dur_buy_enabled,
+        "custom_duration_renew_enabled": custom_dur_renew_enabled,
     }
     return _pricing_cache
 
@@ -247,6 +321,8 @@ async def set_volume_plans(plans: list[dict[str, Any]]) -> None:
             "price_type": str(p.get("price_type", "auto")),
             "price": int(p.get("price", 0)),
             "button_text": str(p.get("button_text", "")).strip(),
+            "enabled_buy": bool(p.get("enabled_buy", True)),
+            "enabled_renew": bool(p.get("enabled_renew", True)),
         }
         for p in plans
         if int(p.get("gb", 0)) > 0
@@ -283,6 +359,8 @@ async def set_duration_plans(plans: list[dict[str, Any]]) -> None:
         {
             "days": int(p.get("days", 0)),
             "surcharge": int(p.get("surcharge", 0)),
+            "enabled_buy": bool(p.get("enabled_buy", True)),
+            "enabled_renew": bool(p.get("enabled_renew", True)),
         }
         for p in plans
         if int(p.get("days", 0)) > 0
@@ -298,8 +376,38 @@ async def is_custom_volume_enabled() -> bool:
     return bool(config.get("custom_volume_enabled", True))
 
 
+async def is_custom_volume_buy_enabled() -> bool:
+    config = await get_pricing_config()
+    return bool(
+        config.get(
+            "custom_volume_buy_enabled", config.get("custom_volume_enabled", True)
+        )
+    )
+
+
+async def is_custom_volume_renew_enabled() -> bool:
+    config = await get_pricing_config()
+    return bool(
+        config.get(
+            "custom_volume_renew_enabled", config.get("custom_volume_enabled", True)
+        )
+    )
+
+
 async def set_custom_volume_enabled(enabled: bool) -> None:
     await set_setting("pricing_custom_volume_enabled", "1" if enabled else "0")
+    await set_setting("pricing_custom_volume_buy_enabled", "1" if enabled else "0")
+    await set_setting("pricing_custom_volume_renew_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
+async def set_custom_volume_buy_enabled(enabled: bool) -> None:
+    await set_setting("pricing_custom_volume_buy_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
+async def set_custom_volume_renew_enabled(enabled: bool) -> None:
+    await set_setting("pricing_custom_volume_renew_enabled", "1" if enabled else "0")
     invalidate_pricing_cache()
 
 
@@ -308,8 +416,38 @@ async def is_custom_duration_enabled() -> bool:
     return bool(config.get("custom_duration_enabled", True))
 
 
+async def is_custom_duration_buy_enabled() -> bool:
+    config = await get_pricing_config()
+    return bool(
+        config.get(
+            "custom_duration_buy_enabled", config.get("custom_duration_enabled", True)
+        )
+    )
+
+
+async def is_custom_duration_renew_enabled() -> bool:
+    config = await get_pricing_config()
+    return bool(
+        config.get(
+            "custom_duration_renew_enabled", config.get("custom_duration_enabled", True)
+        )
+    )
+
+
 async def set_custom_duration_enabled(enabled: bool) -> None:
     await set_setting("pricing_custom_duration_enabled", "1" if enabled else "0")
+    await set_setting("pricing_custom_duration_buy_enabled", "1" if enabled else "0")
+    await set_setting("pricing_custom_duration_renew_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
+async def set_custom_duration_buy_enabled(enabled: bool) -> None:
+    await set_setting("pricing_custom_duration_buy_enabled", "1" if enabled else "0")
+    invalidate_pricing_cache()
+
+
+async def set_custom_duration_renew_enabled(enabled: bool) -> None:
+    await set_setting("pricing_custom_duration_renew_enabled", "1" if enabled else "0")
     invalidate_pricing_cache()
 
 

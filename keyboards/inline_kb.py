@@ -12,13 +12,15 @@ async def volume_keyboard() -> InlineKeyboardMarkup:
         calculate_data_price,
         format_volume_button_text,
         get_volume_plans,
-        is_custom_volume_enabled,
+        is_custom_volume_buy_enabled,
     )
 
     rows: list[list[InlineKeyboardButton]] = []
     vol_plans = await get_volume_plans()
 
     for item in vol_plans:
+        if not item.get("enabled_buy", True):
+            continue
         gb = item.get("gb", 0)
         data_price = await calculate_data_price(gb)
         label = format_volume_button_text(item, data_price)
@@ -28,7 +30,7 @@ async def volume_keyboard() -> InlineKeyboardMarkup:
         )
         rows.append([btn])
 
-    if await is_custom_volume_enabled():
+    if await is_custom_volume_buy_enabled():
         rows.append(
             [
                 InlineKeyboardButton(
@@ -83,13 +85,15 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
 async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
-        is_custom_duration_enabled,
+        is_custom_duration_buy_enabled,
     )
 
     rows: list[list[InlineKeyboardButton]] = []
     dur_plans = await get_duration_plans()
 
     for item in dur_plans:
+        if not item.get("enabled_buy", True):
+            continue
         days = item.get("days", 0)
         months = days // 30
         if days % 30 == 0 and months > 0:
@@ -104,7 +108,7 @@ async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
             ]
         )
 
-    if await is_custom_duration_enabled():
+    if await is_custom_duration_buy_enabled():
         rows.append(
             [
                 InlineKeyboardButton(
@@ -391,12 +395,14 @@ def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarku
 async def renew_duration_keyboard() -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
-        is_custom_duration_enabled,
+        is_custom_duration_renew_enabled,
     )
 
     dur_plans = await get_duration_plans()
     buttons = []
     for item in dur_plans:
+        if not item.get("enabled_renew", True):
+            continue
         days = item.get("days", 0)
         label = f"{days} روز"
         buttons.append(
@@ -408,7 +414,7 @@ async def renew_duration_keyboard() -> InlineKeyboardMarkup:
     for i in range(0, len(buttons), chunk_size):
         rows.append(buttons[i : i + chunk_size])
 
-    if await is_custom_duration_enabled():
+    if await is_custom_duration_renew_enabled():
         rows.append(
             [
                 InlineKeyboardButton(
@@ -468,13 +474,15 @@ async def renew_volume_keyboard(
         calculate_data_price,
         format_volume_button_text,
         get_volume_plans,
-        is_custom_volume_enabled,
+        is_custom_volume_renew_enabled,
     )
 
     vol_plans = await get_volume_plans()
     rows: list[list[InlineKeyboardButton]] = []
 
     for item in vol_plans:
+        if not item.get("enabled_renew", True):
+            continue
         gb = item.get("gb", 0)
         data_price = await calculate_data_price(gb)
         label = format_volume_button_text(item, data_price)
@@ -484,7 +492,7 @@ async def renew_volume_keyboard(
         )
         rows.append([btn])
 
-    if await is_custom_volume_enabled():
+    if await is_custom_volume_renew_enabled():
         rows.append(
             [
                 InlineKeyboardButton(
