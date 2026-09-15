@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -9402,12 +9403,23 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         f"💡 <i>اطلاعات فوق به صورت زنده از دیتابیس ربات محاسبه شده‌اند.</i>"
     )
 
-    await safe_edit_text(
-        callback.message,
-        text,
-        reply_markup=admin_stats_keyboard(online_count=online_count),
-        parse_mode="HTML",
-    )
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer(
+            text,
+            reply_markup=admin_stats_keyboard(online_count=online_count),
+            parse_mode="HTML",
+        )
+    else:
+        await safe_edit_text(
+            callback.message,
+            text,
+            reply_markup=admin_stats_keyboard(online_count=online_count),
+            parse_mode="HTML",
+        )
     await callback.answer()
 
 
@@ -9546,6 +9558,174 @@ async def admin_online_clients_list(
     kb = admin_online_clients_keyboard(clients_page_data, page, total_pages)
     await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
+
+
+async def _send_or_edit_analytics_photo(
+    callback: types.CallbackQuery,
+    chart_buf: io.BytesIO,
+    caption: str,
+    view: str,
+    period: str = "30d",
+) -> None:
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.types import BufferedInputFile, InputMediaPhoto
+
+    from keyboards.inline_kb import admin_analytics_keyboard
+
+    markup = admin_analytics_keyboard(current_view=view, current_period=period)
+    photo_file = BufferedInputFile(
+        chart_buf.getvalue(), filename=f"analytics_{view}.png"
+    )
+
+    try:
+        if callback.message.photo:
+            media = InputMediaPhoto(
+                media=photo_file,
+                caption=caption,
+                parse_mode="HTML",
+            )
+            await callback.message.edit_media(media=media, reply_markup=markup)
+        else:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer_photo(
+                photo=photo_file,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=markup,
+            )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Error editing analytics photo: {e}")
+            await callback.answer(
+                "خطا در بارگذاری تصویر، لطفا مجددا تلاش کنید.", show_alert=True
+            )
+            return
+    except Exception as e:
+        logger.error(f"Error displaying analytics: {e}")
+        await callback.answer("خطا در رسم نمودار.", show_alert=True)
+        return
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_analytics_overview")
+async def admin_analytics_overview_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    await callback.answer("⏳ در حال ترسیم داشبورد تحلیلی...")
+    from services.analytics import render_overview_dashboard
+
+    buf, caption = await render_overview_dashboard()
+    await _send_or_edit_analytics_photo(callback, buf, caption, view="overview")
+
+
+@router.callback_query(F.data.startswith("admin_analytics_sales_"))
+async def admin_analytics_sales_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    period = callback.data.replace("admin_analytics_sales_", "")
+    if period not in ("7d", "30d", "90d", "all"):
+        period = "30d"
+    await callback.answer("⏳ در حال ترسیم نمودار روند فروش...")
+    from services.analytics import render_sales_trend_chart
+
+    buf, caption = await render_sales_trend_chart(period)
+    await _send_or_edit_analytics_photo(
+        callback, buf, caption, view="sales", period=period
+    )
+
+
+@router.callback_query(F.data.startswith("admin_analytics_users_"))
+async def admin_analytics_users_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    period = callback.data.replace("admin_analytics_users_", "")
+    if period not in ("7d", "30d", "90d", "all"):
+        period = "30d"
+    await callback.answer("⏳ در حال ترسیم نمودار کاربران...")
+    from services.analytics import render_user_growth_chart
+
+    buf, caption = await render_user_growth_chart(period)
+    await _send_or_edit_analytics_photo(
+        callback, buf, caption, view="users", period=period
+    )
+
+
+@router.callback_query(F.data == "admin_analytics_plans")
+async def admin_analytics_plans_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    await callback.answer("⏳ در حال ترسیم نمودار پلن‌های حجمی...")
+    from services.analytics import render_volume_plans_chart
+
+    buf, caption = await render_volume_plans_chart()
+    await _send_or_edit_analytics_photo(callback, buf, caption, view="plans")
+
+
+@router.callback_query(F.data == "admin_analytics_durations")
+async def admin_analytics_durations_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    await callback.answer("⏳ در حال ترسیم نمودار مدت زمان‌ها...")
+    from services.analytics import render_duration_plans_chart
+
+    buf, caption = await render_duration_plans_chart()
+    await _send_or_edit_analytics_photo(callback, buf, caption, view="durations")
+
+
+@router.callback_query(F.data == "admin_analytics_payments")
+async def admin_analytics_payments_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    await callback.answer("⏳ در حال ترسیم وضعیت پرداخت‌ها...")
+    from services.analytics import render_payments_chart
+
+    buf, caption = await render_payments_chart()
+    await _send_or_edit_analytics_photo(callback, buf, caption, view="payments")
+
+
+@router.callback_query(F.data.startswith("admin_analytics_refresh_"))
+async def admin_analytics_refresh_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "stats"):
+        return
+    parts = callback.data.split("_")
+    view = parts[3] if len(parts) > 3 else "overview"
+    period = parts[4] if len(parts) > 4 else "30d"
+
+    await callback.answer("🔄 در حال بروزرسانی...")
+    if view == "sales":
+        from services.analytics import render_sales_trend_chart
+
+        buf, caption = await render_sales_trend_chart(period)
+    elif view == "users":
+        from services.analytics import render_user_growth_chart
+
+        buf, caption = await render_user_growth_chart(period)
+    elif view == "plans":
+        from services.analytics import render_volume_plans_chart
+
+        buf, caption = await render_volume_plans_chart()
+    elif view == "durations":
+        from services.analytics import render_duration_plans_chart
+
+        buf, caption = await render_duration_plans_chart()
+    elif view == "payments":
+        from services.analytics import render_payments_chart
+
+        buf, caption = await render_payments_chart()
+    else:
+        from services.analytics import render_overview_dashboard
+
+        buf, caption = await render_overview_dashboard()
+
+    await _send_or_edit_analytics_photo(
+        callback, buf, caption, view=view, period=period
+    )
 
 
 @router.callback_query(F.data == "admin_users_list_noop")

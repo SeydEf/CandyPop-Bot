@@ -920,6 +920,12 @@ def admin_stats_keyboard(online_count: int = 0) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
+                text="📈 تحلیل آماری و نمودارها",
+                callback_data="admin_analytics_overview",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=f"🟢 مشاهده کاربران آنلاین ({to_persian_digits(online_count)})",
                 callback_data="admin_online_clients_0",
             )
@@ -937,6 +943,101 @@ def admin_stats_keyboard(online_count: int = 0) -> InlineKeyboardMarkup:
             )
         ],
     ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def admin_analytics_keyboard(
+    current_view: str, current_period: str = "30d"
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if current_view in ("sales", "users"):
+        periods = [
+            ("7d", "۷ روز"),
+            ("30d", "۳۰ روز"),
+            ("90d", "۹۰ روز"),
+            ("all", "کل دوران"),
+        ]
+        p_row = []
+        for p_key, p_label in periods:
+            text = f"🔘 {p_label}" if p_key == current_period else p_label
+            p_row.append(
+                InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"admin_analytics_{current_view}_{p_key}",
+                )
+            )
+        rows.append(p_row)
+
+    overview_text = (
+        "🔘 📊 داشبورد جامع" if current_view == "overview" else "📊 داشبورد جامع"
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=overview_text,
+                callback_data="admin_analytics_overview",
+            )
+        ]
+    )
+
+    sales_text = "🔘 📈 روند فروش" if current_view == "sales" else "📈 روند فروش"
+    users_text = "🔘 👥 رشد کاربران" if current_view == "users" else "👥 رشد کاربران"
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=sales_text,
+                callback_data=f"admin_analytics_sales_{current_period if current_view == 'sales' else '30d'}",
+            ),
+            InlineKeyboardButton(
+                text=users_text,
+                callback_data=f"admin_analytics_users_{current_period if current_view == 'users' else '30d'}",
+            ),
+        ]
+    )
+
+    plans_text = "🔘 📦 پلن‌های حجم" if current_view == "plans" else "📦 پلن‌های حجم"
+    durations_text = (
+        "🔘 ⏱ مدت زمان‌ها" if current_view == "durations" else "⏱ مدت زمان‌ها"
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=plans_text,
+                callback_data="admin_analytics_plans",
+            ),
+            InlineKeyboardButton(
+                text=durations_text,
+                callback_data="admin_analytics_durations",
+            ),
+        ]
+    )
+
+    payments_text = (
+        "🔘 💳 روش‌های پرداخت" if current_view == "payments" else "💳 روش‌های پرداخت"
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=payments_text,
+                callback_data="admin_analytics_payments",
+            )
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔄 بروزرسانی",
+                callback_data=f"admin_analytics_refresh_{current_view}_{current_period}",
+            ),
+            InlineKeyboardButton(
+                text="🔙 بازگشت به آمار",
+                callback_data="admin_stats_menu",
+            ),
+        ]
+    )
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
