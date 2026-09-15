@@ -8,8 +8,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-import arabic_reshaper
-from bidi.algorithm import get_display
 
 from db.database import get_db
 from utils.formatting import format_price, to_persian_digits
@@ -82,7 +80,7 @@ async def get_sales_trend_data(period: str = "30d") -> list[dict[str, Any]]:
                    COALESCE(SUM(amount), 0) as total_revenue,
                    COALESCE(SUM(data_gb), 0) as total_gb
             FROM invoices
-            WHERE status = 'paid'
+            WHERE status IN ('paid', 'approved')
               AND created_at >= datetime('now', '-{days_limit} days')
             GROUP BY date(created_at)
             ORDER BY sale_date ASC
@@ -94,7 +92,7 @@ async def get_sales_trend_data(period: str = "30d") -> list[dict[str, Any]]:
                    COALESCE(SUM(amount), 0) as total_revenue,
                    COALESCE(SUM(data_gb), 0) as total_gb
             FROM invoices
-            WHERE status = 'paid'
+            WHERE status IN ('paid', 'approved')
             GROUP BY date(created_at)
             ORDER BY sale_date ASC
         """
@@ -119,7 +117,7 @@ async def get_top_volume_plans_data() -> list[dict[str, Any]]:
                COUNT(*) as orders_count,
                COALESCE(SUM(amount), 0) as total_revenue
         FROM invoices
-        WHERE status = 'paid' AND data_gb > 0
+        WHERE status IN ('paid', 'approved') AND data_gb > 0
         GROUP BY data_gb
         ORDER BY orders_count DESC, total_revenue DESC
         LIMIT 10
@@ -145,7 +143,7 @@ async def get_top_duration_plans_data() -> list[dict[str, Any]]:
                COUNT(*) as orders_count,
                COALESCE(SUM(amount), 0) as total_revenue
         FROM invoices
-        WHERE status = 'paid' AND duration_days > 0
+        WHERE status IN ('paid', 'approved') AND duration_days > 0
         GROUP BY duration_days
         ORDER BY orders_count DESC
     """
@@ -215,7 +213,7 @@ async def get_payments_breakdown_data() -> dict[str, Any]:
                COUNT(*) as count,
                COALESCE(SUM(amount), 0) as revenue
         FROM invoices
-        WHERE status = 'paid'
+        WHERE status IN ('paid', 'approved')
         GROUP BY method
     """
     cursor = await db.execute(method_query)
