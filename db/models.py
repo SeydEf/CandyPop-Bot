@@ -76,6 +76,7 @@ async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
 
     await ensure_user(tg_id)
     test_config = await get_test_sub_config()
+    cooldown_enabled = test_config.get("cooldown_enabled", True)
     cooldown_days = test_config["cooldown_days"]
 
     db = await get_db()
@@ -92,6 +93,9 @@ async def can_get_test_sub(tg_id: int) -> tuple[bool, int, int]:
 
     if not test_used and not last_test_at_str:
         return True, 0, 0
+
+    if not cooldown_enabled:
+        return False, -1, -1
 
     now = datetime.now(timezone.utc)
 

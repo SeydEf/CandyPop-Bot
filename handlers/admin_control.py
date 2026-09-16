@@ -222,6 +222,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     test_gb = test_config["gb"]
     test_dur = test_config["duration_days"]
     test_cool = test_config["cooldown_days"]
+    test_cool_enabled = test_config.get("cooldown_enabled", True)
+    test_cool_str = (
+        f"{to_persian_digits(test_cool)} روز"
+        if test_cool_enabled
+        else "🔴 غیرفعال (فقط یک‌بار)"
+    )
 
     ref_status = "🟢 فعال" if ref_config["enabled"] else "🔴 غیرفعال"
     ref_percent = to_persian_digits(ref_config["percent"])
@@ -249,7 +255,7 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     test_text = (
         f"  • حجم: {format_size_gb(test_gb)}\n"
         f"  • مدت: {to_persian_digits(test_dur)} روز\n"
-        f"  • کول‌داون: {to_persian_digits(test_cool)} روز\n"
+        f"  • کول‌داون: {test_cool_str}\n"
     )
 
     ref_text = f"  • وضعیت: {ref_status}\n  • پورسانت پاداش: {ref_percent}٪\n"
@@ -2844,13 +2850,24 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
     gb = test_config["gb"]
     dur = test_config["duration_days"]
     cool = test_config["cooldown_days"]
+    cool_enabled = test_config.get("cooldown_enabled", True)
+
+    cool_status_text = (
+        f"🟢 فعال (هر {to_persian_digits(cool)} روز یک‌بار)"
+        if cool_enabled
+        else f"🔴 غیرفعال (فقط یک‌بار برای هر کاربر - روزهای ذخیره: {to_persian_digits(cool)})"
+    )
 
     text = (
         "🎁 <b>تنظیمات اشتراک تست رایگان</b>\n\n"
         f"📊 <b>حجم اولیه:</b> {format_size_gb(gb)}\n"
         f"⏱ <b>مدت زمان اعتبار:</b> {to_persian_digits(dur)} روز\n"
-        f"🔄 <b>فاصله زمانی دریافت مجدد (کول‌داون):</b> {to_persian_digits(cool)} روز\n\n"
+        f"🔄 <b>وضعیت کول‌داون (دریافت مجدد):</b> {cool_status_text}\n\n"
         "گزینه مورد نظر را جهت ویرایش انتخاب کنید:"
+    )
+
+    toggle_btn_text = (
+        "🔄 کول‌داون: 🟢 فعال" if cool_enabled else "🔄 کول‌داون: 🔴 غیرفعال (فقط یک‌بار)"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -2871,7 +2888,12 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
             ],
             [
                 InlineKeyboardButton(
-                    text="🔄 تغییر کول‌داون (روز)", callback_data="admin_test_cooldown"
+                    text=toggle_btn_text, callback_data="admin_test_toggle_cooldown"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 تغییر روزهای کول‌داون", callback_data="admin_test_cooldown"
                 ),
             ],
             [
@@ -2882,8 +2904,29 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
         ]
     )
 
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_test_toggle_cooldown")
+async def admin_test_toggle_cooldown(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "test_sub"):
+        return
+    test_config = await get_test_sub_config()
+    current_status = test_config.get("cooldown_enabled", True)
+    new_status = not current_status
+    await update_test_sub_config(cooldown_enabled=new_status)
+    status_msg = (
+        "فعال شد (دریافت بر اساس فاصله زمانی)"
+        if new_status
+        else "غیرفعال شد (هر کاربر فقط یک‌بار)"
+    )
+    await callback.answer(f"✅ کول‌داون {status_msg}")
+    await admin_test_menu(callback, state)
 
 
 @router.callback_query(F.data == "admin_test_stats_report")

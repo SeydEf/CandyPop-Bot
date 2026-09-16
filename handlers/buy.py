@@ -86,8 +86,7 @@ async def buy_start(message: types.Message, state: FSMContext) -> None:
     shop_status = await get_shop_status()
     if not shop_status["purchases_enabled"]:
         await message.answer(
-            "⛔️ <b>فروش اشتراک جدید موقتاً غیرفعال می‌باشد.</b>\n\n"
-            "امکان خرید اشتراک جدید در حال حاضر توسط مدیریت متوقف شده است. لطفاً بعداً مراجعه فرمایید.",
+            "⛔️ <b>فروش اشتراک جدید موقتاً غیرفعال می‌باشد.</b>",
             parse_mode="HTML",
         )
         return
@@ -103,6 +102,27 @@ async def buy_start(message: types.Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "buy_back_volume")
 async def buy_back_to_volume(callback: types.CallbackQuery, state: FSMContext) -> None:
     await state.clear()
+    text = await _get_volume_step_text()
+    await callback.message.edit_text(
+        text,
+        reply_markup=await volume_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "buy_start")
+async def buy_start_callback(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    from db.models import get_shop_status
+
+    shop_status = await get_shop_status()
+    if not shop_status["purchases_enabled"]:
+        await callback.answer(
+            "⛔️ فروش اشتراک جدید موقتاً غیرفعال می‌باشد.", show_alert=True
+        )
+        return
+
     text = await _get_volume_step_text()
     await callback.message.edit_text(
         text,

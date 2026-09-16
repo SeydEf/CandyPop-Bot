@@ -42,6 +42,31 @@ async def test_subscription(message: types.Message) -> None:
 
     can_claim, rem_days, rem_hours = await can_get_test_sub(tg_id)
     if not can_claim:
+        cooldown_enabled = test_config.get("cooldown_enabled", True)
+        if not cooldown_enabled or rem_days == -1:
+            keyboard = types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        types.InlineKeyboardButton(
+                            text="🛒 خرید اشتراک",
+                            callback_data="buy_start",
+                        ),
+                    ],
+                    [
+                        types.InlineKeyboardButton(
+                            text="🗑 بستن پیام",
+                            callback_data="test_sub_close",
+                        ),
+                    ],
+                ]
+            )
+            await message.answer(
+                "❌ <b>شما قبلاً اشتراک تست رایگان را دریافت کرده‌اید.</b>",
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+            return
+
         time_parts = []
         if rem_days > 0:
             time_parts.append(f"{to_persian_digits(rem_days)} روز")
@@ -125,3 +150,11 @@ async def test_subscription(message: types.Message) -> None:
         )
 
     await creating_message.delete()
+
+
+@router.callback_query(F.data == "test_sub_close")
+async def test_sub_close_callback(callback: types.CallbackQuery) -> None:
+    try:
+        await callback.message.delete()
+    except Exception:
+        await callback.answer()

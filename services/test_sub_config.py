@@ -43,11 +43,17 @@ async def load_test_sub_config() -> dict[str, Any]:
     enabled_str = await get_setting("test_sub_enabled")
     enabled = (enabled_str == "1") if enabled_str is not None else True
 
+    cooldown_enabled_str = await get_setting("test_sub_cooldown_enabled")
+    cooldown_enabled = (
+        (cooldown_enabled_str == "1") if cooldown_enabled_str is not None else True
+    )
+
     _test_sub_cache = {
         "gb": gb,
         "duration_days": dur,
         "cooldown_days": cool,
         "enabled": enabled,
+        "cooldown_enabled": cooldown_enabled,
     }
     return _test_sub_cache
 
@@ -62,6 +68,7 @@ async def update_test_sub_config(
     duration_days: int | None = None,
     cooldown_days: int | None = None,
     enabled: bool | None = None,
+    cooldown_enabled: bool | None = None,
 ) -> None:
     if gb is not None:
         await set_setting("test_sub_gb", str(gb))
@@ -71,5 +78,7 @@ async def update_test_sub_config(
         await set_setting("test_sub_cooldown_days", str(cooldown_days))
     if enabled is not None:
         await set_setting("test_sub_enabled", "1" if enabled else "0")
+    if cooldown_enabled is not None:
+        await set_setting("test_sub_cooldown_enabled", "1" if cooldown_enabled else "0")
 
     invalidate_test_sub_cache()
