@@ -51,13 +51,7 @@ async def test_subscription(message: types.Message) -> None:
                             text="🛒 خرید اشتراک",
                             callback_data="buy_start",
                         ),
-                    ],
-                    [
-                        types.InlineKeyboardButton(
-                            text="🗑 بستن پیام",
-                            callback_data="test_sub_close",
-                        ),
-                    ],
+                    ]
                 ]
             )
             await message.answer(
@@ -150,11 +144,3 @@ async def test_subscription(message: types.Message) -> None:
         )
 
     await creating_message.delete()
-
-
-@router.callback_query(F.data == "test_sub_close")
-async def test_sub_close_callback(callback: types.CallbackQuery) -> None:
-    try:
-        await callback.message.delete()
-    except Exception:
-        await callback.answer()
