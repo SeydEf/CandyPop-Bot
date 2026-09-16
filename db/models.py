@@ -390,7 +390,7 @@ async def get_all_invoices_paginated(
     params: list[Any] = []
 
     if status_filter == "approved":
-        conditions.append("i.status IN ('approved', 'paid')")
+        conditions.append("i.status = 'approved'")
     elif status_filter in ("pending", "rejected", "expired"):
         conditions.append("i.status = ?")
         params.append(status_filter)
@@ -804,8 +804,8 @@ async def get_users_paginated(
             u.joined_at, 
             u.test_used, 
             COALESCE(w.balance, 0) as balance,
-            COALESCE(SUM(CASE WHEN i.status IN ('paid', 'approved') THEN i.amount ELSE 0 END), 0) as total_paid,
-            COUNT(CASE WHEN i.status IN ('paid', 'approved') THEN 1 END) as paid_count
+            COALESCE(SUM(CASE WHEN i.status = 'approved' THEN i.amount ELSE 0 END), 0) as total_paid,
+            COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as paid_count
         FROM users u
         LEFT JOIN wallets w ON u.tg_id = w.tg_id
         LEFT JOIN invoices i ON u.tg_id = i.tg_id
@@ -824,10 +824,10 @@ async def get_user_financial_summary(tg_id: int) -> dict[str, Any]:
     async with db.execute(
         """
         SELECT 
-            COUNT(CASE WHEN status IN ('paid', 'approved') THEN 1 END) as paid_count,
-            COALESCE(SUM(CASE WHEN status IN ('paid', 'approved') THEN amount ELSE 0 END), 0) as total_paid,
-            COALESCE(SUM(CASE WHEN status IN ('paid', 'approved') AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0)) THEN amount ELSE 0 END), 0) as topups_amount,
-            COALESCE(SUM(CASE WHEN status IN ('paid', 'approved') AND target_email != 'TOPUP' AND (duration_days > 0 OR data_gb > 0) THEN amount ELSE 0 END), 0) as subs_amount
+            COUNT(CASE WHEN status = 'approved' THEN 1 END) as paid_count,
+            COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as total_paid,
+            COALESCE(SUM(CASE WHEN status = 'approved' AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0)) THEN amount ELSE 0 END), 0) as topups_amount,
+            COALESCE(SUM(CASE WHEN status = 'approved' AND target_email != 'TOPUP' AND (duration_days > 0 OR data_gb > 0) THEN amount ELSE 0 END), 0) as subs_amount
         FROM invoices
         WHERE tg_id = ?
         """,
@@ -1614,7 +1614,7 @@ async def get_bot_statistics() -> dict[str, Any]:
         total_invoices_amount = row[1] if row else 0
 
     async with db.execute(
-        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status IN ('approved', 'paid')"
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'approved'"
     ) as c:
         row = await c.fetchone()
         paid_invoices_count = row[0] if row else 0
@@ -1638,7 +1638,7 @@ async def get_bot_statistics() -> dict[str, Any]:
         """
         SELECT COUNT(*), COALESCE(SUM(amount), 0) 
         FROM invoices 
-        WHERE status IN ('approved', 'paid') 
+        WHERE status = 'approved' 
           AND (target_email = 'TOPUP' OR (duration_days = 0 AND data_gb = 0))
         """
     ) as c:
@@ -1650,7 +1650,7 @@ async def get_bot_statistics() -> dict[str, Any]:
         """
         SELECT COUNT(*), COALESCE(SUM(amount), 0) 
         FROM invoices 
-        WHERE status IN ('approved', 'paid') 
+        WHERE status = 'approved' 
           AND (target_email IS NULL OR target_email != 'TOPUP') 
           AND (duration_days > 0 OR data_gb > 0)
         """
@@ -1663,7 +1663,7 @@ async def get_bot_statistics() -> dict[str, Any]:
         """
         SELECT COUNT(*), COALESCE(SUM(amount), 0) 
         FROM invoices 
-        WHERE status IN ('approved', 'paid') AND payment_method = 'card'
+        WHERE status = 'approved' AND payment_method = 'card'
         """
     ) as c:
         row = await c.fetchone()
@@ -1674,7 +1674,7 @@ async def get_bot_statistics() -> dict[str, Any]:
         """
         SELECT COUNT(*), COALESCE(SUM(amount), 0) 
         FROM invoices 
-        WHERE status IN ('approved', 'paid') AND payment_method = 'wallet'
+        WHERE status = 'approved' AND payment_method = 'wallet'
         """
     ) as c:
         row = await c.fetchone()

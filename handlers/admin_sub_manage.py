@@ -2723,7 +2723,7 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
         inv_id = inv["id"]
         amount = format_price(inv.get("amount", 0))
         status = inv.get("status")
-        if status in ("paid", "approved"):
+        if status == "approved":
             status_str = "🟢 تأییدشده"
         elif status == "pending":
             status_str = "🟡 در انتظار"

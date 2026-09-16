@@ -80,7 +80,7 @@ async def get_sales_trend_data(period: str = "30d") -> list[dict[str, Any]]:
                    COALESCE(SUM(amount), 0) as total_revenue,
                    COALESCE(SUM(data_gb), 0) as total_gb
             FROM invoices
-            WHERE status IN ('paid', 'approved')
+            WHERE status = 'approved'
               AND created_at >= datetime('now', '-{days_limit} days')
             GROUP BY date(created_at)
             ORDER BY sale_date ASC
@@ -92,7 +92,7 @@ async def get_sales_trend_data(period: str = "30d") -> list[dict[str, Any]]:
                    COALESCE(SUM(amount), 0) as total_revenue,
                    COALESCE(SUM(data_gb), 0) as total_gb
             FROM invoices
-            WHERE status IN ('paid', 'approved')
+            WHERE status = 'approved'
             GROUP BY date(created_at)
             ORDER BY sale_date ASC
         """
@@ -117,7 +117,7 @@ async def get_top_volume_plans_data() -> list[dict[str, Any]]:
                COUNT(*) as orders_count,
                COALESCE(SUM(amount), 0) as total_revenue
         FROM invoices
-        WHERE status IN ('paid', 'approved') AND data_gb > 0
+        WHERE status = 'approved' AND data_gb > 0
         GROUP BY data_gb
         ORDER BY orders_count DESC, total_revenue DESC
         LIMIT 10
@@ -143,7 +143,7 @@ async def get_top_duration_plans_data() -> list[dict[str, Any]]:
                COUNT(*) as orders_count,
                COALESCE(SUM(amount), 0) as total_revenue
         FROM invoices
-        WHERE status IN ('paid', 'approved') AND duration_days > 0
+        WHERE status = 'approved' AND duration_days > 0
         GROUP BY duration_days
         ORDER BY orders_count DESC
     """
@@ -213,7 +213,7 @@ async def get_payments_breakdown_data() -> dict[str, Any]:
                COUNT(*) as count,
                COALESCE(SUM(amount), 0) as revenue
         FROM invoices
-        WHERE status IN ('paid', 'approved')
+        WHERE status = 'approved'
         GROUP BY method
     """
     cursor = await db.execute(method_query)
@@ -732,9 +732,7 @@ async def render_payments_chart() -> tuple[io.BytesIO, str]:
             color=MUTED_COLOR,
         )
 
-    paid_cnt = statuses.get("paid", {}).get("count", 0) + statuses.get(
-        "approved", {}
-    ).get("count", 0)
+    paid_cnt = statuses.get("approved", {}).get("count", 0)
     pend_cnt = statuses.get("pending", {}).get("count", 0)
     rej_cnt = statuses.get("rejected", {}).get("count", 0)
     exp_cnt = statuses.get("expired", {}).get("count", 0)

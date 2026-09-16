@@ -8517,7 +8517,6 @@ async def _render_invoices_list(
 
     status_badges = {
         "approved": "🟢 تأییدشده",
-        "paid": "🟢 پرداخت‌شده",
         "pending": "🟡 در انتظار",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی",
@@ -8760,7 +8759,6 @@ async def _render_invoice_details(
 
     status_badges = {
         "approved": "🟢 تأییدشده",
-        "paid": "🟢 پرداخت‌شده",
         "pending": "🟡 در انتظار تأیید",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی‌شده",

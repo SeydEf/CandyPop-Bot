@@ -37,7 +37,7 @@ async def approve_invoice(
         return False, "❌ فاکتور یافت نشد.", None
 
     current_status = invoice.get("status")
-    if not is_reapproval and current_status not in ("paid", "pending"):
+    if not is_reapproval and current_status != "pending":
         return False, "❌ این فاکتور قبلاً پردازش شده است.", invoice
     if is_reapproval and current_status != "rejected":
         return (
@@ -175,6 +175,6 @@ async def approve_invoice(
 
     except Exception as e:
         logger.exception("Failed to process approval for invoice %s", invoice_id)
-        rollback_status = "rejected" if is_reapproval else "paid"
+        rollback_status = "rejected" if is_reapproval else "pending"
         await update_invoice_status(invoice_id, rollback_status)
         return False, f"خطا در پردازش فاکتور: {e}", invoice

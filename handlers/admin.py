@@ -90,7 +90,6 @@ async def render_admin_notification_view(
     status = inv.get("status", "pending")
     status_badges = {
         "approved": "🟢 تأییدشده",
-        "paid": "🟢 پرداخت‌شده",
         "pending": "🟡 در انتظار تأیید",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی‌شده",
@@ -203,7 +202,7 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
         await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
         return
 
-    if invoice["status"] not in ("paid", "pending"):
+    if invoice["status"] != "pending":
         await callback.answer("❌ این فاکتور قبلاً پردازش شده.", show_alert=True)
         return
 
