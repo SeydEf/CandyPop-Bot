@@ -732,7 +732,9 @@ async def render_payments_chart() -> tuple[io.BytesIO, str]:
             color=MUTED_COLOR,
         )
 
-    paid_cnt = statuses.get("paid", {}).get("count", 0)
+    paid_cnt = statuses.get("paid", {}).get("count", 0) + statuses.get(
+        "approved", {}
+    ).get("count", 0)
     pend_cnt = statuses.get("pending", {}).get("count", 0)
     rej_cnt = statuses.get("rejected", {}).get("count", 0)
     exp_cnt = statuses.get("expired", {}).get("count", 0)
