@@ -56,9 +56,9 @@ async def _build_profile_text(tg_id: int, user_info: dict[str, Any] | None) -> s
         f"🆔 <b>شناسه عددی (User ID):</b> <code>{tg_id}</code>\n"
         f"👛 <b>موجودی کیف پول:</b> <b>{format_price(balance)}</b>\n"
         f"⚡️ <b>تعداد سرویس‌های فعال:</b> {to_persian_digits(active_subs_count)} سرویس\n"
-        f"🛍 <b>سوابق خرید:</b> {to_persian_digits(approved_count)} تراکنش موفق ({format_price(total_spent)})\n"
+        f"🛍 <b>تاریخچه خرید:</b> {to_persian_digits(approved_count)} تراکنش موفق ({format_price(total_spent)})\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💡 <i>با استفاده از منوی زیر می‌توانید موجودی خود را افزایش داده یا سوابق سفارشات خود را بررسی کنید.</i>"
+        f"💡 <i>از گزینه‌های زیر می‌توانید موجودی حساب را افزایش داده یا تاریخچه سفارش‌های خود را مشاهده کنید.</i>"
     )
     return text
 
@@ -112,8 +112,8 @@ async def profile_topup_callback(
     await state.set_state(WalletStates.waiting_deposit_amount)
     text = (
         "💳 <b>شارژ و افزایش موجودی کیف پول</b>\n\n"
-        "با شارژ کیف پول، می‌توانید در هر زمان سرویس‌های خود را <b>به‌صورت آنی و بدون معطلی</b> خریداری یا تمدید کنید!\n\n"
-        "🔹 یکی از مبالغ آماده زیر را انتخاب کنید یا مبلغ دلخواه خود (به تومان) را بنویسید و ارسال کنید:\n"
+        "با افزایش موجودی کیف پول، می‌توانید در هر زمان سرویس‌های خود را <b>به‌صورت آنی و بدون وقفه</b> خریداری یا تمدید کنید.\n\n"
+        "🔹 یکی از مبالغ آماده زیر را انتخاب کنید یا مبلغ دلخواه (به تومان) را بفرستید:\n"
         "💡 <i>مثال: <code>100000</code></i>"
     )
     await callback.message.edit_text(
@@ -126,13 +126,13 @@ async def profile_topup_callback(
 
 def _format_status_badge(status: str) -> str:
     if status == "approved":
-        return "✅ موفق و تایید شده"
+        return "✅ تاییدشده"
     elif status == "pending":
-        return "⏳ در انتظار بررسی و تایید"
+        return "⏳ در انتظار بررسی"
     elif status == "expired":
-        return "⚠️ منقضی شده"
+        return "⚠️ منقضی‌شده"
     elif status == "rejected":
-        return "❌ رد شده"
+        return "❌ ردشده"
     return status
 
 
@@ -189,8 +189,8 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
 
     if total_count == 0:
         text = (
-            "🧾 <b>تاریخچه سفارشات و فاکتورها</b>\n\n"
-            "📭 <i>شما تا این لحظه هیچ سفارش یا تراکنشی در سیستم ثبت نکرده‌اید.</i>"
+            "🧾 <b>تاریخچه سفارش‌ها و فاکتورها</b>\n\n"
+            "📭 <i>هنوز هیچ سفارش یا تراکنشی برای شما ثبت نشده است.</i>"
         )
         await callback.message.edit_text(
             text,
@@ -204,7 +204,7 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
     page = max(0, min(page, total_pages - 1))
 
     text = (
-        f"🧾 <b>تاریخچه سفارشات شما</b> (مجموع: {to_persian_digits(total_count)} فاکتور):\n"
+        f"🧾 <b>تاریخچه سفارش‌های شما</b> (مجموع: {to_persian_digits(total_count)} فاکتور):\n"
         f"📄 <i>صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}</i>\n\n"
     )
     for inv in invoices:

@@ -31,7 +31,7 @@ async def test_subscription(message: types.Message) -> None:
     test_config = await get_test_sub_config()
     if not test_config.get("enabled", True):
         await message.answer(
-            "❌ <b>در حال حاضر امکان دریافت اشتراک تست رایگان غیرفعال می‌باشد.</b>",
+            "❌ <b>امکان دریافت اشتراک تست رایگان در حال حاضر غیرفعال است.</b>",
             parse_mode="HTML",
         )
         return
@@ -55,7 +55,7 @@ async def test_subscription(message: types.Message) -> None:
                 ]
             )
             await message.answer(
-                "❌ <b>شما قبلاً اشتراک تست رایگان را دریافت کرده‌اید.</b>",
+                "❌ <b>شما پیش‌تر اشتراک تست رایگان را دریافت کرده‌اید.</b>",
                 reply_markup=keyboard,
                 parse_mode="HTML",
             )
@@ -71,13 +71,13 @@ async def test_subscription(message: types.Message) -> None:
         await message.answer(
             f"❌ <b>امکان دریافت اشتراک تست وجود ندارد.</b>\n\n"
             f"هر کاربر هر {to_persian_digits(cooldown_days)} روز یک‌بار می‌تواند اشتراک تست دریافت کند.\n\n"
-            f"⏱ <b>زمان باقیمانده تا دریافت بعدی:</b> {time_text}",
+            f"⏱ <b>زمان باقیمانده تا امکان دریافت مجدد:</b> {time_text}",
             parse_mode="HTML",
         )
         return
 
     creating_message = await message.answer(
-        "⏳ در حال ساخت اشتراک تست...", parse_mode="HTML"
+        "⏳ در حال راه‌اندازی اشتراک تست...", parse_mode="HTML"
     )
 
     try:
@@ -108,13 +108,13 @@ async def test_subscription(message: types.Message) -> None:
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
         text = (
-            f"🎉 <b>تبریک! اشتراک شما با موفقیت فعال شد</b>\n\n"
+            f"🎉 <b>اشتراک تست شما با موفقیت فعال شد</b>\n\n"
             f"🔹 <b>شناسه سرویس:</b> <code>{email}</code>\n"
             f"⏱ <b>مدت اعتبار:</b> {test_duration} روز\n"
             f"👥 <b>تعداد کاربر همزمان:</b> {to_persian_digits(1)} کاربر\n"
             f"📊 <b>حجم اشتراک:</b> {format_size_gb(test_gb)}\n\n"
-            f"🔗 <b>لینک اتصال ساب‌اسکریپشن:</b>\n<code>{sub_link}</code>\n\n"
-            f"💡 <i>کافیه لینک بالا یا بارکد رو توی برنامه مورد نظرتون کپی و وارد کنید.</i>"
+            f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
+            f"💡 <i>برای اتصال، لینک بالا را کپی کرده یا کد QR را در نرم‌افزار خود اسکن کنید.</i>"
         )
 
         if sub_id:
@@ -139,7 +139,7 @@ async def test_subscription(message: types.Message) -> None:
     except Exception as e:
         logger.exception("Failed to create test subscription for user %d", tg_id)
         await message.answer(
-            f"❌ خطا در ساخت اشتراک تست.\nلطفاً بعداً دوباره تلاش کنید.\n\nخطا: {e}",
+            f"❌ <b>خطا در ساخت اشتراک تست</b>\nلطفاً دقایقی دیگر دوباره تلاش کنید.\n\nعلت خطا: <code>{e}</code>",
             parse_mode="HTML",
         )
 

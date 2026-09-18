@@ -93,14 +93,14 @@ async def my_subscriptions(message: types.Message) -> None:
     if not subs:
         await message.answer(
             "📭 <b>شما در حال حاضر هیچ اشتراک فعالی ندارید.</b>\n\n"
-            "🚀 برای تهیه سرویس پرسرعت و پایدار، کافیست از منوی پایین روی دکمه «🛒 خرید اشتراک» کلیک کنید.",
+            "🚀 برای خرید اشتراک، از منوی اصلی دکمه «🛒 خرید اشتراک» را انتخاب کنید.",
             parse_mode="HTML",
         )
         return
 
     await message.answer(
-        f"📋 <b>لیست اشتراک‌های فعال شما ({to_persian_digits(len(subs))} سرویس):</b>\n\n"
-        "👇 برای مدیریت، مشاهده اطلاعات و تمدید هر سرویس، روی نام آن کلیک کنید:",
+        f"📋 <b>فهرست اشتراک‌های فعال شما ({to_persian_digits(len(subs))} سرویس):</b>\n\n"
+        "👇 برای مشاهده وضعیت و مدیریت هر سرویس، آن را انتخاب کنید:",
         reply_markup=subscriptions_list_keyboard(subs),
         parse_mode="HTML",
     )
@@ -113,13 +113,13 @@ async def _render_subscriptions_list(callback: types.CallbackQuery) -> None:
     if not subs:
         await callback.message.edit_text(
             "📭 <b>شما در حال حاضر هیچ اشتراک فعالی ندارید.</b>\n\n"
-            "🚀 برای تهیه سرویس پرسرعت و پایدار، کافیست از منوی پایین روی دکمه «🛒 خرید اشتراک» کلیک کنید.",
+            "🚀 برای خرید اشتراک، از منوی اصلی دکمه «🛒 خرید اشتراک» را انتخاب کنید.",
             parse_mode="HTML",
         )
     else:
         await callback.message.edit_text(
-            f"📋 <b>لیست اشتراک‌های فعال شما ({to_persian_digits(len(subs))} سرویس):</b>\n\n"
-            "👇 برای مدیریت، مشاهده اطلاعات و تمدید هر سرویس، روی نام آن کلیک کنید:",
+            f"📋 <b>فهرست اشتراک‌های فعال شما ({to_persian_digits(len(subs))} سرویس):</b>\n\n"
+            "👇 برای مشاهده وضعیت و مدیریت هر سرویس، آن را انتخاب کنید:",
             reply_markup=subscriptions_list_keyboard(subs),
             parse_mode="HTML",
         )
@@ -196,7 +196,7 @@ async def _build_dashboard_info(
         f"🔋 <b>ترافیک باقیمانده:</b> {remaining_text}\n"
         f"⏳ <b>اعتبار باقیمانده:</b> {days_text}\n\n"
         f"🔗 <b>لینک هوشمند اشتراک (ساب‌اسکریپشن):</b>\n<code>{sub_link}</code>\n\n"
-        f"💡 <i>از دکمه‌های زیر می‌توانید برای تمدید، تغییر نام و ... سرویس استفاده کنید.</i>"
+        f"💡 <i>از گزینه‌های زیر می‌توانید برای تمدید، تغییر نام، دریافت QR و لینک‌های اتصال استفاده کنید.</i>"
     )
 
     res_rec = await get_reserved_renewal(email)
@@ -211,11 +211,11 @@ async def _build_dashboard_info(
         res_users = res_rec.get("users_count", 1)
         text += (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 <b>بسته تمدید رزرو شده:</b>\n"
+            f"📦 <b>بسته تمدید رزروشده:</b>\n"
             f"⏱ <b>مدت اعتبار:</b> {res_dur} روز\n"
             f"📊 <b>حجم ترافیک:</b> {format_size_gb(res_gb)}\n"
             f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(res_users)} کاربر\n"
-            f"💡 <i>این بسته پس از پایان حجم یا زمان سرویس فعلی به صورت خودکار فعال خواهد شد.</i>"
+            f"💡 <i>این بسته پس از پایان حجم یا زمان سرویس فعلی، به‌صورت خودکار فعال می‌شود.</i>"
         )
 
     is_test_sub = email.endswith("_test") or "_test" in email
@@ -423,7 +423,7 @@ async def regen_confirm(callback: types.CallbackQuery) -> None:
     await callback.message.edit_text(
         f"🔐 <b>تغییر و بازنشانی لینک اشتراک ({email})</b>\n\n"
         "⚠️ <b>توجه مهم:</b>\n"
-        "با تغییر لینک اشتراک، تمامی لینک‌ها و کانفیگ‌های قبلی به طور کامل باطل شده و دسترسی کلیه دستگاه‌ها قطع می‌گردد.\n\n"
+        "با تغییر لینک اشتراک، تمامی کانفیگ‌های قبلی باطل می‌شوند و اتصال دستگاه‌ها قطع خواهد شد.\n\n"
         "آیا از بازنشانی و صدور لینک جدید اطمینان دارید؟",
         reply_markup=confirm_regen_keyboard(email),
         parse_mode="HTML",
@@ -455,7 +455,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
             text, keyboard = info
             await callback.message.edit_text(
                 f"✅ <b>لینک اشتراک جدید با موفقیت صادر شد!</b>\n"
-                f"⚠️ لینک قبلی غیرفعال شده است؛ لطفاً لینک جدید را در نرم‌افزار خود وارد کنید.\n\n{text}",
+                f"⚠️ لینک قبلی باطل شده است؛ لطفاً لینک جدید را در نرم‌افزار خود وارد کنید.\n\n{text}",
                 reply_markup=keyboard,
                 parse_mode="HTML",
             )
@@ -465,7 +465,7 @@ async def regen_execute(callback: types.CallbackQuery) -> None:
             await callback.message.edit_text(
                 f"✅ <b>لینک اشتراک جدید با موفقیت صادر شد!</b>\n\n"
                 f"🔗 لینک هوشمند جدید:\n<code>{new_link}</code>\n\n"
-                "⚠️ لینک قبلی باطل گردید.",
+                "⚠️ لینک قبلی باطل شد.",
                 reply_markup=subscription_manage_keyboard(
                     email, show_renew=False, is_test_sub=is_test_sub
                 ),
@@ -525,7 +525,7 @@ async def show_qr(callback: types.CallbackQuery, bot: Bot) -> None:
         caption=(
             f"📱 <b>بارکد اختصاصی (QR Code) اشتراک:</b>\n\n"
             f"🔗 <code>{sub_link}</code>\n\n"
-            f"💡 <i>کافیست در نرم‌افزار مورد نظر (مانند v2rayN, V2Box و...) گزینه اسکن QR را بزنید.</i>"
+            f"💡 <i>کافی است در نرم‌افزار مورد نظر (مانند v2rayN یا V2Box)، گزینه اسکن بارکد (Scan QR) را انتخاب کنید.</i>"
         ),
         parse_mode="HTML",
     )
@@ -557,7 +557,7 @@ async def show_links(callback: types.CallbackQuery) -> None:
         name = _extract_link_name(link, i)
         text += f"🔹 <b>{name}:</b>\n<code>{link}</code>\n\n"
 
-    text += "💡 <i>روی هر کانفیگ کلیک کنید تا کپی شود، سپس آن را در برنامه خود Import کنید.</i>"
+    text += "💡 <i>روی هر کانفیگ بزنید تا کپی شود، سپس آن را در نرم‌افزار خود وارد (Import) کنید.</i>"
 
     await callback.message.answer(
         text,
@@ -597,12 +597,10 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
 
     shop_status = await get_shop_status()
     if not shop_status["renewals_enabled"]:
-        await callback.answer(
-            "⛔️ تمدید اشتراک‌ها موقتاً غیرفعال می‌باشد.", show_alert=True
-        )
+        await callback.answer("⛔️ تمدید اشتراک‌ها موقتاً غیرفعال است.", show_alert=True)
         await callback.message.answer(
-            "⛔️ <b>تمدید اشتراک‌ها موقتاً غیرفعال می‌باشد.</b>\n\n"
-            "امکان تمدید سرویس در حال حاضر توسط مدیریت متوقف شده است. لطفاً بعداً مراجعه فرمایید.",
+            "⛔️ <b>تمدید اشتراک‌ها موقتاً غیرفعال است.</b>\n\n"
+            "امکان تمدید سرویس در حال حاضر موقتاً متوقف شده است. لطفاً بعداً مراجعه کنید.",
             parse_mode="HTML",
         )
         return
@@ -623,7 +621,7 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
     res_rec = await get_reserved_renewal(email)
     if res_rec:
         await callback.answer(
-            "⚠️ شما در حال حاضر یک بسته تمدید رزرو شده برای این سرویس دارید.\n"
+            "⚠️ شما در حال حاضر یک بسته تمدید رزروشده برای این سرویس دارید.\n"
             "امکان رزرو بیش از یک بسته وجود ندارد.",
             show_alert=True,
         )
@@ -648,9 +646,9 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
         else "🔄 <b>تمدید اشتراک اختصاصی</b>"
     )
     prompt_desc = (
-        "💡 تمایل دارید با مشخصات قبلی رزرو شود یا مشخصات (مدت، حجم، کاربر) را تغییر می‌دهید؟"
+        "💡 آیا مایلید با مشخصات قبلی رزرو شود یا مشخصات (مدت، حجم و تعداد کاربر) را تغییر می‌دهید؟"
         if reserve_enabled
-        else "💡 تمایل دارید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم، کاربر) را تغییر می‌دهید؟"
+        else "💡 آیا مایلید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم و تعداد کاربر) را تغییر می‌دهید؟"
     )
 
     text = (
@@ -722,7 +720,7 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(current_users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(current_gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+        f"💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -754,7 +752,7 @@ async def renew_change_plan(callback: types.CallbackQuery, state: FSMContext) ->
     await callback.message.edit_text(
         f"{change_plan_title}\n\n"
         f"<b>گام ۱ از ۳: انتخاب حجم ترافیک جدید</b>\n\n"
-        f"لطفاً میزان ترافیک مورد نظر خود را برای این سرویس انتخاب نمایید:",
+        f"لطفاً میزان ترافیک مورد نظر خود را برای این سرویس انتخاب کنید:",
         reply_markup=await renew_volume_keyboard(duration=30, users=1),
         parse_mode="HTML",
     )
@@ -809,8 +807,8 @@ async def renew_custom_duration_prompt(
         ]
     )
     await callback.message.edit_text(
-        "✍️ <b>مدت زمان دلخواه تمدید را وارد کنید:</b>\n\n"
-        "تعداد روز اشتراک را بصورت عددی ارسال کنید.\n"
+        "✍️ <b>مدت‌زمان دلخواه تمدید را وارد کنید:</b>\n\n"
+        "تعداد روز اشتراک را به صورت عددی ارسال کنید.\n"
         "🔸 <b>حداقل مدت:</b> <code>30</code> روز\n"
         "🔸 <b>حداکثر مدت:</b> <code>365</code> روز (۱ سال)\n"
         "🔸 <b>مثال:</b> <code>45</code>\n\n"
@@ -849,7 +847,7 @@ async def renew_custom_duration_input(
         days = int(clean_text)
         if days < 30:
             await message.answer(
-                "⚠️ <b>حداقل مدت زمان قابل تمدید ۳۰ روز می‌باشد.</b>\n\n"
+                "⚠️ <b>حداقل مدت زمان قابل تمدید ۳۰ روز است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -857,7 +855,7 @@ async def renew_custom_duration_input(
             return
         if days > 365:
             await message.answer(
-                "⚠️ <b>حداکثر مدت زمان قابل تمدید ۳۶۵ روز می‌باشد.</b>\n\n"
+                "⚠️ <b>حداکثر مدت زمان قابل تمدید ۳۶۵ روز است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -1038,7 +1036,7 @@ async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) 
     )
     await callback.message.edit_text(
         f"✍️ <b>ورود حجم دلخواه برای تمدید سرویس «{email}»</b>\n\n"
-        "لطفاً حجم ترافیک مورد نیاز خود را به <b>گیگابایت (عدد انگلیسی)</b> ارسال نمایید:\n"
+        "حجم ترافیک مورد نظر را به <b>گیگابایت</b> ارسال کنید:\n"
         "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
         "🔸 <b>حداکثر حجم:</b> <code>150</code> گیگابایت\n"
         "<i>(مثال: برای ۲۵ گیگابایت عدد <code>25</code> را ارسال کنید)</i>\n\n"
@@ -1075,7 +1073,7 @@ async def renew_custom_volume_input(message: types.Message, state: FSMContext) -
         gb = int(clean_text)
         if gb < 10:
             await message.answer(
-                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت می‌باشد.</b>\n"
+                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت است.</b>\n"
                 "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
@@ -1084,7 +1082,7 @@ async def renew_custom_volume_input(message: types.Message, state: FSMContext) -
             return
         if gb > 150:
             await message.answer(
-                "⚠️ <b>حداکثر حجم قابل سفارش ۱۵۰ گیگابایت هست.</b>\n\n"
+                "⚠️ <b>حداکثر حجم قابل سفارش ۱۵۰ گیگابایت است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -1153,7 +1151,7 @@ async def renew_wallet_payment(
             f"❌ موجودی کیف پول شما کافی نیست!\n\n"
             f"💰 موجودی فعلی: {format_price(balance)}\n"
             f"💳 مبلغ مورد نیاز: {format_price(price)}\n\n"
-            f"💡 لطفاً از منوی کیف پول نسبت به افزایش موجودی اقدام فرمایید.",
+            f"💡 لطفاً از منوی کیف پول موجودی حساب خود را افزایش دهید.",
             show_alert=True,
         )
         return
@@ -1175,9 +1173,9 @@ async def renew_wallet_payment(
     reserve_cfg = await get_reserve_renewal_config()
     reserve_enabled = bool(reserve_cfg.get("enabled", True))
     wallet_header = (
-        "👛 <b>تأیید پرداخت رزرو اشتراک از کیف پول</b>"
+        "👛 <b>تایید پرداخت رزرو اشتراک از کیف پول</b>"
         if reserve_enabled
-        else "👛 <b>تأیید پرداخت تمدید از کیف پول</b>"
+        else "👛 <b>تایید پرداخت تمدید از کیف پول</b>"
     )
     wallet_question = (
         "آیا برای کسر از کیف پول و رزرو بسته اشتراک مطمئن هستید؟"
@@ -1279,7 +1277,7 @@ async def renew_wallet_confirm(
                 f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n"
                 f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
                 f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
-                f"💡 <i>این بسته به صورت رزرو ذخیره شد و به محض اتمام اعتبار زمانی یا حجمی اشتراک فعلی، به صورت کاملاً خودکار فعال خواهد شد. همچنین می‌توانید در بخش مدیریت اشتراک، آن را در صورت نیاز زودتر فعال کنید.</i>"
+                f"💡 <i>این بسته رزرو شد و پس از پایان اعتبار زمانی یا حجمی اشتراک فعلی، به‌صورت کاملاً خودکار فعال می‌شود. در صورت نیاز می‌توانید آن را در بخش مدیریت اشتراک زودتر فعال کنید.</i>"
             )
             await callback.message.edit_text(
                 success_text,
@@ -1300,7 +1298,7 @@ async def renew_wallet_confirm(
                 f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
                 f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
                 f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
-                f"🚀 <i>ترافیک و زمان جدید به سرویس شما اضافه شد. نیازی به تغییر کانفیگ‌ها ندارید و اتصال شما برقرار خواهد ماند.</i>"
+                f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
             )
 
             if sub_id:
@@ -1332,7 +1330,7 @@ async def renew_wallet_confirm(
         await credit_wallet(tg_id, price)
         await callback.message.edit_text(
             f"❌ <b>خطا در فرآیند تمدید سرویس!</b>\n\n"
-            f"مبلغ کسر شده به کیف پول شما بازگردانده شد.\n"
+            f"مبلغ کسرشده به کیف پول شما بازگشت.\n"
             f"علت خطا: <code>{e}</code>\n\n"
             f"لطفاً با پشتیبانی در ارتباط باشید.",
             parse_mode="HTML",
@@ -1495,7 +1493,7 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         f"🎁 <b>کد تخفیف:</b> <code>{clean_code}</code> (<b>{disc_label}</b>)\n"
         f"📉 <b>سود شما از این خرید:</b> {format_price(discount_amount)}\n"
         f"💎 <b>مبلغ نهایی قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب فرمایید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     is_change_plan = data.get("is_change_plan", False)
     card_cfg = await get_card_config()
@@ -1608,7 +1606,7 @@ async def renew_discount_remove(
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     is_change_plan = data.get("is_change_plan", False)
     card_cfg = await get_card_config()
@@ -1621,7 +1619,7 @@ async def renew_discount_remove(
         ),
         parse_mode="HTML",
     )
-    await callback.answer("✅ کد تخفیف حذف گردید.")
+    await callback.answer("✅ کد تخفیف حذف شد.")
 
 
 @router.callback_query(F.data == "renew_pay_card")
@@ -1705,7 +1703,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
-        f"📌 <i>لطفاً پس از واریز دقیق مبلغ، روی دکمه «✅ پرداخت کردم» کلیک کنید و تصویر فیش یا رسید را ارسال نمایید.</i>"
+        f"📌 <i>پس از واریز دقیق مبلغ، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
     )
 
     await callback.message.edit_text(
@@ -1752,14 +1750,14 @@ async def sub_act_res_prompt_handler(callback: types.CallbackQuery) -> None:
         return
 
     text = (
-        f"⚡️ <b>فعال‌سازی زودهنگام بسته تمدید</b>\n\n"
+        f"⚡️ <b>فعال‌سازی پیش از موعد بسته تمدید</b>\n\n"
         f"🏷 <b>سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار بسته:</b> {res_rec.get('duration_days', 0)} روز\n"
         f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(res_rec.get('data_gb', 0))}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(res_rec.get('users_count', 1))} کاربر\n\n"
         f"⚠️ <b>توجه مهم:</b>\n"
-        f"با فعال‌سازی زودهنگام، میزان مصرف فعلی صفر شده و بسته رزرو از همین لحظه فعال خواهد شد.\n\n"
-        f"آیا برای فعال‌سازی فوری این بسته مطمئن هستید؟"
+        f"با فعال‌سازی پیش از موعد، مصرف دوره جاری صفر شده و بسته رزرو از همین لحظه فعال می‌شود.\n\n"
+        f"آیا از فعال‌سازی فوری این بسته اطمینان دارید؟"
     )
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 

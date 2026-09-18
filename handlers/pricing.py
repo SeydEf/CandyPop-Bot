@@ -30,43 +30,43 @@ async def build_pricing_text() -> str:
         sorted_tiers = sorted(tiers, key=lambda x: x[0])
         for i, (max_gb, rate) in enumerate(sorted_tiers):
             if i == 0:
-                tiers_text += f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
+                tiers_text += f"  • تا {to_persian_digits(max_gb)} گیگابایت: {format_price(rate)} به ازای هر گیگابایت\n"
             else:
                 prev_gb = sorted_tiers[i - 1][0]
-                tiers_text += f"  • از {to_persian_digits(prev_gb)} تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} به ازای هر گیگ\n"
+                tiers_text += f"  • از {to_persian_digits(prev_gb)} تا {to_persian_digits(max_gb)} گیگابایت: {format_price(rate)} به ازای هر گیگابایت\n"
 
         if sorted_tiers:
             last_gb = sorted_tiers[-1][0]
-            tiers_text += f"  • بالای {to_persian_digits(last_gb)} گیگ: {format_price(fallback_rate)} به ازای هر گیگ\n"
+            tiers_text += f"  • بیشتر از {to_persian_digits(last_gb)} گیگابایت: {format_price(fallback_rate)} به ازای هر گیگابایت\n"
         else:
             tiers_text += (
-                f"  • تمامی حجم‌ها: {format_price(fallback_rate)} به ازای هر گیگ\n"
+                f"  • تمامی حجم‌ها: {format_price(fallback_rate)} به ازای هر گیگابایت\n"
             )
 
-        volume_section = f"📊 <b>هرچه حجم بیشتر، قیمت هر گیگ کمتر!</b>\n{tiers_text}"
+        volume_section = f"📊 <b>تعرفه ترافیک (هرچه حجم بیشتر، نرخ هر گیگابایت کمتر):</b>\n{tiers_text}"
     else:
-        volume_section = f"📊 <b>قیمت حجم (نرخ ثابت):</b>\n  • هر گیگابایت: {format_price(base_rate)}\n"
+        volume_section = f"📊 <b>تعرفه ترافیک (نرخ ثابت):</b>\n  • هر گیگابایت: {format_price(base_rate)}\n"
 
     dur_60 = durations.get(60, 50000)
     dur_90 = durations.get(90, 100000)
 
     dur_text = (
-        f" • ۱ ماهه (۳۰ روز): قیمت پایه، بدون هزینه اضافه\n"
-        f" • ۲ ماهه (۶۰ روز): فقط +{format_price(dur_60)} برای ۳۰ روز بیشتر\n"
-        f" • ۳ ماهه (۹۰ روز): فقط +{format_price(dur_90)} برای ۶۰ روز بیشتر\n"
+        f" • ۱ ماهه (۳۰ روز): نرخ پایه (بدون هزینه مازاد)\n"
+        f" • ۲ ماهه (۶۰ روز): +{format_price(dur_60)} (برای ۳۰ روز بیشتر)\n"
+        f" • ۳ ماهه (۹۰ روز): +{format_price(dur_90)} (برای ۶۰ روز بیشتر)\n"
     )
     user_text = (
-        f" • کاربر اول: رایگان، همراه با پلن\n"
-        f" • هر کاربر اضافه: فقط +{format_price(user_surcharge)}\n"
+        f" • کاربر اول: همراه با پلن پایه\n"
+        f" • هر کاربر اضافه: +{format_price(user_surcharge)}\n"
     )
     text = (
-        f"💰 <b>تعرفه خدمات {BOT_NAME}</b>\n\n"
+        f"💰 <b>تعرفه سرویس‌های {BOT_NAME}</b>\n\n"
         f"{volume_section}\n"
-        "⏱ <b>مدت اشتراک را انتخاب کنید</b>\n"
+        "⏱ <b>مدت‌زمان اعتبار:</b>\n"
         f"{dur_text}\n"
-        "👥 <b>تعداد کاربران همزمان</b>\n"
+        "👥 <b>تعداد کاربر همزمان:</b>\n"
         f"{user_text}\n"
-        "💡 <i>قیمت نهایی بر اساس حجم، مدت اشتراک و تعداد کاربران انتخابی شما هنگام سفارش محاسبه می‌شود.</i>"
+        "💡 <i>قیمت نهایی بر اساس حجم، مدت اعتبار و تعداد کاربر انتخابی شما محاسبه می‌شود.</i>"
     )
     return text
 
@@ -77,8 +77,8 @@ async def show_pricing(message: types.Message) -> None:
     config = await get_pricing_display_config()
     if not config["enabled"]:
         disabled_text = (
-            "⚠️ <b>بخش تعرفه‌ها در حال حاضر موقتاً غیرفعال می‌باشد.</b>\n\n"
-            "جهت کسب اطلاعات بیشتر یا استعلام قیمت‌ها، لطفاً با پشتیبانی در ارتباط باشید:\n"
+            "⚠️ <b>مشاهده تعرفه‌ها موقتاً غیرفعال است.</b>\n\n"
+            "برای استعلام قیمت یا دریافت راهنمایی، با پشتیبانی در ارتباط باشید:\n"
             f"👨‍💻 {SUPPORT_LINK}"
         )
         await message.answer(disabled_text, parse_mode="HTML")

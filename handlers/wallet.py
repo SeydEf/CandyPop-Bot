@@ -29,16 +29,16 @@ async def wallet_deposit_start(message: types.Message, state: FSMContext) -> Non
     card_cfg = await get_card_config()
     if not card_cfg.get("enabled", True):
         await message.answer(
-            "⚠️ <b>روش پرداخت کارت به کارت و شارژ کیف پول در حال حاضر غیرفعال می‌باشد.</b>\n\n"
-            "لطفاً در زمانی دیگر مجدداً تلاش فرمایید.",
+            "⚠️ <b>پرداخت کارت‌به‌کارت و افزایش موجودی کیف پول در حال حاضر غیرفعال است.</b>\n\n"
+            "لطفاً بعداً دوباره تلاش کنید.",
             parse_mode="HTML",
         )
         return
 
     text = (
         "💳 <b>افزایش موجودی کیف پول</b>\n\n"
-        "لطفاً مبلغ مورد نظر برای افزایش موجودی را از گزینه‌های زیر انتخاب نموده یا مبلغ دلخواه خود را به تومان ارسال نمایید:\n\n"
-        "💡 <i>حداقل مبلغ برای شارژ حساب ۵۰,۰۰۰ تومان می‌باشد.</i>"
+        "مبلغ مورد نظر را از گزینه‌های زیر انتخاب کنید یا مبلغ دلخواه خود را به تومان بفرستید:\n\n"
+        "💡 <i>حداقل مبلغ برای شارژ حساب ۵۰,۰۰۰ تومان است.</i>"
     )
     await message.answer(
         text, reply_markup=deposit_amount_keyboard(), parse_mode="HTML"
@@ -112,7 +112,7 @@ async def wallet_deposit_preset(
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
-        f"📌 <i>لطفاً پس از واریز مبلغ، روی دکمه «✅ پرداخت کردم» کلیک نموده و تصویر فیش واریزی را ارسال فرمایید تا حسابتان شارژ شود.</i>"
+        f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا حساب شما شارژ شود.</i>"
     )
 
     await callback.message.edit_text(
@@ -135,8 +135,8 @@ async def wallet_deposit_back(callback: types.CallbackQuery, state: FSMContext) 
         return
     text = (
         "💳 <b>افزایش موجودی کیف پول</b>\n\n"
-        "لطفاً مبلغ مورد نظر برای افزایش موجودی را از گزینه‌های زیر انتخاب نموده یا مبلغ دلخواه خود را به تومان ارسال نمایید:\n\n"
-        "💡 <i>حداقل مبلغ برای شارژ حساب ۵۰,۰۰۰ تومان می‌باشد.</i>"
+        "مبلغ مورد نظر را از گزینه‌های زیر انتخاب کنید یا مبلغ دلخواه خود را به تومان بفرستید:\n\n"
+        "💡 <i>حداقل مبلغ برای شارژ حساب ۵۰,۰۰۰ تومان است.</i>"
     )
     await callback.message.edit_text(
         text, reply_markup=deposit_amount_keyboard(), parse_mode="HTML"
@@ -180,7 +180,7 @@ async def wallet_deposit_custom_input(
     if not card_cfg.get("enabled", True):
         await state.clear()
         await message.answer(
-            "⚠️ <b>روش پرداخت کارت به کارت و شارژ کیف پول در حال حاضر غیرفعال می‌باشد.</b>",
+            "⚠️ <b>روش پرداخت کارت‌به‌کارت و افزایش موجودی کیف پول در حال حاضر غیرفعال است.</b>",
             reply_markup=main_menu_keyboard(),
             parse_mode="HTML",
         )
@@ -189,7 +189,7 @@ async def wallet_deposit_custom_input(
     if message.text.strip() == "/cancel":
         await state.clear()
         await message.answer(
-            "❌ <b>فرآیند افزایش موجودی لغو گردید.</b>",
+            "❌ <b>فرآیند افزایش موجودی کیف پول لغو شد.</b>",
             reply_markup=main_menu_keyboard(),
             parse_mode="HTML",
         )
@@ -212,7 +212,7 @@ async def wallet_deposit_custom_input(
         amount = int(clean_text)
         if amount < 50000:
             await message.answer(
-                "❌ <b>حداقل مبلغ برای افزایش موجودی ۵۰,۰۰۰ تومان می‌باشد.</b>\n\n"
+                "❌ <b>حداقل مبلغ برای افزایش موجودی ۵۰,۰۰۰ تومان است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -220,7 +220,7 @@ async def wallet_deposit_custom_input(
             return
         if amount > 50000000:
             await message.answer(
-                "❌ <b>حداکثر مبلغ برای هر بار واریز ۵۰,۰۰۰,۰۰۰ تومان می‌باشد.</b>\n\n"
+                "❌ <b>حداکثر مبلغ برای هر بار واریز ۵۰,۰۰۰,۰۰۰ تومان است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -228,8 +228,8 @@ async def wallet_deposit_custom_input(
             return
     except ValueError:
         await message.answer(
-            "❌ <b>مبلغ وارد شده معتبر نیست!</b>\n\n"
-            "لطفاً مبلغ مورد نظر را فقط به صورت عدد (به تومان) ارسال نمایید.\n"
+            "❌ <b>مبلغ واردشده نامعتبر است!</b>\n\n"
+            "لطفاً مبلغ مورد نظر را فقط به صورت عدد (به تومان) ارسال کنید.\n"
             "💡 <i>مثال: <code>150000</code></i>\n\n"
             "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
             reply_markup=cancel_kb,
@@ -261,7 +261,7 @@ async def wallet_deposit_custom_input(
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
-        f"📌 <i>لطفاً پس از واریز مبلغ، روی دکمه «✅ پرداخت کردم» کلیک نموده و تصویر فیش واریزی را ارسال فرمایید تا حسابتان شارژ شود.</i>"
+        f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا حساب شما شارژ شود.</i>"
     )
 
     await message.answer(

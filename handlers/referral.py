@@ -38,22 +38,21 @@ async def referral_menu(message: types.Message, bot: Bot) -> None:
     status_note = (
         ""
         if is_enabled
-        else "\n⚠️ <i>سیستم کسب درآمد الان موقتاً غیرفعاله، ولی زود برمی‌گرده!</i>\n"
+        else "\n⚠️ <i>سیستم پاداش دعوت در حال حاضر موقتاً غیرفعال است.</i>\n"
     )
 
-    share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(f'🍭 بیا {BOT_NAME}! اینترنت پرسرعت و بدون محدودیت 🚀')}"
+    share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(f'🍭 اتصال پرسرعت و بدون محدودیت با {BOT_NAME} 🚀')}"
 
     text = (
-        f"💰 <b>با دعوت دوستات، درآمد کسب کن!</b>\n\n"
-        f"هر دفعه که دوستت از لینک اختصاصی تو خرید کنه، "
-        f"<b>{to_persian_digits(percent)}٪</b> از مبلغش مستقیم میاد تو کیف پولت! 💸\n\n"
-        f"📊 <b>آمار فعلی تو:</b>\n"
-        f"🎯 دوستای دعوت‌شده: <b>{to_persian_digits(invited_count)} نفر</b>\n"
-        f"🤑 درصد پورسانت: <b>{to_persian_digits(percent)}٪</b>\n"
+        f"💰 <b>دعوت از دوستان و دریافت پاداش</b>\n\n"
+        f"با اشتراک‌گذاری لینک اختصاصی خود، با هر خرید دوستانتان "
+        f"<b>{to_persian_digits(percent)}٪</b> از مبلغ فاکتور مستقیماً به کیف پول شما افزوده می‌شود.\n\n"
+        f"📊 <b>آمار دعوت‌های شما:</b>\n"
+        f"🎯 تعداد کاربران دعوت‌شده: <b>{to_persian_digits(invited_count)} نفر</b>\n"
+        f"🎁 درصد پاداش معرفی: <b>{to_persian_digits(percent)}٪</b>\n"
         f"{status_note}\n"
-        f"🔗 <b>لینک دعوت:</b>\n<code>{ref_link}</code>\n\n"
-        f"🎁 <i>فقط کافیه این لینک رو به دوستات بفرستی. "
-        f"تا بعد از هر خریدشون، پول پورسانت بلافاصله تو کیف پولت بشینه!</i>"
+        f"🔗 <b>لینک اختصاصی شما:</b>\n<code>{ref_link}</code>\n\n"
+        f"💡 <i>کافی است این لینک را برای دوستان خود بفرستید؛ پاداش هر خرید به‌صورت خودکار در کیف پول شما ثبت می‌شود.</i>"
     )
 
     keyboard = InlineKeyboardMarkup(

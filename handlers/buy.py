@@ -70,9 +70,9 @@ class BuyStates(StatesGroup):
 async def _get_volume_step_text() -> str:
     return (
         "🚀 <b>گام ۱ از ۳: انتخاب حجم ترافیک اشتراک</b>\n\n"
-        "لطفاً میزان حجم مورد نیاز خود را انتخاب کنید:\n\n"
-        "💡 <i>برای اطلاع از تعرفه‌ها و نحوه محاسبه قیمت از طریق منو به بخش تعرفه‌ها مراجعه کنید.</i>\n\n"
-        "حجم مورد نظرت رو از دکمه‌های زیر انتخاب کن یا حجم دلخواهت رو بنویس 👇"
+        "میزان حجم مورد نیاز خود را انتخاب کنید:\n\n"
+        "💡 <i>برای اطلاع از نحوه محاسبه قیمت‌ها، می‌توانید بخش تعرفه‌ها را از منوی اصلی ببینید.</i>\n\n"
+        "حجم مورد نظر را از گزینه‌های زیر انتخاب کنید یا حجم دلخواه را بفرستید:"
     )
 
 
@@ -86,7 +86,7 @@ async def buy_start(message: types.Message, state: FSMContext) -> None:
     shop_status = await get_shop_status()
     if not shop_status["purchases_enabled"]:
         await message.answer(
-            "⛔️ <b>فروش اشتراک جدید موقتاً غیرفعال می‌باشد.</b>",
+            "⛔️ <b>فروش اشتراک جدید موقتاً غیرفعال است.</b>",
             parse_mode="HTML",
         )
         return
@@ -118,9 +118,7 @@ async def buy_start_callback(callback: types.CallbackQuery, state: FSMContext) -
 
     shop_status = await get_shop_status()
     if not shop_status["purchases_enabled"]:
-        await callback.answer(
-            "⛔️ فروش اشتراک جدید موقتاً غیرفعال می‌باشد.", show_alert=True
-        )
+        await callback.answer("⛔️ فروش اشتراک جدید موقتاً غیرفعال است.", show_alert=True)
         return
 
     text = await _get_volume_step_text()
@@ -151,8 +149,8 @@ async def _get_users_step_text(gb: int, users: int = 1) -> str:
     return (
         f"📋 <b>مشخصات و قیمت مراحل قبلی:</b>\n"
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} <i>({format_price(data_price)})</i>\n\n"
-        f"👤 <b>گام ۲ از ۳: انتخاب تعداد کاربر همزمان (دستگاه)</b>\n\n"
-        f"چند نفر یا دستگاه قراره به صورت همزمان از این سرویس استفاده کنن؟\n"
+        f"👤 <b>گام ۲ از ۳: انتخاب تعداد کاربر همزمان (ظرفیت اتصال)</b>\n\n"
+        f"چه تعداد کاربر یا دستگاه به‌صورت همزمان از این سرویس استفاده خواهند کرد؟\n"
         f"💡 <i>به ازای هر کاربر اضافه، مبلغ +{format_price(user_surcharge_unit)} به اشتراک افزوده می‌شود.</i>\n\n"
         f"👥 <b>تعداد کاربر انتخابی:</b> {to_persian_digits(users)} کاربر{surcharge_text}\n"
         f"💵 <b>مجموع قیمت تا این مرحله:</b> <b>{format_price(running_total)}</b>"
@@ -185,8 +183,8 @@ async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) ->
         ]
     )
     await callback.message.edit_text(
-        "✍️ <b>حجم دلخواهت رو وارد کن:</b>\n\n"
-        "میزان حجم رو به گیگابایت بصورت عددی ارسال کن.\n"
+        "✍️ <b>ورود حجم دلخواه:</b>\n\n"
+        "میزان حجم مورد نظر را به گیگابایت (عدد لاتین یا فارسی) ارسال کنید.\n"
         "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
         "🔸 <b>مثال:</b> <code>25</code>\n\n"
         "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
@@ -223,7 +221,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         )
         if gb < 10:
             await message.answer(
-                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت می‌باشد.</b>\n"
+                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت است.</b>\n"
                 "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
@@ -232,7 +230,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             return
         if gb > 150:
             await message.answer(
-                "⚠️ حداکثر حجم قابل سفارش 150 گیگابایت هست.\n\n"
+                "⚠️ <b>حداکثر حجم قابل سفارش ۱۵۰ گیگابایت است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -249,7 +247,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             ]
         )
         await message.answer(
-            "⚠️ لطفاً فقط یک عدد انگلیسی یا فارسی معتبر وارد کنید (حداقل ۱۰ گیگابایت).\n🔸 مثال: <code>25</code>\n\n"
+            "⚠️ لطفاً فقط یک عدد معتبر ارسال کنید (حداقل ۱۰ گیگابایت).\n🔸 مثال: <code>25</code>\n\n"
             "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
             reply_markup=cancel_kb,
             parse_mode="HTML",
@@ -364,8 +362,8 @@ async def _get_duration_step_text(gb: int, users: int) -> str:
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} <i>({format_price(data_price)})</i>\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر<i>{user_surcharge_str}</i>\n"
         f"💵 <b>مجموع قیمت پایه (حجم + کاربر):</b> <b>{format_price(base_sum)}</b>\n\n"
-        f"⏱ <b>گام ۳ از ۳: انتخاب مدت زمان اعتبار</b>\n\n"
-        f"لطفاً مدت اعتبار سرویس خود را انتخاب کنید:\n\n"
+        f"⏱ <b>گام ۳ از ۳: انتخاب مدت‌زمان اعتبار</b>\n\n"
+        f"مدت اعتبار سرویس خود را انتخاب کنید:\n\n"
         f"{dur_section}"
     )
 
@@ -421,8 +419,8 @@ async def buy_custom_duration_prompt(
         ]
     )
     await callback.message.edit_text(
-        "✍️ <b>مدت زمان دلخواه را وارد کنید:</b>\n\n"
-        "تعداد روز اشتراک را بصورت عددی ارسال کنید.\n"
+        "✍️ <b>مدت‌زمان دلخواه را وارد کنید:</b>\n\n"
+        "تعداد روز اشتراک را به صورت عددی ارسال کنید.\n"
         "🔸 <b>حداقل مدت:</b> <code>30</code> روز\n"
         "🔸 <b>حداکثر مدت:</b> <code>365</code> روز (۱ سال)\n"
         "🔸 <b>مثال:</b> <code>45</code>\n\n"
@@ -465,7 +463,7 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
         days = int(clean_text)
         if days < 30:
             await message.answer(
-                "⚠️ <b>حداقل مدت زمان قابل سفارش ۳۰ روز می‌باشد.</b>\n"
+                "⚠️ <b>حداقل مدت زمان قابل سفارش ۳۰ روز است.</b>\n"
                 "لطفاً عددی معادل ۳۰ روز یا بیشتر وارد کنید.\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
@@ -474,7 +472,7 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
             return
         if days > 365:
             await message.answer(
-                "⚠️ <b>حداکثر مدت زمان قابل سفارش ۳۶۵ روز (۱ سال) می‌باشد.</b>\n\n"
+                "⚠️ <b>حداکثر مدت زمان قابل سفارش ۳۶۵ روز (۱ سال) است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -508,7 +506,7 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"⏱ <b>مدت زمان:</b> {days} روز{dur_str}\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     card_cfg = await get_card_config()
     await message.answer(
@@ -545,7 +543,7 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -600,7 +598,7 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
         f"💎 مبلغ کل: <b>{format_price(price)}</b>\n\n"
         f"💳 موجودی فعلی حساب: {format_price(balance)}\n"
         f"📉 موجودی پس از پرداخت: {format_price(after_balance)}\n\n"
-        f"آیا برای ثبت و دریافت کانفیگ مطمئن هستید؟"
+        f"آیا از ثبت سفارش و دریافت سرویس اطمینان دارید؟"
     )
     await callback.message.edit_text(
         text,
@@ -655,7 +653,7 @@ async def buy_wallet_confirm(
     await process_referral_commission(tg_id, price, bot)
 
     await callback.message.edit_text(
-        "🚀 <b>در حال ایجاد کانفیگ اختصاصی شما... لطفاً چند ثانیه صبر کنید.</b>",
+        "🚀 <b>در حال آماده‌سازی کانفیگ اختصاصی شما... لطفاً چند ثانیه صبر کنید.</b>",
         parse_mode="HTML",
     )
 
@@ -705,8 +703,8 @@ async def buy_wallet_confirm(
             f"📊 <b>حجم اشتراک:</b> {format_size_gb(gb)}\n"
             f"💳 <b>روش پرداخت:</b> کیف پول حساب\n"
             f"👛 <b>موجودی باقیمانده:</b> {format_price(new_balance)}\n\n"
-            f"🔗 <b>لینک اتصال ساب‌اسکریپشن:</b>\n<code>{sub_link}</code>\n\n"
-            f"💡 <i>کافیه لینک بالا یا بارکد رو توی برنامه مورد نظرتون کپی و وارد کنید.</i>"
+            f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
+            f"💡 <i>برای اتصال، لینک بالا را کپی کرده یا کد QR را در نرم‌افزار خود اسکن کنید.</i>"
         )
 
         await state.clear()
@@ -739,7 +737,7 @@ async def buy_wallet_confirm(
 
         await credit_wallet(tg_id, price)
         await callback.message.edit_text(
-            f"⚠️ <b>خطا در راه‌اندازی اشتراک:</b> مبلغ پرداختی فوراً به کیف پول شما برگشت داده شد.\nعلت خطا: {e}",
+            f"⚠️ <b>خطا در راه‌اندازی اشتراک:</b> مبلغ پرداختی به کیف پول شما بازگشت داده شد.\nعلت خطا: {e}",
             parse_mode="HTML",
         )
 
@@ -813,7 +811,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
             f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
             f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
             f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-            f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+            f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
         )
         card_cfg = await get_card_config()
         await message.answer(
@@ -899,7 +897,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         f"🏷️ کد تخفیف: <code>{clean_code}</code> (<b>{disc_label}</b>)\n"
         f"🎁 سود شما از این خرید: -{format_price(discount_amount)}\n\n"
         f"💎 <b>مبلغ نهایی و قابل پرداخت:</b> {format_price(final_price)}\n\n"
-        f"💳 روش پرداخت مورد نظرتون رو انتخاب کنید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     card_cfg = await get_card_config()
     await message.answer(
@@ -943,7 +941,7 @@ async def buy_discount_cancel(callback: types.CallbackQuery, state: FSMContext) 
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -987,7 +985,7 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظرتون رو انتخاب کنید:"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -1077,7 +1075,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت: {to_persian_digits(INVOICE_EXPIRY_MINUTES)} دقیقه</b>\n\n"
-        f"✨ <i>نکته: پس از انتقال وجه، حتماً روی دکمه «✅ پرداخت کردم» کلیک کنید و رسید خود را ارسال نمایید تا اشتراک فوراً بررسی و فعال گردد.</i>"
+        f"✨ <i>پس از انتقال وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا اشتراک شما بررسی و فعال شود.</i>"
     )
 
     await callback.message.edit_text(
@@ -1104,8 +1102,8 @@ async def _expire_invoice_after(
         try:
             if callback.message:
                 await callback.message.edit_text(
-                    f"⌛️ <b>فاکتور شماره {invoice_id} منقضی گردید.</b>\n\n"
-                    "مهلت زمان پرداخت به پایان رسیده است. در صورت تمایل می‌توانید سفارش جدیدی ثبت بفرمایید.",
+                    f"⌛️ <b>فاکتور شماره {invoice_id} منقضی شد.</b>\n\n"
+                    "مهلت پرداخت به پایان رسید. در صورت تمایل می‌توانید سفارش جدیدی ثبت کنید.",
                     parse_mode="HTML",
                 )
         except Exception:
@@ -1142,7 +1140,7 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
 
     if invoice["status"] != "pending":
         await callback.answer(
-            "⚠️ این فاکتور قبلاً پردازش شده یا منقضی گردیده است.", show_alert=True
+            "⚠️ این فاکتور قبلاً پردازش شده یا منقضی شده است.", show_alert=True
         )
         return
 
@@ -1184,16 +1182,16 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
 
     if photo_enabled and not text_enabled:
         guide_detail = (
-            "لطفاً <b>تصویر فیش یا رسید پرداخت بانکی</b> خود را در همین بخش ارسال کنید.\n"
+            "لطفاً <b>تصویر فیش یا رسید واریز بانکی</b> خود را ارسال کنید.\n"
             "<i>(ارسال کد متنی در حال حاضر غیرفعال است)</i>"
         )
     elif text_enabled and not photo_enabled:
         guide_detail = (
-            "لطفاً <b>شماره پیگیری یا متن مشخصات واریز</b> خود را در همین بخش ارسال کنید.\n"
+            "لطفاً <b>شماره پیگیری یا مشخصات واریز</b> خود را به صورت متنی ارسال کنید.\n"
             "<i>(ارسال تصویر فیش در حال حاضر غیرفعال است)</i>"
         )
     else:
-        guide_detail = "لطفاً تصویر رسید پرداخت بانکی یا شماره پیگیری تراکنش خود را در همین بخش ارسال کنید."
+        guide_detail = "لطفاً تصویر رسید واریز یا شماره پیگیری تراکنش خود را ارسال کنید."
 
     cancel_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1391,7 +1389,7 @@ async def receive_receipt_photo(
         if receipt_cfg["text_enabled"]:
             await message.answer(
                 "⚠️ <b>امکان ارسال تصویر رسید در حال حاضر غیرفعال است.</b>\n\n"
-                "لطفاً شماره پیگیری یا مشخصات واریز خود را به صورت <b>متنی</b> ارسال فرمایید.\n\n"
+                "لطفاً شماره پیگیری یا مشخصات واریز را به صورت <b>متنی</b> ارسال کنید.\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -1405,9 +1403,7 @@ async def receive_receipt_photo(
 
     invoice = await get_invoice(invoice_id)
     if not invoice or invoice["status"] != "pending":
-        await message.answer(
-            "⚠️ این فاکتور منقضی شده یا قبلاً مورد پردازش قرار گرفته است."
-        )
+        await message.answer("⚠️ این فاکتور منقضی شده یا پیش‌تر پردازش شده است.")
         await state.clear()
         return
 
@@ -1426,20 +1422,20 @@ async def receive_receipt_photo(
     if is_topup:
         user_msg = (
             "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-            "درخواست افزایش موجودی کیف پول شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-            "به‌محض تأیید، موجودی کیف پول شما شارژ خواهد شد. 👛"
+            "درخواست افزایش موجودی کیف پول در صف بررسی پشتیبانی قرار گرفت. "
+            "به‌محض تایید، موجودی حساب شما شارژ می‌شود. 👛"
         )
     elif is_renewal:
         user_msg = (
             "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-            "درخواست تمدید اشتراک شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-            "به‌محض تأیید، سرویس شما به‌صورت خودکار تمدید خواهد شد. 🔄"
+            "درخواست تمدید اشتراک در صف بررسی پشتیبانی قرار گرفت. "
+            "به‌محض تایید، سرویس شما تمدید خواهد شد. 🔄"
         )
     else:
         user_msg = (
             "🎉 <b>رسید پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-            "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-            "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀"
+            "سفارش شما در صف بررسی پشتیبانی قرار گرفت. "
+            "به‌محض تایید، مشخصات اتصال اشتراک برای شما ارسال می‌شود. 🚀"
         )
 
     await message.answer(
@@ -1521,7 +1517,7 @@ async def receive_receipt_text(
         if receipt_cfg["photo_enabled"]:
             await message.answer(
                 "⚠️ <b>امکان ارسال متنی رسید در حال حاضر غیرفعال است.</b>\n\n"
-                "لطفاً <b>تصویر فیش یا رسید بانکی</b> را ارسال فرمایید.\n\n"
+                "لطفاً <b>تصویر فیش یا رسید واریز بانکی</b> را ارسال کنید.\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
@@ -1535,9 +1531,7 @@ async def receive_receipt_text(
 
     invoice = await get_invoice(invoice_id)
     if not invoice or invoice["status"] != "pending":
-        await message.answer(
-            "⚠️ این فاکتور منقضی شده یا قبلاً مورد پردازش قرار گرفته است."
-        )
+        await message.answer("⚠️ این فاکتور منقضی شده یا پیش‌تر پردازش شده است.")
         await state.clear()
         return
 
@@ -1556,20 +1550,20 @@ async def receive_receipt_text(
     if is_topup:
         user_msg = (
             "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-            "درخواست افزایش موجودی کیف پول شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-            "به‌محض تأیید، موجودی کیف پول شما شارژ خواهد شد. 👛"
+            "درخواست افزایش موجودی کیف پول در صف بررسی پشتیبانی قرار گرفت. "
+            "به‌محض تایید، موجودی حساب شما شارژ می‌شود. 👛"
         )
     elif is_renewal:
         user_msg = (
             "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-            "درخواست تمدید اشتراک شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-            "به‌محض تأیید، سرویس شما به‌صورت خودکار تمدید خواهد شد. 🔄"
+            "درخواست تمدید اشتراک در صف بررسی پشتیبانی قرار گرفت. "
+            "به‌محض تایید، سرویس شما تمدید خواهد شد. 🔄"
         )
     else:
         user_msg = (
             "🎉 <b>اطلاعات پرداخت شما با موفقیت دریافت شد!</b>\n\n"
-            "سفارش شما در صف بررسی توسط تیم پشتیبانی قرار گرفت. "
-            "به‌محض تأیید، کانفیگ اشتراک به همراه راهنمای اتصال برای شما ارسال خواهد شد. 🚀"
+            "سفارش شما در صف بررسی پشتیبانی قرار گرفت. "
+            "به‌محض تایید، مشخصات اتصال اشتراک برای شما ارسال می‌شود. 🚀"
         )
 
     await message.answer(
@@ -1617,7 +1611,7 @@ async def receive_receipt_text(
 async def buy_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text(
-        "❌ فرآیند خرید لغو گردید. در هر زمان می‌توانید مجدداً اقدام فرمایید.",
+        "❌ فرآیند خرید لغو شد. در هر زمان می‌توانید دوباره اقدام کنید.",
         parse_mode="HTML",
     )
     await callback.answer()
