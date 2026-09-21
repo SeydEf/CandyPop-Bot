@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from config import XUI_BASE_URL, XUI_API_TOKEN
+from config import XUI_API_TOKEN, XUI_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -235,8 +235,7 @@ async def get_normalized_clients_by_tg_id(tg_id: int) -> list[dict[str, Any]]:
 
 async def search_clients_all(query: str) -> list[dict[str, Any]]:
     clean_q = query.strip().lower()
-    if clean_q.startswith("@"):
-        clean_q = clean_q[1:]
+    clean_q = clean_q.removeprefix("@")
 
     results: list[dict[str, Any]] = []
     seen_emails: set[str] = set()

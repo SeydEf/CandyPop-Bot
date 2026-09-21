@@ -75,9 +75,12 @@ async def send_welcome(
     data: dict | None = None,
 ) -> None:
     user_name: str | None = None
-    if isinstance(message, types.Message) and message.from_user:
-        user_name = message.from_user.full_name or message.from_user.first_name
-    elif isinstance(message, types.CallbackQuery) and message.from_user:
+    if (
+        isinstance(message, types.Message)
+        and message.from_user
+        or isinstance(message, types.CallbackQuery)
+        and message.from_user
+    ):
         user_name = message.from_user.full_name or message.from_user.first_name
 
     text = get_welcome_text(user_name)

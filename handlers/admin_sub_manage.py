@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
 import time
+from datetime import datetime, timezone
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
@@ -2828,6 +2828,7 @@ async def admin_user_subs(callback: types.CallbackQuery, state: FSMContext) -> N
         return
 
     import math
+
     from keyboards.inline_kb import admin_user_subs_list_keyboard
 
     page_size = 5

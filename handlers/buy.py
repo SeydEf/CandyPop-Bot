@@ -16,7 +16,7 @@ from config import (
     INVOICE_EXPIRY_MINUTES,
     SUB_BASE_URL,
 )
-from db.discounts import validate_discount_code, calculate_discount_amount
+from db.discounts import calculate_discount_amount, validate_discount_code
 from db.models import (
     create_invoice,
     debit_wallet,
@@ -710,6 +710,7 @@ async def buy_wallet_confirm(
         await state.clear()
         if sub_id:
             from aiogram.types import BufferedInputFile
+
             from utils.helpers import generate_qr
 
             qr_buf = generate_qr(sub_link)

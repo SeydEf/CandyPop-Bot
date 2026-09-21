@@ -3,11 +3,12 @@ from __future__ import annotations
 import io
 import logging
 from typing import Any
+
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+from matplotlib import ticker
 
 from db.analytics_model import AnalyticsModel
 from utils.formatting import format_price, to_persian_digits

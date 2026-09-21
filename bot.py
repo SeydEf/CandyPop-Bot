@@ -5,14 +5,17 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import ErrorEvent
 
 from config import BOT_NAME, BOT_TOKEN, PROXY_URL
 from db.database import close_db, init_db
 from handlers import (
     admin,
     admin_broadcast,
+    admin_channel_posts,
     admin_control,
     admin_create_sub,
     admin_sub_manage,
@@ -32,9 +35,6 @@ from services.alert_scheduler import start_alert_scheduler
 from services.inbound_monitor import start_inbound_monitor_scheduler
 from services.ip_checker_scheduler import start_ip_checker_scheduler
 from services.xui_api import close_client
-
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ErrorEvent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,6 +118,7 @@ async def main() -> None:
         admin_sub_manage.router,
         admin_create_sub.router,
         admin_broadcast.router,
+        admin_channel_posts.router,
     )
 
     logger.info(f"Starting {BOT_NAME} Bot...")

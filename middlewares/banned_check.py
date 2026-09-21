@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject
@@ -24,9 +25,12 @@ class BannedCheckMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         user_id: int | None = None
-        if isinstance(event, Message) and event.from_user:
-            user_id = event.from_user.id
-        elif isinstance(event, CallbackQuery) and event.from_user:
+        if (
+            isinstance(event, Message)
+            and event.from_user
+            or isinstance(event, CallbackQuery)
+            and event.from_user
+        ):
             user_id = event.from_user.id
 
         if not user_id:

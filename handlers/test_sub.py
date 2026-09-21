@@ -119,6 +119,7 @@ async def test_subscription(message: types.Message) -> None:
 
         if sub_id:
             from aiogram.types import BufferedInputFile
+
             from utils.helpers import generate_qr
 
             qr_buf = generate_qr(sub_link)

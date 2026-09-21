@@ -5,19 +5,19 @@ import uuid
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
-from db.discounts import validate_discount_code, calculate_discount_amount
+from db.discounts import calculate_discount_amount, validate_discount_code
 from db.models import (
     create_invoice,
     debit_wallet,
+    get_active_client_group,
     get_balance,
     get_card_config,
     update_invoice_status,
-    get_active_client_group,
 )
 from keyboards.inline_kb import (
     card_payment_keyboard,
@@ -226,6 +226,7 @@ async def _build_dashboard_info(
         show_renew = True
     else:
         import time
+
         from db.models import get_alert_config
 
         alert_config = await get_alert_config()

@@ -3,9 +3,9 @@ from __future__ import annotations
 import io
 import uuid
 
+import qrcode
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
-import qrcode
 
 
 def generate_qr(data: str) -> io.BytesIO:
@@ -34,7 +34,7 @@ def generate_email(tg_id: int, username: str | None = None, test: bool = False) 
         return f"{name}_{short}"
 
 
-def gb_to_bytes(gb: int | float) -> int:
+def gb_to_bytes(gb: float) -> int:
     return int(round(gb * 1024 * 1024 * 1024))
 
 
