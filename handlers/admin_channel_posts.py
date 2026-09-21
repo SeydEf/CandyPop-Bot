@@ -34,37 +34,25 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-# نگهداری شناسه‌های ارسالی خود ربات برای جلوگیری از اعمال دوباره کپشن
 _recent_bot_sent_msg_ids: set[int] = set()
 
-# حافظه موقت برای مدیریت آلبوم‌ها (media_group_id -> زمان ثبت)
 _seen_media_groups: dict[str, float] = {}
 
 
 class ChannelPostsStates(StatesGroup):
-    # حالت‌های مدیریت قالب متنی
     waiting_template_title = State()
     waiting_template_text = State()
     waiting_edit_template_text = State()
 
-    # حالت‌های ارسال پست جدید به کانال
     waiting_post_content = State()
     waiting_custom_btn_text = State()
     waiting_custom_btn_url = State()
 
-    # حالت‌های دکمه‌های خودکار کانال
     waiting_auto_btn_custom_text = State()
     waiting_auto_btn_custom_url = State()
 
 
-# -------------------------------------------------------------------------
-# توابع کمکی بررسی دسترسی و اعتبارسنجی
-# -------------------------------------------------------------------------
 def _get_message_html(message: types.Message) -> str:
-    """
-    متن یا کپشن پیام را با حفظ کامل تمام قالب‌بندی‌ها (بولد، ایتالیک، هایپرلینک و...) به صورت HTML استخراج می‌کند.
-    از هر دو حالت موجودیت‌های تلگرام و تگ‌های دستی HTML پشتیبانی می‌کند.
-    """
     entities = message.entities or message.caption_entities or []
     has_formatting = any(
         e.type
@@ -140,12 +128,10 @@ def _is_matching_target_channel(chat: types.Chat, configured_channel: str) -> bo
         return False
     target = _clean_channel_identifier(configured_channel)
 
-    # مقایسه با نام کاربری کانال
     if chat.username:
         if target.lstrip("@").lower() == chat.username.lower():
             return True
 
-    # مقایسه عددی شناسه کانال
     try:
         chat_id_str = str(chat.id)
         raw_chat_num = chat_id_str.removeprefix("-100").removeprefix("-")
@@ -218,9 +204,6 @@ def _apply_template_placeholders(
     return rendered
 
 
-# -------------------------------------------------------------------------
-# ساخت پنل‌ها و کیبوردهای مدیریت در پنل ادمین
-# -------------------------------------------------------------------------
 async def _build_channel_posts_main_panel() -> tuple[str, InlineKeyboardMarkup]:
     posts_config = await get_channel_posts_config()
     lock_config = await get_channel_lock_config()
@@ -579,9 +562,6 @@ async def _build_auto_buttons_panel(
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# -------------------------------------------------------------------------
-# منوها و کال‌بک‌های بخش تنظیمات کانال در ادمین
-# -------------------------------------------------------------------------
 @router.callback_query(F.data == "admin_channel_posts_menu")
 async def admin_channel_posts_menu_handler(
     callback: types.CallbackQuery, state: FSMContext
@@ -904,9 +884,6 @@ async def admin_channel_posts_recv_edit_tpl_text(
     await message.answer(text, reply_markup=kb)
 
 
-# -------------------------------------------------------------------------
-# مدیریت دکمه‌های خودکار کانال (Auto Buttons)
-# -------------------------------------------------------------------------
 @router.callback_query(F.data == "admin_channel_posts_buttons")
 async def admin_channel_posts_buttons_handler(
     callback: types.CallbackQuery, bot: Bot, state: FSMContext
@@ -1019,7 +996,6 @@ async def admin_channel_posts_add_smart_auto_handler(
     title = titles.get(btn_type, "دکمه")
 
     buttons = await get_channel_auto_buttons()
-    # افزودن به صورت ردیف جدید
     buttons.append([{"text": title, "type": btn_type, "value": ""}])
     await set_channel_auto_buttons(buttons)
 
@@ -1151,9 +1127,6 @@ async def admin_channel_posts_reset_handler(
     await callback.answer("تنظیمات بخش کانال به حالت اولیه بازنشانی شد.")
 
 
-# -------------------------------------------------------------------------
-# ابزار ارسال تعاملی پست جدید به کانال (Channel Post Sender)
-# -------------------------------------------------------------------------
 def _build_draft_control_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1750,22 +1723,16 @@ async def channel_draft_send_confirm_handler(
         )
 
 
-# -------------------------------------------------------------------------
-# شنونده رویدادهای ارسالی در کانال (Channel Post Auto-Caption Listener)
-# -------------------------------------------------------------------------
 @router.channel_post()
 async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -> None:
-    # ۱. اگر پیام توسط ابزار ارسال پست ربات فرستاده شده است، صرف‌نظر شود
     if message.message_id in _recent_bot_sent_msg_ids:
         _recent_bot_sent_msg_ids.discard(message.message_id)
         return
 
-    # ۲. بررسی وضعیت فعال بودن کپشن خودکار
     posts_config = await get_channel_posts_config()
     if not posts_config.get("auto_caption_enabled", False):
         return
 
-    # ۳. بررسی تطابق کانال با کانال هدف
     lock_config = await get_channel_lock_config()
     target_channel_cfg = lock_config.get("channel_id", "")
     if not target_channel_cfg or not _is_matching_target_channel(
@@ -1773,7 +1740,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
     ):
         return
 
-    # ۴. مدیریت آلبوم‌ها (Media Groups): اعمال فقط روی اولین بخش آلبوم
     if message.media_group_id:
         now = time.time()
         expired_groups = [
@@ -1786,7 +1752,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
             return
         _seen_media_groups[message.media_group_id] = now
 
-    # ۵. بررسی نوع رسانه
     media_types_cfg = posts_config.get("media_types", {})
     msg_type = "text"
     is_media = False
@@ -1818,7 +1783,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
     if not media_types_cfg.get(msg_type, True):
         return
 
-    # ۶. دریافت قالب فعال و اعمال متغیرها
     active_tpl = await get_active_channel_template()
     tpl_raw_text = active_tpl.get("text", "")
     if not tpl_raw_text.strip():
@@ -1832,7 +1796,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
         lock_config.get("channel_link", ""),
     )
 
-    # ۷. ترکیب متن بر اساس حالت الصاق
     pos_mode = posts_config.get("position_mode", "append")
     if pos_mode == "append":
         if original_text.strip():
@@ -1849,7 +1812,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
     else:
         final_text = f"{original_text}\n\n{rendered_tpl}"
 
-    # ۸. بررسی سقف کاراکتر تلگرام
     max_len = 1024 if is_media else 4096
     if len(final_text) > max_len:
         logger.warning(
@@ -1857,7 +1819,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
         )
         return
 
-    # ۹. آماده‌سازی دکمه‌های شیشه‌ای خودکار
     reply_markup: InlineKeyboardMarkup | None = None
     if posts_config.get("auto_buttons_enabled", False):
         auto_buttons = await get_channel_auto_buttons()
@@ -1865,7 +1826,6 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
             auto_buttons, bot_info.username or ""
         )
 
-    # ۱۰. ویرایش پیام در کانال
     try:
         if is_media:
             await bot.edit_message_caption(

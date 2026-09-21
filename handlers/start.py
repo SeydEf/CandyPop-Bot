@@ -5,6 +5,7 @@ from typing import Any
 
 from aiogram import F, Router, types
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 
 from config import BOT_NAME, SUPPORT_LINK
 from db.models import create_referral, create_user, get_user
@@ -26,11 +27,8 @@ def get_welcome_text(user_name: str | None = None) -> str:
     )
 
 
-WELCOME_TEXT = get_welcome_text()
-
-
 @router.message(CommandStart())
-async def cmd_start(message: types.Message) -> None:
+async def cmd_start(message: types.Message, state: FSMContext) -> None:
     if not message.from_user:
         return
 
@@ -39,8 +37,10 @@ async def cmd_start(message: types.Message) -> None:
     full_name = message.from_user.full_name
 
     referrer_id: int | None = None
+    deep_link_action: str | None = None
+
     if message.text and " " in message.text:
-        payload = message.text.split(maxsplit=1)[1]
+        payload = message.text.split(maxsplit=1)[1].strip()
         if payload.startswith("ref_"):
             try:
                 from utils.formatting import persian_to_english_digits
@@ -51,6 +51,8 @@ async def cmd_start(message: types.Message) -> None:
                     referrer_id = None
             except ValueError:
                 referrer_id = None
+        else:
+            deep_link_action = payload.lower()
 
     existing = await get_user(tg_id)
     is_new_user = existing is None
@@ -62,12 +64,23 @@ async def cmd_start(message: types.Message) -> None:
                 await create_referral(referrer_id, tg_id)
                 logger.info("Referral: %d referred by %d", tg_id, referrer_id)
 
-    await send_welcome(message)
+    if is_new_user or not deep_link_action:
+        await send_welcome(message)
 
-    from services.start_message import send_post_start_message
+        from services.start_message import send_post_start_message
 
-    if message.bot:
-        await send_post_start_message(message.bot, tg_id, is_new_user=is_new_user)
+        if message.bot:
+            await send_post_start_message(message.bot, tg_id, is_new_user=is_new_user)
+
+    if deep_link_action:
+        if deep_link_action == "buy":
+            from handlers.buy import buy_start
+
+            await buy_start(message, state)
+        elif deep_link_action in ("test", "test_sub"):
+            from handlers.test_sub import test_subscription
+
+            await test_subscription(message)
 
 
 async def send_welcome(
