@@ -6,7 +6,7 @@ _PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 _PERSIAN_TO_ENGLISH = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
 
-def to_persian_digits(text: str | int | float) -> str:
+def to_persian_digits(text: str | float) -> str:
     s = str(text)
     return "".join(_PERSIAN_DIGITS[int(ch)] if ch.isdigit() else ch for ch in s)
 
@@ -20,7 +20,7 @@ def format_price(amount: int) -> str:
     return f"{formatted} تومان"
 
 
-def format_size(bytes_val: int | float) -> str:
+def format_size(bytes_val: float) -> str:
     if bytes_val <= 0:
         return "0GB"
     tb = bytes_val / (1024**4)
@@ -37,7 +37,7 @@ def format_size(bytes_val: int | float) -> str:
     return f"{mb:.0f}MB"
 
 
-def format_size_gb(gb: int | float) -> str:
+def format_size_gb(gb: float) -> str:
     if gb == int(gb):
         return f"{int(gb)}GB"
     return f"{gb:.1f}GB"
@@ -60,7 +60,7 @@ def format_remaining_days(expiry_ms: int) -> str:
 
 
 def format_datetime(
-    val: str | int | float | datetime | None, with_seconds: bool = False
+    val: str | float | datetime | None, with_seconds: bool = False
 ) -> str:
     from datetime import datetime, timedelta, timezone
 

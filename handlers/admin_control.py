@@ -558,6 +558,12 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text="📝 مدیریت پست‌ها و کپشن خودکار کانال",
+                    callback_data="admin_channel_posts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="📦 تنظیمات تمدید رزرو شده (Queued Renewal)",
                     callback_data="admin_reserve_renewal_menu",
                 ),
@@ -5179,8 +5185,7 @@ async def admin_disc_r_users_save(message: types.Message, state: FSMContext) -> 
             t = t.strip()
             if not t:
                 continue
-            if t.startswith("@"):
-                t = t[1:]
+            t = t.removeprefix("@")
             clean_t = persian_to_english_digits(t)
             if clean_t.isdigit():
                 users_list.append(int(clean_t))
@@ -8540,7 +8545,7 @@ async def _render_invoices_list(
         search_query=search_query,
     )
 
-    if page >= total_pages and total_pages > 0:
+    if page >= total_pages > 0:
         page = total_pages - 1
         invoices, total_invoices, total_pages = await get_all_invoices_paginated(
             status_filter=status_filter,
@@ -9479,6 +9484,7 @@ async def admin_online_clients_list(
 
     import asyncio
     import math
+
     from db.models import get_user
     from keyboards.inline_kb import admin_online_clients_keyboard
     from services.xui_api import get_client, get_client_traffic, get_online_clients

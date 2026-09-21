@@ -644,6 +644,197 @@ async def reset_channel_lock_config() -> None:
     await set_setting("channel_lock_link", "")
 
 
+DEFAULT_CHANNEL_MEDIA_TYPES: dict[str, bool] = {
+    "text": True,
+    "photo": True,
+    "video": True,
+    "document": True,
+    "audio": True,
+}
+
+DEFAULT_CHANNEL_TEMPLATE: dict[str, str] = {
+    "id": "tpl_default",
+    "title": "قالب پیش‌فرض امضا",
+    "text": "📢 کانال رسمی: {channel_link}\n🤖 ربات خرید اشتراک: @{bot_username}",
+}
+
+DEFAULT_CHANNEL_AUTO_BUTTONS: list[list[dict[str, str]]] = [
+    [
+        {"text": "🛒 خرید اشتراک", "type": "smart_buy", "value": ""},
+        {"text": "🎁 تست رایگان", "type": "smart_test", "value": ""},
+    ]
+]
+
+
+async def get_channel_posts_config() -> dict[str, Any]:
+    enabled_val = await get_setting("channel_posts_auto_caption_enabled", "1")
+    position_mode_val = await get_setting("channel_posts_position_mode", "append")
+    media_types_raw = await get_setting("channel_posts_media_types", "")
+    auto_buttons_enabled_val = await get_setting(
+        "channel_posts_auto_buttons_enabled", "0"
+    )
+    active_template_id = await get_setting(
+        "channel_posts_active_template_id", "tpl_default"
+    )
+    disable_preview_val = await get_setting(
+        "channel_posts_disable_web_page_preview", "1"
+    )
+
+    if media_types_raw:
+        try:
+            media_types = json.loads(media_types_raw)
+            media_types = {**DEFAULT_CHANNEL_MEDIA_TYPES, **media_types}
+        except Exception:
+            media_types = dict(DEFAULT_CHANNEL_MEDIA_TYPES)
+    else:
+        media_types = dict(DEFAULT_CHANNEL_MEDIA_TYPES)
+
+    return {
+        "auto_caption_enabled": enabled_val == "1",
+        "position_mode": (
+            position_mode_val
+            if position_mode_val in ("append", "prepend", "replace")
+            else "append"
+        ),
+        "media_types": media_types,
+        "auto_buttons_enabled": auto_buttons_enabled_val == "1",
+        "active_template_id": active_template_id,
+        "disable_web_page_preview": disable_preview_val == "1",
+    }
+
+
+async def set_channel_posts_config(
+    auto_caption_enabled: bool | None = None,
+    position_mode: str | None = None,
+    media_types: dict[str, bool] | None = None,
+    auto_buttons_enabled: bool | None = None,
+    active_template_id: str | None = None,
+    disable_web_page_preview: bool | None = None,
+) -> None:
+    if auto_caption_enabled is not None:
+        await set_setting(
+            "channel_posts_auto_caption_enabled", "1" if auto_caption_enabled else "0"
+        )
+    if position_mode is not None:
+        await set_setting("channel_posts_position_mode", position_mode)
+    if media_types is not None:
+        await set_setting(
+            "channel_posts_media_types",
+            json.dumps(media_types, ensure_ascii=False),
+        )
+    if auto_buttons_enabled is not None:
+        await set_setting(
+            "channel_posts_auto_buttons_enabled",
+            "1" if auto_buttons_enabled else "0",
+        )
+    if active_template_id is not None:
+        await set_setting("channel_posts_active_template_id", active_template_id)
+    if disable_web_page_preview is not None:
+        await set_setting(
+            "channel_posts_disable_web_page_preview",
+            "1" if disable_web_page_preview else "0",
+        )
+
+
+async def reset_channel_posts_config() -> None:
+    await set_setting("channel_posts_auto_caption_enabled", "1")
+    await set_setting("channel_posts_position_mode", "append")
+    await set_setting(
+        "channel_posts_media_types",
+        json.dumps(DEFAULT_CHANNEL_MEDIA_TYPES, ensure_ascii=False),
+    )
+    await set_setting("channel_posts_auto_buttons_enabled", "0")
+    await set_setting("channel_posts_active_template_id", "tpl_default")
+    await set_setting("channel_posts_disable_web_page_preview", "1")
+    await set_setting(
+        "channel_posts_templates",
+        json.dumps([DEFAULT_CHANNEL_TEMPLATE], ensure_ascii=False),
+    )
+    await set_setting(
+        "channel_posts_auto_buttons",
+        json.dumps(DEFAULT_CHANNEL_AUTO_BUTTONS, ensure_ascii=False),
+    )
+
+
+async def get_channel_templates() -> list[dict[str, Any]]:
+    raw = await get_setting("channel_posts_templates", "")
+    if not raw:
+        return [dict(DEFAULT_CHANNEL_TEMPLATE)]
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list) and data:
+            return data
+    except Exception:
+        pass
+    return [dict(DEFAULT_CHANNEL_TEMPLATE)]
+
+
+async def save_channel_template(
+    template_id: str, title: str, text: str
+) -> list[dict[str, Any]]:
+    templates = await get_channel_templates()
+    found = False
+    for t in templates:
+        if t.get("id") == template_id:
+            t["title"] = title
+            t["text"] = text
+            found = True
+            break
+    if not found:
+        templates.append({"id": template_id, "title": title, "text": text})
+    await set_setting(
+        "channel_posts_templates", json.dumps(templates, ensure_ascii=False)
+    )
+    return templates
+
+
+async def delete_channel_template(template_id: str) -> list[dict[str, Any]]:
+    templates = await get_channel_templates()
+    if len(templates) <= 1:
+        return templates
+    templates = [t for t in templates if t.get("id") != template_id]
+    await set_setting(
+        "channel_posts_templates", json.dumps(templates, ensure_ascii=False)
+    )
+    cfg = await get_channel_posts_config()
+    if cfg["active_template_id"] == template_id and templates:
+        await set_setting("channel_posts_active_template_id", templates[0]["id"])
+    return templates
+
+
+async def set_active_channel_template(template_id: str) -> None:
+    await set_channel_posts_config(active_template_id=template_id)
+
+
+async def get_active_channel_template() -> dict[str, Any]:
+    templates = await get_channel_templates()
+    cfg = await get_channel_posts_config()
+    active_id = cfg["active_template_id"]
+    for tpl in templates:
+        if tpl.get("id") == active_id:
+            return tpl
+    return templates[0] if templates else dict(DEFAULT_CHANNEL_TEMPLATE)
+
+
+async def get_channel_auto_buttons() -> list[list[dict[str, str]]]:
+    raw = await get_setting("channel_posts_auto_buttons", "")
+    if not raw:
+        return [list(r) for r in DEFAULT_CHANNEL_AUTO_BUTTONS]
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return [list(r) for r in DEFAULT_CHANNEL_AUTO_BUTTONS]
+
+
+async def set_channel_auto_buttons(buttons: list[list[dict[str, str]]]) -> None:
+    await set_setting(
+        "channel_posts_auto_buttons", json.dumps(buttons, ensure_ascii=False)
+    )
+
+
 async def get_referral_config() -> dict[str, Any]:
     enabled_val = await get_setting("referral_enabled", "1")
     percent_val = await get_setting("referral_commission_percent", "10")
@@ -1485,6 +1676,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "broadcast": "ارسال پیام همگانی",
     "start_message": "تنظیم پیام پس از استارت",
     "channel_lock": "تنظیمات عضویت اجباری کانال",
+    "channel_posts": "مدیریت پست‌ها و کپشن خودکار کانال",
     "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
     "stats": "مشاهده آمار و گزارشات ربات",
 }
@@ -1514,6 +1706,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "broadcast": True,
     "start_message": True,
     "channel_lock": True,
+    "channel_posts": True,
     "reset_configs": False,
     "stats": True,
 }

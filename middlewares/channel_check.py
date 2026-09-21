@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiogram import BaseMiddleware, Bot
 from aiogram.types import (
@@ -81,11 +82,7 @@ class ChannelCheckMiddleware(BaseMiddleware):
 
         user_id: int | None = None
         user_obj = None
-        if isinstance(event, Message):
-            if event.from_user:
-                user_id = event.from_user.id
-                user_obj = event.from_user
-        elif isinstance(event, CallbackQuery):
+        if isinstance(event, Message) or isinstance(event, CallbackQuery):
             if event.from_user:
                 user_id = event.from_user.id
                 user_obj = event.from_user
