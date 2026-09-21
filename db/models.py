@@ -669,6 +669,7 @@ DEFAULT_CHANNEL_AUTO_BUTTONS: list[list[dict[str, str]]] = [
 async def get_channel_posts_config() -> dict[str, Any]:
     enabled_val = await get_setting("channel_posts_auto_caption_enabled", "1")
     position_mode_val = await get_setting("channel_posts_position_mode", "append")
+    action_mode_val = await get_setting("channel_posts_action_mode", "repost")
     media_types_raw = await get_setting("channel_posts_media_types", "")
     auto_buttons_enabled_val = await get_setting(
         "channel_posts_auto_buttons_enabled", "0"
@@ -696,6 +697,9 @@ async def get_channel_posts_config() -> dict[str, Any]:
             if position_mode_val in ("append", "prepend", "replace")
             else "append"
         ),
+        "action_mode": (
+            action_mode_val if action_mode_val in ("repost", "edit") else "repost"
+        ),
         "media_types": media_types,
         "auto_buttons_enabled": auto_buttons_enabled_val == "1",
         "active_template_id": active_template_id,
@@ -706,6 +710,7 @@ async def get_channel_posts_config() -> dict[str, Any]:
 async def set_channel_posts_config(
     auto_caption_enabled: bool | None = None,
     position_mode: str | None = None,
+    action_mode: str | None = None,
     media_types: dict[str, bool] | None = None,
     auto_buttons_enabled: bool | None = None,
     active_template_id: str | None = None,
@@ -717,6 +722,8 @@ async def set_channel_posts_config(
         )
     if position_mode is not None:
         await set_setting("channel_posts_position_mode", position_mode)
+    if action_mode is not None:
+        await set_setting("channel_posts_action_mode", action_mode)
     if media_types is not None:
         await set_setting(
             "channel_posts_media_types",
@@ -739,6 +746,7 @@ async def set_channel_posts_config(
 async def reset_channel_posts_config() -> None:
     await set_setting("channel_posts_auto_caption_enabled", "1")
     await set_setting("channel_posts_position_mode", "append")
+    await set_setting("channel_posts_action_mode", "repost")
     await set_setting(
         "channel_posts_media_types",
         json.dumps(DEFAULT_CHANNEL_MEDIA_TYPES, ensure_ascii=False),

@@ -34,7 +34,24 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-_recent_bot_sent_msg_ids: set[int] = set()
+_recent_bot_sent_messages: dict[tuple[int, int], float] = {}
+
+
+def _record_bot_sent_message(chat_id: int, message_id: int) -> None:
+    now = time.time()
+    expired = [k for k, ts in _recent_bot_sent_messages.items() if now - ts > 120.0]
+    for k in expired:
+        _recent_bot_sent_messages.pop(k, None)
+    _recent_bot_sent_messages[(chat_id, message_id)] = now
+
+
+def _is_recent_bot_message(chat_id: int, message_id: int) -> bool:
+    now = time.time()
+    ts = _recent_bot_sent_messages.get((chat_id, message_id))
+    if ts and (now - ts <= 120.0):
+        return True
+    return False
+
 
 _seen_media_groups: dict[str, float] = {}
 
@@ -245,10 +262,18 @@ async def _build_channel_posts_main_panel() -> tuple[str, InlineKeyboardMarkup]:
     preview_disabled = posts_config.get("disable_web_page_preview", True)
     preview_status = "🔴 غیرفعال (مخفی)" if preview_disabled else "🟢 فعال (نمایش)"
 
+    action_mode = posts_config.get("action_mode", "repost")
+    action_mode_title = (
+        "✨ حذف و ارسال مجدد (بدون برچسب ویرایش)"
+        if action_mode == "repost"
+        else "✏️ ویرایش درجا (همراه با برچسب ویرایش)"
+    )
+
     text = (
         "📢 <b>مدیریت پست‌ها و کپشن خودکار کانال</b>\n\n"
         "در این بخش می‌توانید کپشن خودکار، امضای پست‌ها و دکمه‌های شیشه‌ای را برای کانال متصل تنظیم کنید.\n\n"
         f"📡 <b>کانال متصل (از عضویت اجباری):</b>\n<code>{target_channel_display}</code>\n\n"
+        f"🎯 <b>شیوه انتشار خودکار:</b> {action_mode_title}\n"
         f"✍️ <b>کپشن خودکار پست‌ها:</b> {auto_caption_status}\n"
         f"📍 <b>نحوه الصاق:</b> {pos_title}\n"
         f"📝 <b>قالب فعال:</b> {active_tpl.get('title', 'پیش‌فرض')}\n"
@@ -265,6 +290,12 @@ async def _build_channel_posts_main_panel() -> tuple[str, InlineKeyboardMarkup]:
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🎯 تغییر شیوه انتشار (ارسال مجدد / ویرایش درجا)",
+                    callback_data="admin_channel_posts_toggle_action_mode",
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     text=toggle_caption_text,
@@ -636,6 +667,27 @@ async def admin_channel_posts_toggle_preview_handler(
         "پیش‌نمایش لینک‌های وب غیرفعال شد (کادر پیش‌نمایش سایت در پیام مخفی می‌شود)."
         if new_val
         else "پیش‌نمایش لینک‌های وب فعال شد (کادر پیش‌نمایش سایت در پیام نمایش داده می‌شود)."
+    )
+    await callback.answer(msg, show_alert=True)
+
+
+@router.callback_query(F.data == "admin_channel_posts_toggle_action_mode")
+async def admin_channel_posts_toggle_action_mode_handler(
+    callback: types.CallbackQuery,
+) -> None:
+    if not await _require_permission(callback, "channel_posts"):
+        return
+    cfg = await get_channel_posts_config()
+    current_mode = cfg.get("action_mode", "repost")
+    new_mode = "edit" if current_mode == "repost" else "repost"
+    await set_channel_posts_config(action_mode=new_mode)
+    text, keyboard = await _build_channel_posts_main_panel()
+    if callback.message:
+        await safe_edit_text(callback.message, text, reply_markup=keyboard)
+    msg = (
+        "شیوه انتشار به «حذف و ارسال مجدد» (بدون برچسب ویرایش) تغییر یافت."
+        if new_mode == "repost"
+        else "شیوه انتشار به «ویرایش درجا» (همراه با برچسب ویرایش شده) تغییر یافت."
     )
     await callback.answer(msg, show_alert=True)
 
@@ -1710,7 +1762,7 @@ async def channel_draft_send_confirm_handler(
         return
 
     if sent_msg:
-        _recent_bot_sent_msg_ids.add(sent_msg.message_id)
+        _record_bot_sent_message(sent_msg.chat.id, sent_msg.message_id)
 
     await state.clear()
     await callback.answer("✅ پست با موفقیت در کانال منتشر شد.", show_alert=True)
@@ -1725,8 +1777,10 @@ async def channel_draft_send_confirm_handler(
 
 @router.channel_post()
 async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -> None:
-    if message.message_id in _recent_bot_sent_msg_ids:
-        _recent_bot_sent_msg_ids.discard(message.message_id)
+    if _is_recent_bot_message(message.chat.id, message.message_id):
+        return
+
+    if message.reply_markup is not None:
         return
 
     posts_config = await get_channel_posts_config()
@@ -1755,28 +1809,29 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
     media_types_cfg = posts_config.get("media_types", {})
     msg_type = "text"
     is_media = False
-    original_text = ""
+    original_text = _get_message_html(message)
 
     if message.photo:
         msg_type = "photo"
         is_media = True
-        original_text = message.caption or ""
-    elif message.video or message.animation:
+    elif message.video:
         msg_type = "video"
         is_media = True
-        original_text = message.caption or ""
+    elif message.animation:
+        msg_type = "animation"
+        is_media = True
     elif message.document:
         msg_type = "document"
         is_media = True
-        original_text = message.caption or ""
-    elif message.audio or message.voice:
+    elif message.audio:
         msg_type = "audio"
         is_media = True
-        original_text = message.caption or ""
+    elif message.voice:
+        msg_type = "voice"
+        is_media = True
     elif message.text:
         msg_type = "text"
         is_media = False
-        original_text = message.text
     else:
         return
 
@@ -1788,6 +1843,10 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
     if not tpl_raw_text.strip():
         return
 
+    raw_content = message.text or message.caption or ""
+    if tpl_raw_text.strip() in raw_content:
+        return
+
     bot_info = await bot.get_me()
     rendered_tpl = _apply_template_placeholders(
         tpl_raw_text,
@@ -1795,6 +1854,9 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
         message.chat,
         lock_config.get("channel_link", ""),
     )
+
+    if rendered_tpl.strip() in raw_content:
+        return
 
     pos_mode = posts_config.get("position_mode", "append")
     if pos_mode == "append":
@@ -1815,16 +1877,169 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
     max_len = 1024 if is_media else 4096
     if len(final_text) > max_len:
         logger.warning(
-            f"Auto-caption text length ({len(final_text)}) exceeds Telegram limit ({max_len}). Skipping edit."
+            f"Auto-caption text length ({len(final_text)}) exceeds Telegram limit ({max_len}). Skipping."
         )
         return
 
     reply_markup: InlineKeyboardMarkup | None = None
-    if posts_config.get("auto_buttons_enabled", False):
+    if posts_config.get("auto_buttons_enabled", False) and not message.media_group_id:
         auto_buttons = await get_channel_auto_buttons()
         reply_markup = _build_inline_keyboard_from_rows(
             auto_buttons, bot_info.username or ""
         )
+
+    action_mode = posts_config.get("action_mode", "repost")
+    preview_opts = LinkPreviewOptions(
+        is_disabled=posts_config.get("disable_web_page_preview", True)
+    )
+
+    if action_mode == "repost" and not message.media_group_id:
+        new_msg: types.Message | None = None
+        try:
+            if msg_type == "text":
+                new_msg = await bot.send_message(
+                    chat_id=message.chat.id,
+                    text=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                    link_preview_options=preview_opts,
+                )
+            elif msg_type == "photo":
+                new_msg = await bot.send_photo(
+                    chat_id=message.chat.id,
+                    photo=message.photo[-1].file_id,
+                    caption=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                )
+            elif msg_type == "video":
+                new_msg = await bot.send_video(
+                    chat_id=message.chat.id,
+                    video=message.video.file_id,
+                    caption=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                )
+            elif msg_type == "animation":
+                new_msg = await bot.send_animation(
+                    chat_id=message.chat.id,
+                    animation=message.animation.file_id,
+                    caption=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                )
+            elif msg_type == "document":
+                new_msg = await bot.send_document(
+                    chat_id=message.chat.id,
+                    document=message.document.file_id,
+                    caption=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                )
+            elif msg_type == "audio":
+                new_msg = await bot.send_audio(
+                    chat_id=message.chat.id,
+                    audio=message.audio.file_id,
+                    caption=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                )
+            elif msg_type == "voice":
+                new_msg = await bot.send_voice(
+                    chat_id=message.chat.id,
+                    voice=message.voice.file_id,
+                    caption=final_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                )
+        except TelegramBadRequest as e:
+            if "can't parse entities" in str(e).lower():
+                logger.warning(
+                    f"HTML entity parse error on reposting channel post {message.message_id}: {e}. Retrying without HTML."
+                )
+                try:
+                    if msg_type == "text":
+                        new_msg = await bot.send_message(
+                            chat_id=message.chat.id,
+                            text=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                            link_preview_options=preview_opts,
+                        )
+                    elif msg_type == "photo":
+                        new_msg = await bot.send_photo(
+                            chat_id=message.chat.id,
+                            photo=message.photo[-1].file_id,
+                            caption=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                        )
+                    elif msg_type == "video":
+                        new_msg = await bot.send_video(
+                            chat_id=message.chat.id,
+                            video=message.video.file_id,
+                            caption=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                        )
+                    elif msg_type == "animation":
+                        new_msg = await bot.send_animation(
+                            chat_id=message.chat.id,
+                            animation=message.animation.file_id,
+                            caption=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                        )
+                    elif msg_type == "document":
+                        new_msg = await bot.send_document(
+                            chat_id=message.chat.id,
+                            document=message.document.file_id,
+                            caption=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                        )
+                    elif msg_type == "audio":
+                        new_msg = await bot.send_audio(
+                            chat_id=message.chat.id,
+                            audio=message.audio.file_id,
+                            caption=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                        )
+                    elif msg_type == "voice":
+                        new_msg = await bot.send_voice(
+                            chat_id=message.chat.id,
+                            voice=message.voice.file_id,
+                            caption=final_text,
+                            reply_markup=reply_markup,
+                            parse_mode=None,
+                        )
+                except Exception as retry_err:
+                    logger.error(
+                        f"Retry repost failed for channel post {message.message_id}: {retry_err}"
+                    )
+                    return
+            else:
+                logger.error(f"Failed to repost channel post {message.message_id}: {e}")
+                return
+        except Exception as e:
+            logger.error(
+                f"Unexpected error when reposting channel post {message.message_id}: {e}"
+            )
+            return
+
+        if new_msg:
+            _record_bot_sent_message(new_msg.chat.id, new_msg.message_id)
+            try:
+                await message.delete()
+                logger.info(
+                    f"Successfully reposted clean message {new_msg.message_id} and deleted original {message.message_id} in channel {message.chat.id} (no edited label)."
+                )
+            except Exception as del_err:
+                logger.warning(
+                    f"Message {new_msg.message_id} reposted, but could not delete original {message.message_id} (bot may lack delete permission): {del_err}"
+                )
+        return
 
     try:
         if is_media:
@@ -1842,19 +2057,17 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
                 text=final_text,
                 reply_markup=reply_markup,
                 parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(
-                    is_disabled=posts_config.get("disable_web_page_preview", True)
-                ),
+                link_preview_options=preview_opts,
             )
         logger.info(
-            f"Auto-caption applied to message {message.message_id} in channel {message.chat.id}"
+            f"Auto-caption edited message {message.message_id} in channel {message.chat.id}"
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e).lower():
             return
         if "can't parse entities" in str(e).lower():
             logger.warning(
-                f"HTML entity parse error on channel post {message.message_id}: {e}. Retrying without HTML parse mode."
+                f"HTML entity parse error on editing channel post {message.message_id}: {e}. Retrying without HTML."
             )
             try:
                 if is_media:
@@ -1872,11 +2085,7 @@ async def channel_post_auto_caption_listener(message: types.Message, bot: Bot) -
                         text=final_text,
                         reply_markup=reply_markup,
                         parse_mode=None,
-                        link_preview_options=LinkPreviewOptions(
-                            is_disabled=posts_config.get(
-                                "disable_web_page_preview", True
-                            )
-                        ),
+                        link_preview_options=preview_opts,
                     )
                 return
             except Exception:
