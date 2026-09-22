@@ -1058,6 +1058,11 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     card_number = card_config["card_number"]
     card_holder = card_config["card_holder"]
 
+    from db.models import get_receipt_config
+
+    receipt_cfg = await get_receipt_config()
+    expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
+
     disc_info = ""
     if discount_code:
         disc_info = (
@@ -1075,7 +1080,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
-        f"⏳ <b>مهلت پرداخت: {to_persian_digits(INVOICE_EXPIRY_MINUTES)} دقیقه</b>\n\n"
+        f"⏳ <b>مهلت پرداخت: {to_persian_digits(expiry_minutes)} دقیقه</b>\n\n"
         f"✨ <i>پس از انتقال وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا اشتراک شما بررسی و فعال شود.</i>"
     )
 
@@ -1087,7 +1092,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     await callback.answer()
 
     asyncio.create_task(
-        _expire_invoice_after(invoice_id, callback, INVOICE_EXPIRY_MINUTES * 60)
+        _expire_invoice_after(invoice_id, callback, expiry_minutes * 60)
     )
 
 

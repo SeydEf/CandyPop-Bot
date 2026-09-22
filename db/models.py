@@ -241,12 +241,16 @@ async def create_invoice(
     payment_method: str = "card",
     discount_code: str | None = None,
     original_amount: int | None = None,
+    expiry_minutes: int | None = None,
 ) -> dict[str, Any]:
     await ensure_user(tg_id)
     db = await get_db()
     invoice_id = uuid4().hex[:12].upper()
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(minutes=INVOICE_EXPIRY_MINUTES)
+    if expiry_minutes is None:
+        receipt_cfg = await get_receipt_config()
+        expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
+    expires_at = now + timedelta(minutes=expiry_minutes)
 
     await db.execute(
         """INSERT INTO invoices (id, tg_id, amount, duration_days, data_gb, users_count, target_email, payment_method, discount_code, original_amount, status, created_at, expires_at)
@@ -1079,7 +1083,8 @@ DEFAULT_RECEIPT_CONFIG: dict[str, Any] = {
     "photo_enabled": True,
     "text_enabled": True,
     "disabled_action": "both",
-    "disabled_text": "⚠️ در حال حاضر امکان ارسال رسید و ثبت خودکار پرداخت غیرفعال می‌باشد. لطفاً جهت پیگیری واریز خود به پشتیبانی پیام دهید.",
+    "disabled_text": "⚠️ در حال حاضر امکان ارسال رسید و ثبت خودکار پرداخت غیرفعال است. لطفاً جهت پیگیری واریز خود به پشتیبانی پیام دهید.",
+    "expiry_minutes": INVOICE_EXPIRY_MINUTES,
 }
 
 
@@ -1091,6 +1096,15 @@ async def get_receipt_config() -> dict[str, Any]:
     custom_text = await get_setting(
         "receipt_disabled_text", DEFAULT_RECEIPT_CONFIG["disabled_text"]
     )
+    expiry_str = await get_setting(
+        "receipt_invoice_expiry_minutes", str(INVOICE_EXPIRY_MINUTES)
+    )
+    try:
+        expiry_minutes = int(expiry_str)
+        if expiry_minutes < 5 or expiry_minutes > 1440:
+            expiry_minutes = INVOICE_EXPIRY_MINUTES
+    except (ValueError, TypeError):
+        expiry_minutes = INVOICE_EXPIRY_MINUTES
 
     return {
         "overall_enabled": overall_str == "1",
@@ -1100,6 +1114,7 @@ async def get_receipt_config() -> dict[str, Any]:
             action_str if action_str in ("alert", "message", "both") else "both"
         ),
         "disabled_text": custom_text or DEFAULT_RECEIPT_CONFIG["disabled_text"],
+        "expiry_minutes": expiry_minutes,
     }
 
 
@@ -1109,6 +1124,7 @@ async def set_receipt_config(
     text_enabled: bool | None = None,
     disabled_action: str | None = None,
     disabled_text: str | None = None,
+    expiry_minutes: int | None = None,
 ) -> None:
     if overall_enabled is not None:
         await set_setting("receipt_overall_enabled", "1" if overall_enabled else "0")
@@ -1120,6 +1136,9 @@ async def set_receipt_config(
         await set_setting("receipt_disabled_action", disabled_action)
     if disabled_text is not None:
         await set_setting("receipt_disabled_text", disabled_text.strip())
+    if expiry_minutes is not None:
+        clamped_exp = max(5, min(1440, expiry_minutes))
+        await set_setting("receipt_invoice_expiry_minutes", str(clamped_exp))
 
 
 async def reset_receipt_config() -> None:
@@ -1128,6 +1147,7 @@ async def reset_receipt_config() -> None:
     await set_setting("receipt_text_enabled", "1")
     await set_setting("receipt_disabled_action", "both")
     await set_setting("receipt_disabled_text", DEFAULT_RECEIPT_CONFIG["disabled_text"])
+    await set_setting("receipt_invoice_expiry_minutes", str(INVOICE_EXPIRY_MINUTES))
 
 
 async def get_all_user_ids() -> list[int]:

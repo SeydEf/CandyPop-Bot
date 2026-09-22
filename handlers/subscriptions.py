@@ -1685,11 +1685,14 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
             f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
         )
 
-    from db.models import get_reserve_renewal_config
+    from db.models import get_receipt_config, get_reserve_renewal_config
 
     reserve_cfg = await get_reserve_renewal_config()
     reserve_enabled = bool(reserve_cfg.get("enabled", True))
     inv_type = "رزرو اشتراک" if reserve_enabled else "تمدید اشتراک"
+
+    receipt_cfg = await get_receipt_config()
+    expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
 
     text = (
         f"💳 <b>فاکتور پرداخت کارت به کارت ({inv_type})</b>\n\n"
@@ -1703,7 +1706,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"💳 <b>شماره کارت مقصد:</b>\n"
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
-        f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
+        f"⏳ <b>مهلت پرداخت:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
         f"📌 <i>پس از واریز دقیق مبلغ، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
     )
 
@@ -1713,6 +1716,14 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         parse_mode="HTML",
     )
     await callback.answer()
+
+    from handlers.buy import _expire_invoice_after
+
+    import asyncio
+
+    asyncio.create_task(
+        _expire_invoice_after(invoice_id, callback, expiry_minutes * 60)
+    )
 
 
 @router.callback_query(F.data.startswith("sub_act_res_confirm_"))

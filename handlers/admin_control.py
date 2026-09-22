@@ -88,6 +88,7 @@ class AdminControlStates(StatesGroup):
     waiting_channel_lock_link = State()
     waiting_invoice_search = State()
     waiting_receipt_disabled_text = State()
+    waiting_receipt_expiry_minutes = State()
     waiting_disc_fixed_amount = State()
     waiting_disc_min_gb = State()
     waiting_disc_max_gb = State()
@@ -7158,13 +7159,16 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
     }
     action_badge = action_titles.get(action, action_titles["both"])
 
+    expiry_minutes = cfg.get("expiry_minutes", 20)
+
     text = (
         f"🧾 <b>تنظیمات دریافت رسید واریز (کارت به کارت)</b>\n\n"
         f"در این بخش می‌توانید نحوه دریافت رسید پرداخت کاربران (عکس، متن یا مسدودسازی کلی) را مدیریت کنید.\n\n"
         f"🔘 <b>وضعیت کلی دریافت رسید:</b> {overall_badge}\n"
         f"📸 <b>ارسال تصویر فیش (عکس):</b> {photo_badge}\n"
         f"📝 <b>ارسال متن و شناسه پیگیری:</b> {text_badge}\n"
-        f"⚡️ <b>واکنش هنگام غیرفعال بودن:</b> {action_badge}\n\n"
+        f"⚡️ <b>واکنش هنگام غیرفعال بودن:</b> {action_badge}\n"
+        f"⏳ <b>مهلت انقضای فاکتورها:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
         f"💬 <b>متن پیام هنگام غیرفعال بودن:</b>\n"
         f"<code>{custom_text}</code>\n"
     )
@@ -7188,6 +7192,12 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
                     text=f"📝 متن: {text_badge}",
                     callback_data="admin_toggle_receipt_text",
                 ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⏳ تنظیم مهلت انقضا ({to_persian_digits(expiry_minutes)} دقیقه)",
+                    callback_data="admin_receipt_config_expiry_menu",
+                )
             ],
             [
                 InlineKeyboardButton(
@@ -7425,6 +7435,222 @@ async def admin_reset_receipt_disabled_text(callback: types.CallbackQuery) -> No
         parse_mode="HTML",
     )
     await callback.answer("✅ متن پیام به پیش‌فرض بازنشانی شد.", show_alert=False)
+
+
+async def _build_receipt_expiry_menu_content() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_receipt_config
+
+    cfg = await get_receipt_config()
+    expiry_minutes = cfg.get("expiry_minutes", 20)
+
+    text = (
+        "⏳ <b>تنظیم زمان انقضای فاکتورهای پرداخت</b>\n\n"
+        f"مهلت پرداخت فاکتورها در حال حاضر <b>{to_persian_digits(expiry_minutes)} دقیقه</b> است.\n"
+        "پس از سپری شدن این مدت (در صورتی که کاربر رسیدی ثبت نکرده باشد)، فاکتور به صورت خودکار منقضی می‌شود.\n\n"
+        "یکی از گزینه‌های سریع زیر را انتخاب کنید یا عدد دلخواه (بین ۵ تا ۱۴۴۰ دقیقه) وارد نمایید:"
+    )
+
+    def _mark(m: int) -> str:
+        return (
+            f"🔘 {to_persian_digits(m)} دقیقه"
+            if m == expiry_minutes
+            else f"{to_persian_digits(m)} دقیقه"
+        )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=_mark(15),
+                    callback_data="admin_receipt_set_expiry:15",
+                ),
+                InlineKeyboardButton(
+                    text=_mark(30),
+                    callback_data="admin_receipt_set_expiry:30",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=_mark(45),
+                    callback_data="admin_receipt_set_expiry:45",
+                ),
+                InlineKeyboardButton(
+                    text=_mark(60),
+                    callback_data="admin_receipt_set_expiry:60",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ وارد کردن عدد دلخواه (دقیقه)",
+                    callback_data="admin_receipt_custom_expiry",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات رسید",
+                    callback_data="admin_receipt_config_menu",
+                )
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_receipt_config_expiry_menu")
+async def admin_receipt_config_expiry_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+    await state.clear()
+
+    from utils.helpers import safe_edit_text
+
+    text, keyboard = await _build_receipt_expiry_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_receipt_set_expiry:"))
+async def admin_receipt_set_expiry(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    raw_val = callback.data.split(":")[-1]
+    try:
+        minutes = int(raw_val)
+    except ValueError:
+        await callback.answer("مقدار نامعتبر است.", show_alert=True)
+        return
+
+    from db.models import set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    await set_receipt_config(expiry_minutes=minutes)
+
+    text, keyboard = await _build_receipt_expiry_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        f"مهلت انقضای فاکتورها به {to_persian_digits(minutes)} دقیقه تغییر یافت."
+    )
+
+
+@router.callback_query(F.data == "admin_receipt_custom_expiry")
+async def admin_receipt_custom_expiry_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_receipt_expiry_minutes)
+    from utils.helpers import safe_edit_text
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_receipt_config_expiry_menu",
+                )
+            ]
+        ]
+    )
+    text = (
+        "✏️ <b>تنظیم زمان دلخواه انقضای فاکتورها:</b>\n\n"
+        "لطفاً مهلت پرداخت فاکتور را به <b>دقیقه</b> ارسال کنید (حداقل ۵ و حداکثر ۱۴۴۰ دقیقه / ۲۴ ساعت).\n\n"
+        "🔸 مثال: <code>25</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_receipt_expiry_minutes, F.text)
+async def admin_recv_receipt_expiry_minutes(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.from_user:
+        return
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_receipt_expiry_menu_content()
+        await message.answer(
+            f"❌ تنظیم زمان لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from utils.formatting import persian_to_english_digits
+
+    cleaned_str = persian_to_english_digits(message.text.strip())
+    try:
+        minutes = int(cleaned_str)
+    except ValueError:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_receipt_config_expiry_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "⚠️ لطفاً یک عدد معتبر به دقیقه ارسال کنید (مثال: <code>25</code>).\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    if minutes < 5 or minutes > 1440:
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_receipt_config_expiry_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "⚠️ مهلت انقضا باید حداقل <b>۵ دقیقه</b> و حداکثر <b>۱۴۴۰ دقیقه (۲۴ ساعت)</b> باشد.\n\n"
+            "لطفاً عدد دیگری ارسال کنید یا از دکمه زیر برای انصراف استفاده نمایید.",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_receipt_config
+
+    await set_receipt_config(expiry_minutes=minutes)
+    await state.clear()
+
+    text, keyboard = await _build_receipt_expiry_menu_content()
+    await message.answer(
+        f"✅ مهلت انقضای فاکتورها با موفقیت به <b>{to_persian_digits(minutes)} دقیقه</b> تغییر یافت.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data == "admin_alert_menu")

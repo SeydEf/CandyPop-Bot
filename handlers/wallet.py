@@ -8,10 +8,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import INVOICE_EXPIRY_MINUTES
-from db.models import create_invoice, get_card_config
+from db.models import create_invoice, get_card_config, get_receipt_config
 from keyboards.inline_kb import card_payment_keyboard, deposit_amount_keyboard
 from keyboards.reply_kb import BTN_INCREASE_WALLET, main_menu_keyboard
-from utils.formatting import format_price, persian_to_english_digits
+from utils.formatting import format_price, persian_to_english_digits, to_persian_digits
 
 logger = logging.getLogger(__name__)
 router = Router(name="wallet")
@@ -104,6 +104,9 @@ async def wallet_deposit_preset(
     card_number = card_config["card_number"]
     card_holder = card_config["card_holder"]
 
+    receipt_cfg = await get_receipt_config()
+    expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
+
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
@@ -111,7 +114,7 @@ async def wallet_deposit_preset(
         f"💳 <b>شماره کارت مقصد:</b>\n"
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
-        f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
+        f"⏳ <b>مهلت پرداخت:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
         f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا حساب شما شارژ شود.</i>"
     )
 
@@ -253,6 +256,9 @@ async def wallet_deposit_custom_input(
     card_number = card_config["card_number"]
     card_holder = card_config["card_holder"]
 
+    receipt_cfg = await get_receipt_config()
+    expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
+
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
@@ -260,7 +266,7 @@ async def wallet_deposit_custom_input(
         f"💳 <b>شماره کارت مقصد:</b>\n"
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
-        f"⏳ <b>مهلت پرداخت:</b> {INVOICE_EXPIRY_MINUTES} دقیقه\n\n"
+        f"⏳ <b>مهلت پرداخت:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
         f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا حساب شما شارژ شود.</i>"
     )
 
