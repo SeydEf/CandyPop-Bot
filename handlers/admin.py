@@ -90,7 +90,8 @@ async def render_admin_notification_view(
     status = inv.get("status", "pending")
     status_badges = {
         "approved": "🟢 تأییدشده",
-        "pending": "🟡 در انتظار تأیید",
+        "under_review": "⏳ در حال بررسی رسید",
+        "pending": "🟡 در انتظار پرداخت",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی‌شده",
     }
@@ -103,16 +104,23 @@ async def render_admin_notification_view(
         base_text += "\n\n✅ <b>این فاکتور قبلاً تأیید شده است.</b>"
     elif status == "rejected":
         base_text += "\n\n❌ <b>این فاکتور توسط ادمین رد شده است.</b>"
+    elif status == "expired":
+        base_text += (
+            "\n\n⌛️ <b>مهلت پرداخت این فاکتور به پایان رسیده و منقضی شده است.</b>"
+        )
 
-    if status == "pending":
+    if status in ("pending", "under_review"):
         kb = admin_payment_review_keyboard(invoice_id)
     else:
+        can_approve = await has_admin_permission(admin_user_id, "approve_invoices")
         can_reapprove = await has_admin_permission(admin_user_id, "reapprove_invoices")
         kb = admin_invoice_processed_keyboard(
             invoice_id=invoice_id,
             tg_id=tg_id,
             is_rejected=(status == "rejected"),
+            is_expired=(status == "expired"),
             can_reapprove=can_reapprove,
+            can_approve=can_approve,
             origin="notif",
         )
 

@@ -8565,6 +8565,7 @@ async def _render_invoices_list(
 
     status_badges = {
         "approved": "🟢 تأییدشده",
+        "under_review": "⏳ در حال بررسی رسید",
         "pending": "🟡 در انتظار",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی",
@@ -8807,6 +8808,7 @@ async def _render_invoice_details(
 
     status_badges = {
         "approved": "🟢 تأییدشده",
+        "under_review": "⏳ در حال بررسی رسید",
         "pending": "🟡 در انتظار تأیید",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی‌شده",
@@ -9192,6 +9194,65 @@ async def admin_invoice_reapprove_confirm(
             callback.message, callback.from_user.id, inv_id, status_filter, page
         )
     await callback.answer("✅ فاکتور با موفقیت تأیید و فعال شد.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("admin_inv_to_review_"))
+async def admin_invoice_to_review(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    from db.models import (
+        get_invoice_details,
+        has_admin_permission,
+        update_invoice_status,
+    )
+
+    if not (
+        await has_admin_permission(callback.from_user.id, "approve_invoices")
+        or await has_admin_permission(callback.from_user.id, "reapprove_invoices")
+    ):
+        await callback.answer(
+            "⛔️ شما دسترسی به تغییر وضعیت یا تأیید فاکتورها را ندارید.",
+            show_alert=True,
+        )
+        return
+    await state.clear()
+
+    parts = callback.data.split("_")
+    if len(parts) < 6:
+        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
+        return
+
+    inv_id = parts[4]
+    origin = parts[5]
+    try:
+        page = int(parts[6])
+    except (IndexError, ValueError):
+        page = 0
+
+    inv = await get_invoice_details(inv_id)
+    if not inv:
+        await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        return
+
+    await update_invoice_status(inv_id, "under_review")
+
+    if origin == "notif":
+        from handlers.admin import render_admin_notification_view
+
+        await render_admin_notification_view(
+            callback.message,
+            inv_id,
+            callback.from_user.id,
+            status_note="🔄 <b>این فاکتور به وضعیت «در حال بررسی» منتقل شد. اکنون می‌توانید آن را تأیید یا رد کنید.</b>",
+        )
+    else:
+        await _render_invoice_details(
+            callback.message, callback.from_user.id, inv_id, origin, page
+        )
+
+    await callback.answer(
+        "✅ فاکتور به وضعیت «در حال بررسی» منتقل شد.", show_alert=True
+    )
 
 
 @router.callback_query(F.data == "admin_add_admin_start")

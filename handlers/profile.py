@@ -127,8 +127,10 @@ async def profile_topup_callback(
 def _format_status_badge(status: str) -> str:
     if status == "approved":
         return "✅ تاییدشده"
+    elif status == "under_review":
+        return "⏳ در حال بررسی رسید"
     elif status == "pending":
-        return "⏳ در انتظار بررسی"
+        return "🟡 در انتظار پرداخت"
     elif status == "expired":
         return "⚠️ منقضی‌شده"
     elif status == "rejected":

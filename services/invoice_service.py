@@ -37,7 +37,7 @@ async def approve_invoice(
         return False, "❌ فاکتور یافت نشد.", None
 
     current_status = invoice.get("status")
-    if not is_reapproval and current_status != "pending":
+    if not is_reapproval and current_status not in ("pending", "under_review"):
         return False, "❌ این فاکتور قبلاً پردازش شده است.", invoice
     if is_reapproval and current_status != "rejected":
         return (

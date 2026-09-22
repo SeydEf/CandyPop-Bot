@@ -2725,6 +2725,8 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
         status = inv.get("status")
         if status == "approved":
             status_str = "🟢 تأییدشده"
+        elif status == "under_review":
+            status_str = "⏳ در حال بررسی رسید"
         elif status == "pending":
             status_str = "🟡 در انتظار"
         elif status == "expired":

@@ -1098,7 +1098,12 @@ async def _expire_invoice_after(
 ) -> None:
     await asyncio.sleep(seconds)
     invoice = await get_invoice(invoice_id)
-    if invoice and invoice["status"] == "pending":
+    if (
+        invoice
+        and invoice["status"] == "pending"
+        and not invoice.get("receipt_file_id")
+        and not invoice.get("receipt_text")
+    ):
         await update_invoice_status(invoice_id, "expired")
         try:
             if callback.message:
@@ -1410,7 +1415,7 @@ async def receive_receipt_photo(
 
     file_id = message.photo[-1].file_id
     await set_invoice_receipt(invoice_id, file_id=file_id)
-    await update_invoice_status(invoice_id, "pending")
+    await update_invoice_status(invoice_id, "under_review")
     await state.clear()
 
     is_topup = invoice.get("target_email") == "TOPUP" or (
@@ -1538,7 +1543,7 @@ async def receive_receipt_text(
 
     receipt_text = message.text.strip()
     await set_invoice_receipt(invoice_id, text=receipt_text)
-    await update_invoice_status(invoice_id, "pending")
+    await update_invoice_status(invoice_id, "under_review")
     await state.clear()
 
     is_topup = invoice.get("target_email") == "TOPUP" or (

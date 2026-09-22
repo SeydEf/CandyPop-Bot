@@ -241,7 +241,9 @@ def admin_invoice_processed_keyboard(
     invoice_id: str,
     tg_id: int,
     is_rejected: bool = False,
+    is_expired: bool = False,
     can_reapprove: bool = False,
+    can_approve: bool = False,
     origin: str = "notif",
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
@@ -251,6 +253,15 @@ def admin_invoice_processed_keyboard(
                 InlineKeyboardButton(
                     text="🔄 بازبینی و تأیید مجدد",
                     callback_data=f"admin_inv_reapprove_ask_{invoice_id}_{origin}_0",
+                )
+            ]
+        )
+    elif is_expired and can_approve:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔄 انتقال به در حال بررسی",
+                    callback_data=f"admin_inv_to_review_{invoice_id}_{origin}_0",
                 )
             ]
         )
@@ -1344,7 +1355,7 @@ def admin_invoice_detail_keyboard(
     rows: list[list[InlineKeyboardButton]] = []
     status = invoice.get("status")
 
-    if can_approve and status == "pending":
+    if can_approve and status in ("pending", "under_review"):
         rows.append(
             [
                 InlineKeyboardButton(
@@ -1364,6 +1375,16 @@ def admin_invoice_detail_keyboard(
                 InlineKeyboardButton(
                     text="🔄 بازبینی و تأیید مجدد",
                     callback_data=f"admin_inv_reapprove_ask_{invoice['id']}_{status_filter}_{page}",
+                )
+            ]
+        )
+
+    if can_approve and status == "expired":
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔄 انتقال به در حال بررسی",
+                    callback_data=f"admin_inv_to_review_{invoice['id']}_{status_filter}_{page}",
                 )
             ]
         )

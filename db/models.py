@@ -372,7 +372,7 @@ async def expire_old_invoices() -> int:
     db = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
-        "UPDATE invoices SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?",
+        "UPDATE invoices SET status = 'expired' WHERE status = 'pending' AND receipt_file_id IS NULL AND receipt_text IS NULL AND expires_at <= ?",
         (now,),
     )
     await db.commit()
@@ -395,7 +395,9 @@ async def get_all_invoices_paginated(
 
     if status_filter == "approved":
         conditions.append("i.status = 'approved'")
-    elif status_filter in ("pending", "rejected", "expired"):
+    elif status_filter == "pending":
+        conditions.append("i.status IN ('pending', 'under_review')")
+    elif status_filter in ("rejected", "expired"):
         conditions.append("i.status = ?")
         params.append(status_filter)
 
