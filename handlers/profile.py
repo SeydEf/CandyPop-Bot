@@ -168,12 +168,22 @@ def _format_invoice_details(inv: dict[str, Any]) -> str:
             f"   👥 ظرفیت همزمان: {to_persian_digits(users)} کاربر"
         )
 
+    timing_str = f"   📅 زمان ثبت: <code>{date_str}</code>\n"
+    if inv.get("processed_at") and inv.get("status") in (
+        "approved",
+        "paid",
+        "rejected",
+    ):
+        proc_dt = format_datetime(inv.get("processed_at"))
+        lbl = "زمان تأیید" if inv.get("status") in ("approved", "paid") else "زمان رد"
+        timing_str += f"   ⏱ {lbl}: <code>{proc_dt}</code>\n"
+
     return (
         f"🧾 <b>فاکتور:</b> <code>{inv_id}</code> | {status_str}\n"
         f"   {item_type}\n"
         f"   💎 مبلغ: <b>{format_price(amount)}</b>\n"
         f"   💳 پرداخت: <b>{pm_str}</b>\n"
-        f"   📅 زمان ثبت: <code>{date_str}</code>\n"
+        f"{timing_str}"
     )
 
 

@@ -1239,7 +1239,15 @@ async def renew_wallet_confirm(
         discount_code=discount_code,
         original_amount=original_price,
     )
-    await update_invoice_status(invoice["id"], "approved")
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await update_invoice_status(
+        invoice["id"],
+        "approved",
+        processed_at=now_iso,
+        processed_by_name="کیف پول (خودکار)",
+    )
 
     if discount_code:
         from db.discounts import increment_discount_usage

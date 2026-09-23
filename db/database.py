@@ -56,7 +56,10 @@ async def init_db() -> None:
             target_email    TEXT,
             payment_method  TEXT DEFAULT 'card',
             discount_code   TEXT,
-            original_amount INTEGER
+            original_amount INTEGER,
+            processed_at    TEXT,
+            processed_by    INTEGER,
+            processed_by_name TEXT
         );
 
         CREATE TABLE IF NOT EXISTS referrals (
@@ -150,6 +153,21 @@ async def init_db() -> None:
         await db.execute(
             "ALTER TABLE discount_usage ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 1"
         )
+    except Exception:
+        pass
+
+    try:
+        await db.execute("ALTER TABLE invoices ADD COLUMN processed_at TEXT")
+    except Exception:
+        pass
+
+    try:
+        await db.execute("ALTER TABLE invoices ADD COLUMN processed_by INTEGER")
+    except Exception:
+        pass
+
+    try:
+        await db.execute("ALTER TABLE invoices ADD COLUMN processed_by_name TEXT")
     except Exception:
         pass
 

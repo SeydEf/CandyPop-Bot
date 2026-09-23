@@ -21,7 +21,12 @@ from db.models import (
 )
 from keyboards.inline_kb import sub_config_links_keyboard
 from services import xui_api
-from utils.formatting import format_price, format_size_gb, to_persian_digits
+from utils.formatting import (
+    format_datetime,
+    format_price,
+    format_size_gb,
+    to_persian_digits,
+)
 from utils.helpers import gb_to_bytes, generate_email, generate_qr
 
 logger = logging.getLogger(__name__)
@@ -31,6 +36,8 @@ async def approve_invoice(
     invoice_id: str,
     bot: Bot,
     is_reapproval: bool = False,
+    admin_user_id: int | None = None,
+    admin_name: str | None = None,
 ) -> tuple[bool, str, dict[str, Any] | None]:
     invoice = await get_invoice(invoice_id)
     if not invoice:
@@ -53,7 +60,18 @@ async def approve_invoice(
     users_count = invoice.get("users_count", 1)
     target_email = invoice.get("target_email")
 
-    await update_invoice_status(invoice_id, "approved")
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    now_dt_str = format_datetime(now_iso)
+
+    await update_invoice_status(
+        invoice_id,
+        "approved",
+        processed_at=now_iso,
+        processed_by=admin_user_id,
+        processed_by_name=admin_name,
+    )
 
     prefix_msg = (
         "✅ <b>پرداخت شما پس از بازبینی مجدد توسط مدیریت تأیید شد و "
@@ -176,5 +194,5 @@ async def approve_invoice(
     except Exception as e:
         logger.exception("Failed to process approval for invoice %s", invoice_id)
         rollback_status = "rejected" if is_reapproval else "pending"
-        await update_invoice_status(invoice_id, rollback_status)
+        await update_invoice_status(invoice_id, rollback_status, clear_processed=True)
         return False, f"خطا در پردازش فاکتور: {e}", invoice

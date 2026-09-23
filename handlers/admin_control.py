@@ -8854,13 +8854,18 @@ async def _render_invoices_list(
                     f"🛍 خرید بسته: {format_size_gb(gb)} | {to_persian_digits(dur)} روز"
                 )
 
-            lines.append(
+            card = (
                 f"{emoji} <b>فاکتور:</b> <code>{short_id}</code> | {st_badge}\n"
                 f"   👤 کاربر: <b>{u_name}</b> ({u_str}) | 🆔 <code>{inv['tg_id']}</code>\n"
                 f"   📦 عملیات: {service_desc}\n"
                 f"   💰 مبلغ: <b>{amount_str}</b> ({method_str})\n"
                 f"   📅 تاریخ ثبت: <code>{dt_str}</code>\n"
             )
+            if inv.get("processed_at") and st in ("approved", "paid", "rejected"):
+                proc_dt = format_datetime(inv.get("processed_at"))
+                lbl = "زمان تأیید" if st in ("approved", "paid") else "زمان رد"
+                card += f"   ⏱ {lbl}: <code>{proc_dt}</code>\n"
+            lines.append(card)
         text = "\n".join(lines)
 
     keyboard = admin_invoices_list_keyboard(
@@ -9088,6 +9093,29 @@ async def _render_invoice_details(
     if inv.get("receipt_file_id"):
         receipt_info += "\n📎 <i>این فاکتور دارای تصویر رسید واریزی است (با دکمه زیر قابل مشاهده است).</i>\n"
 
+    timing_lines = [
+        f"   • تاریخ ثبت: <code>{created_at}</code>",
+        f"   • مهلت پرداخت: <code>{expires_at}</code>",
+    ]
+    if inv.get("processed_at"):
+        proc_at_str = format_datetime(inv.get("processed_at"))
+        proc_by_id = inv.get("processed_by")
+        proc_by_name = inv.get("processed_by_name")
+        if proc_by_id and proc_by_name:
+            p_admin = f'<a href="tg://user?id={proc_by_id}">{proc_by_name}</a>'
+        elif proc_by_name:
+            p_admin = proc_by_name
+        elif proc_by_id:
+            p_admin = f'<a href="tg://user?id={proc_by_id}">{proc_by_id}</a>'
+        else:
+            p_admin = None
+
+        by_str = f" (توسط: {p_admin})" if p_admin else ""
+        action_label = "زمان تأیید" if st in ("approved", "paid") else "زمان رد"
+        timing_lines.append(f"   • {action_label}: <code>{proc_at_str}</code>{by_str}")
+
+    timing_section = "\n".join(timing_lines)
+
     text = (
         f"🧾 <b>جزئیات کامل فاکتور و تراکنش</b>\n\n"
         f"🆔 <b>کد فاکتور:</b> <code>{inv_id}</code>\n"
@@ -9105,8 +9133,7 @@ async def _render_invoice_details(
         f"   • مبلغ نهایی پرداختی: <b>{format_price(amount)}</b>\n"
         f"   • روش پرداخت: <b>{method_str}</b>\n\n"
         f"📅 <b>زمان‌بندی:</b>\n"
-        f"   • تاریخ ثبت: <code>{created_at}</code>\n"
-        f"   • مهلت پرداخت: <code>{expires_at}</code>"
+        f"{timing_section}"
         f"{receipt_info}"
     )
 
@@ -9390,13 +9417,6 @@ async def admin_invoice_reapprove_confirm(
     except ValueError:
         page = 0
 
-    from services.invoice_service import approve_invoice
-
-    success, msg, _ = await approve_invoice(inv_id, bot, is_reapproval=True)
-    if not success:
-        await callback.answer(f"❌ {msg}", show_alert=True)
-        return
-
     import html
 
     admin_name = html.escape(
@@ -9405,6 +9425,19 @@ async def admin_invoice_reapprove_confirm(
         or str(callback.from_user.id)
     )
     admin_mention = f'<a href="tg://user?id={callback.from_user.id}">{admin_name}</a>'
+
+    from services.invoice_service import approve_invoice
+
+    success, msg, _ = await approve_invoice(
+        inv_id,
+        bot,
+        is_reapproval=True,
+        admin_user_id=callback.from_user.id,
+        admin_name=admin_name,
+    )
+    if not success:
+        await callback.answer(f"❌ {msg}", show_alert=True)
+        return
 
     if status_filter == "notif":
         from handlers.admin import render_admin_notification_view
@@ -9460,7 +9493,7 @@ async def admin_invoice_to_review(
         await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
         return
 
-    await update_invoice_status(inv_id, "under_review")
+    await update_invoice_status(inv_id, "under_review", clear_processed=True)
 
     if origin == "notif":
         from handlers.admin import render_admin_notification_view

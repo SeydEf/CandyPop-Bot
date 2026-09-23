@@ -298,11 +298,41 @@ async def get_invoice(invoice_id: str) -> dict[str, Any] | None:
     return None
 
 
-async def update_invoice_status(invoice_id: str, status: str) -> None:
+async def update_invoice_status(
+    invoice_id: str,
+    status: str,
+    processed_at: str | None = None,
+    processed_by: int | None = None,
+    processed_by_name: str | None = None,
+    clear_processed: bool = False,
+) -> None:
     db = await get_db()
-    await db.execute(
-        "UPDATE invoices SET status = ? WHERE id = ?", (status, invoice_id)
-    )
+    if clear_processed:
+        await db.execute(
+            """
+            UPDATE invoices
+            SET status = ?, processed_at = NULL, processed_by = NULL, processed_by_name = NULL
+            WHERE id = ?
+            """,
+            (status, invoice_id),
+        )
+    elif (
+        processed_at is not None
+        or processed_by is not None
+        or processed_by_name is not None
+    ):
+        await db.execute(
+            """
+            UPDATE invoices
+            SET status = ?, processed_at = ?, processed_by = ?, processed_by_name = ?
+            WHERE id = ?
+            """,
+            (status, processed_at, processed_by, processed_by_name, invoice_id),
+        )
+    else:
+        await db.execute(
+            "UPDATE invoices SET status = ? WHERE id = ?", (status, invoice_id)
+        )
     await db.commit()
 
 

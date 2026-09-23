@@ -12,7 +12,7 @@ from db.models import (
     reset_all_test_subs,
     update_invoice_status,
 )
-from utils.formatting import to_persian_digits
+from utils.formatting import format_datetime, to_persian_digits
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -98,12 +98,34 @@ async def render_admin_notification_view(
     badge = status_badges.get(status, status)
     base_text += f"\n\n🔘 <b>وضعیت فعلی:</b> {badge}"
 
+    proc_at = inv.get("processed_at")
+    proc_by_id = inv.get("processed_by")
+    proc_by_name = inv.get("processed_by_name")
+
+    if proc_by_id and proc_by_name:
+        admin_mention = f'<a href="tg://user?id={proc_by_id}">{proc_by_name}</a>'
+    elif proc_by_name:
+        admin_mention = proc_by_name
+    elif proc_by_id:
+        admin_mention = f'<a href="tg://user?id={proc_by_id}">{proc_by_id}</a>'
+    else:
+        admin_mention = "ادمین"
+
+    proc_time_str = format_datetime(proc_at) if proc_at else None
+
     if status_note:
         base_text += f"\n\n{status_note}"
+        if proc_time_str:
+            action_label = "زمان تأیید" if status in ("approved", "paid") else "زمان رد"
+            base_text += f"\n⏱ <b>{action_label}:</b> <code>{proc_time_str}</code> (توسط: {admin_mention})"
     elif status == "approved":
         base_text += "\n\n✅ <b>این فاکتور قبلاً تأیید شده است.</b>"
+        if proc_time_str:
+            base_text += f"\n⏱ <b>زمان تأیید:</b> <code>{proc_time_str}</code> (توسط: {admin_mention})"
     elif status == "rejected":
         base_text += "\n\n❌ <b>این فاکتور توسط ادمین رد شده است.</b>"
+        if proc_time_str:
+            base_text += f"\n⏱ <b>زمان رد:</b> <code>{proc_time_str}</code> (توسط: {admin_mention})"
     elif status == "expired":
         base_text += (
             "\n\n⌛️ <b>مهلت پرداخت این فاکتور به پایان رسیده و منقضی شده است.</b>"
@@ -152,12 +174,8 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     invoice_id = callback.data[len("admin_approve_") :]
     from services.invoice_service import approve_invoice
 
-    success, msg, inv_info = await approve_invoice(invoice_id, bot, is_reapproval=False)
-    if not success:
-        await callback.answer(msg, show_alert=True)
-        return
-
     import html
+    from datetime import datetime, timezone
 
     admin_name = html.escape(
         callback.from_user.full_name
@@ -166,16 +184,31 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
     )
     admin_mention = f'<a href="tg://user?id={callback.from_user.id}">{admin_name}</a>'
 
+    success, msg, inv_info = await approve_invoice(
+        invoice_id,
+        bot,
+        is_reapproval=False,
+        admin_user_id=callback.from_user.id,
+        admin_name=admin_name,
+    )
+    if not success:
+        await callback.answer(msg, show_alert=True)
+        return
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    now_str = format_datetime(now_iso)
+
     admin_text = callback.message.text or callback.message.caption or ""
+    time_line = f"⏱ <b>زمان تأیید:</b> <code>{now_str}</code> (توسط: {admin_mention})"
     if "وضعیت فعلی:" in admin_text:
         admin_text = re.sub(
             r"🔘 <b>وضعیت فعلی:</b> [^\n]+",
             "🔘 <b>وضعیت فعلی:</b> 🟢 تأییدشده",
             admin_text,
         )
-        admin_text += f"\n\n✅ <b>تأیید شد توسط {admin_mention} — {msg}</b>"
+        admin_text += f"\n\n✅ <b>تأیید شد — {msg}</b>\n{time_line}"
     else:
-        admin_text += f"\n\n✅ تأیید شد توسط {admin_mention} — {msg}"
+        admin_text += f"\n\n✅ <b>تأیید شد — {msg}</b>\n{time_line}"
 
     from keyboards.inline_kb import admin_invoice_processed_keyboard
     from utils.helpers import safe_edit_text
@@ -210,15 +243,14 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
         await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
         return
 
-    if invoice["status"] != "pending":
+    if invoice["status"] not in ("pending", "under_review"):
         await callback.answer("❌ این فاکتور قبلاً پردازش شده.", show_alert=True)
         return
 
     tg_id = invoice["tg_id"]
 
-    await update_invoice_status(invoice_id, "rejected")
-
     import html
+    from datetime import datetime, timezone
 
     admin_name = html.escape(
         callback.from_user.full_name
@@ -227,16 +259,28 @@ async def admin_reject(callback: types.CallbackQuery, bot: Bot) -> None:
     )
     admin_mention = f'<a href="tg://user?id={callback.from_user.id}">{admin_name}</a>'
 
+    now_iso = datetime.now(timezone.utc).isoformat()
+    now_str = format_datetime(now_iso)
+
+    await update_invoice_status(
+        invoice_id,
+        "rejected",
+        processed_at=now_iso,
+        processed_by=callback.from_user.id,
+        processed_by_name=admin_name,
+    )
+
     admin_text = callback.message.text or callback.message.caption or ""
+    time_line = f"⏱ <b>زمان رد:</b> <code>{now_str}</code> (توسط: {admin_mention})"
     if "وضعیت فعلی:" in admin_text:
         admin_text = re.sub(
             r"🔘 <b>وضعیت فعلی:</b> [^\n]+",
             "🔘 <b>وضعیت فعلی:</b> 🔴 ردشده",
             admin_text,
         )
-        admin_text += f"\n\n❌ <b>پرداخت توسط ادمین ({admin_mention}) رد شد.</b>"
+        admin_text += f"\n\n❌ <b>پرداخت رد شد.</b>\n{time_line}"
     else:
-        admin_text += f"\n\n❌ رد شد توسط {admin_mention}"
+        admin_text += f"\n\n❌ <b>پرداخت رد شد.</b>\n{time_line}"
 
     from db.models import has_admin_permission
     from keyboards.inline_kb import admin_invoice_processed_keyboard
