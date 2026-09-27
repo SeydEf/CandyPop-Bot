@@ -1572,6 +1572,143 @@ async def reset_reserve_renewal_config() -> None:
     await set_setting("reserve_allow_early_activation", "1")
 
 
+DEFAULT_BACKUP_CONFIG: dict[str, Any] = {
+    "auto_enabled": True,
+    "schedule_time": "00:00",
+    "frequency": "24h",
+}
+
+
+async def get_backup_config() -> dict[str, Any]:
+    auto_str = await get_setting("backup_auto_enabled", "1") or "1"
+    time_str = await get_setting("backup_schedule_time", "00:00") or "00:00"
+    freq_str = await get_setting("backup_frequency", "24h") or "24h"
+    last_run = await get_setting("backup_last_run", "") or ""
+    last_slot = await get_setting("backup_last_run_slot", "") or ""
+
+    if freq_str not in ("6h", "12h", "24h"):
+        freq_str = "24h"
+
+    try:
+        parts = time_str.split(":")
+        h, m = int(parts[0]), int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            time_str = "00:00"
+    except Exception:
+        time_str = "00:00"
+
+    return {
+        "auto_enabled": auto_str == "1",
+        "schedule_time": time_str,
+        "frequency": freq_str,
+        "last_run": last_run,
+        "last_run_slot": last_slot,
+    }
+
+
+async def set_backup_config(
+    auto_enabled: bool | None = None,
+    schedule_time: str | None = None,
+    frequency: str | None = None,
+    last_run: str | None = None,
+    last_run_slot: str | None = None,
+) -> None:
+    if auto_enabled is not None:
+        await set_setting("backup_auto_enabled", "1" if auto_enabled else "0")
+    if schedule_time is not None:
+        await set_setting("backup_schedule_time", schedule_time.strip())
+    if frequency is not None and frequency in ("6h", "12h", "24h"):
+        await set_setting("backup_frequency", frequency)
+    if last_run is not None:
+        await set_setting("backup_last_run", last_run)
+    if last_run_slot is not None:
+        await set_setting("backup_last_run_slot", last_run_slot)
+
+
+async def reset_backup_config() -> None:
+    await set_setting("backup_auto_enabled", "1")
+    await set_setting("backup_schedule_time", "00:00")
+    await set_setting("backup_frequency", "24h")
+
+
+async def get_backup_history() -> list[dict[str, Any]]:
+    raw = await get_setting("backup_history", "[]") or "[]"
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+async def record_backup_event(
+    trigger: str,
+    size_bytes: int,
+    status: str = "success",
+    by_admin: int | None = None,
+    by_admin_name: str = "",
+    error_msg: str = "",
+) -> None:
+    history = await get_backup_history()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "timestamp": now_iso,
+        "trigger": trigger,
+        "size_bytes": size_bytes,
+        "status": status,
+        "by_admin": by_admin,
+        "by_admin_name": by_admin_name,
+        "error": error_msg,
+    }
+    history.insert(0, entry)
+    history = history[:15]
+    await set_setting("backup_history", json.dumps(history))
+    await set_setting("backup_last_run", now_iso)
+
+
+async def get_database_stats() -> dict[str, Any]:
+    db = await get_db()
+    stats: dict[str, Any] = {}
+    async with db.execute("SELECT COUNT(*) FROM users") as c:
+        row = await c.fetchone()
+        stats["users_count"] = row[0] if row else 0
+    async with db.execute("SELECT COUNT(*) FROM users WHERE is_banned = 1") as c:
+        row = await c.fetchone()
+        stats["banned_users_count"] = row[0] if row else 0
+    async with db.execute("SELECT COUNT(*) FROM invoices") as c:
+        row = await c.fetchone()
+        stats["invoices_count"] = row[0] if row else 0
+    async with db.execute(
+        "SELECT COUNT(*) FROM invoices WHERE status = 'approved'"
+    ) as c:
+        row = await c.fetchone()
+        stats["approved_invoices_count"] = row[0] if row else 0
+    async with db.execute(
+        "SELECT COUNT(*) FROM invoices WHERE status = 'pending'"
+    ) as c:
+        row = await c.fetchone()
+        stats["pending_invoices_count"] = row[0] if row else 0
+    async with db.execute(
+        "SELECT COUNT(*) FROM invoices WHERE status = 'rejected'"
+    ) as c:
+        row = await c.fetchone()
+        stats["rejected_invoices_count"] = row[0] if row else 0
+    async with db.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets") as c:
+        row = await c.fetchone()
+        stats["wallets_total_balance"] = row[0] if row else 0
+    async with db.execute(
+        "SELECT COUNT(*) FROM discount_codes WHERE is_active = 1"
+    ) as c:
+        row = await c.fetchone()
+        stats["active_discounts_count"] = row[0] if row else 0
+    async with db.execute("SELECT COUNT(*) FROM bot_admins") as c:
+        row = await c.fetchone()
+        stats["admins_count"] = row[0] if row else 0
+    async with db.execute("SELECT COUNT(*) FROM reserved_renewals") as c:
+        row = await c.fetchone()
+        stats["reserved_renewals_count"] = row[0] if row else 0
+    return stats
+
+
 async def get_reserved_renewal(email: str) -> dict[str, Any] | None:
     db = await get_db()
     async with db.execute(
@@ -1737,6 +1874,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "start_message": "تنظیم پیام پس از استارت",
     "channel_lock": "تنظیمات عضویت اجباری کانال",
     "channel_posts": "مدیریت پست‌ها و کپشن خودکار کانال",
+    "backup": "📦 مدیریت و پشتیبان‌گیری دیتابیس",
     "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
     "stats": "مشاهده آمار و گزارشات ربات",
 }
@@ -1767,6 +1905,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "start_message": True,
     "channel_lock": True,
     "channel_posts": True,
+    "backup": False,
     "reset_configs": False,
     "stats": True,
 }
@@ -1820,6 +1959,27 @@ async def has_admin_permission(tg_id: int, perm_key: str) -> bool:
 
     perms = await get_admin_permissions(tg_id)
     return perms.get(perm_key, False)
+
+
+async def get_admins_with_permission(perm_key: str) -> list[int]:
+    from config import ADMIN_CHAT_ID
+
+    recipients: set[int] = set()
+    if ADMIN_CHAT_ID > 0:
+        recipients.add(ADMIN_CHAT_ID)
+
+    db = await get_db()
+    async with db.execute("SELECT tg_id, permissions FROM bot_admins") as cursor:
+        rows = await cursor.fetchall()
+        for r in rows:
+            tg_id = r["tg_id"]
+            try:
+                perms = json.loads(r["permissions"] or "{}")
+                if perms.get(perm_key, False):
+                    recipients.add(tg_id)
+            except Exception:
+                pass
+    return list(recipients)
 
 
 async def toggle_admin_permission(tg_id: int, perm_key: str) -> dict[str, bool]:

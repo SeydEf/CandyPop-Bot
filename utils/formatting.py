@@ -105,3 +105,6 @@ def format_datetime(
     except Exception:
         clean_str = str(val)[:16].replace("-", "/")
         return to_persian_digits(clean_str)
+
+
+format_datetime_iran = format_datetime

@@ -22,7 +22,6 @@ from db.models import (
 from keyboards.inline_kb import sub_config_links_keyboard
 from services import xui_api
 from utils.formatting import (
-    format_datetime,
     format_price,
     format_size_gb,
     to_persian_digits,
@@ -63,7 +62,6 @@ async def approve_invoice(
     from datetime import datetime, timezone
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    now_dt_str = format_datetime(now_iso)
 
     await update_invoice_status(
         invoice_id,

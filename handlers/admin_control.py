@@ -102,6 +102,8 @@ class AdminControlStates(StatesGroup):
     waiting_inbound_monitor_timeout = State()
     waiting_inbound_monitor_target_host = State()
 
+    waiting_backup_time = State()
+
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
     from db.models import is_owner
@@ -567,6 +569,12 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="📦 تنظیمات تمدید رزرو شده (Queued Renewal)",
                     callback_data="admin_reserve_renewal_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💾 پشتیبان‌گیری و بکاپ دیتابیس (Backup)",
+                    callback_data="admin_backup_menu",
                 ),
             ],
             [
@@ -11826,3 +11834,541 @@ async def admin_reserve_renewal_reset(
         "✅ تنظیمات تمدید رزرو به مقادیر پیش‌فرض بازنشانی شد.",
         show_alert=True,
     )
+
+
+# ---------------------------------------------------------
+# Database Backup Management Handlers
+# ---------------------------------------------------------
+
+
+async def _build_backup_menu_content(
+    user_id: int,
+) -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_backup_config, is_owner
+    from utils.formatting import format_datetime_iran
+
+    cfg = await get_backup_config()
+    auto_enabled = cfg.get("auto_enabled", True)
+    schedule_time = cfg.get("schedule_time", "00:00")
+    frequency = cfg.get("frequency", "24h")
+    last_run = cfg.get("last_run", "")
+
+    status_icon = "🟢" if auto_enabled else "🔴"
+    status_text = "فعال" if auto_enabled else "غیرفعال"
+
+    freq_labels = {
+        "24h": "هر ۲۴ ساعت (یک‌بار در روز)",
+        "12h": "هر ۱۲ ساعت (دو‌بار در روز)",
+        "6h": "هر ۶ ساعت (چهار‌بار در روز)",
+    }
+    freq_label = freq_labels.get(frequency, frequency)
+
+    if last_run:
+        try:
+            formatted_last_run = format_datetime_iran(last_run, with_seconds=True)
+        except Exception:
+            formatted_last_run = to_persian_digits(str(last_run)[:16])
+    else:
+        formatted_last_run = "ثبت نشده"
+
+    user_is_owner = is_owner(user_id)
+
+    text = (
+        "💾 <b>مدیریت و پشتیبان‌گیری از پایگاه داده (Backup)</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "در این بخش می‌توانید فرآیند پشتیبان‌گیری خودکار دیتابیس را پیکربندی کرده یا هر لحظه نسخه پشتیبان را به صورت دستی دریافت کنید.\n\n"
+        f"⚙️ <b>وضعیت پشتیبان‌گیری خودکار:</b> {status_icon} <b>{status_text}</b>\n"
+        f"⏰ <b>ساعت ارسال:</b> <code>{to_persian_digits(schedule_time)}</code> (به وقت تهران)\n"
+        f"🔁 <b>دوره‌های تکرار:</b> {to_persian_digits(freq_label)}\n"
+        f"⏱ <b>آخرین پشتیبان‌گیری:</b> {formatted_last_run}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "💡 <i>پشتیبان‌ها شامل فایل خام SQLite و خروجی متنی SQL Dump در قالب فایل فشرده ZIP هستند.</i>"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if user_is_owner:
+        toggle_btn_text = (
+            "🔴 غیرفعال‌سازی بکاپ خودکار" if auto_enabled else "🟢 فعال‌سازی بکاپ خودکار"
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text,
+                    callback_data="admin_toggle_backup_auto",
+                )
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"⏰ ساعت ارسال ({to_persian_digits(schedule_time)})",
+                    callback_data="admin_backup_set_time",
+                ),
+                InlineKeyboardButton(
+                    text=f"🔁 فرکانس ({to_persian_digits(frequency)})",
+                    callback_data="admin_backup_freq_menu",
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📦 دریافت بکاپ دستی (همین الان)",
+                callback_data="admin_backup_manual_now",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📜 تاریخچه آخرین بکاپ‌ها",
+                callback_data="admin_backup_history",
+            ),
+        ]
+    )
+
+    if user_is_owner:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی تنظیمات به پیش‌فرض",
+                    callback_data="admin_backup_reset_confirm",
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به تنظیمات",
+                callback_data="admin_cancel_to_settings",
+            ),
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin_backup_menu")
+async def admin_backup_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "backup"):
+        return
+    await state.clear()
+    text, keyboard = await _build_backup_menu_content(callback.from_user.id)
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_backup_auto")
+async def admin_toggle_backup_auto_handler(callback: types.CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ تغییر این تنظیم تنها توسط مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+    from db.models import get_backup_config, set_backup_config
+
+    cfg = await get_backup_config()
+    new_val = not cfg.get("auto_enabled", True)
+    await set_backup_config(auto_enabled=new_val)
+    text, keyboard = await _build_backup_menu_content(callback.from_user.id)
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    msg = (
+        "🟢 پشتیبان‌گیری خودکار فعال شد."
+        if new_val
+        else "🔴 پشتیبان‌گیری خودکار غیرفعال شد."
+    )
+    await callback.answer(msg)
+
+
+@router.callback_query(F.data == "admin_backup_set_time")
+async def admin_backup_set_time_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ تغییر این تنظیم تنها توسط مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+    await state.set_state(AdminControlStates.waiting_backup_time)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🕛 ۰۰:۰۰ (۱۲ شب)",
+                    callback_data="admin_backup_quick_time:00:00",
+                ),
+                InlineKeyboardButton(
+                    text="🕒 ۰۳:۰۰ (۳ صبح)",
+                    callback_data="admin_backup_quick_time:03:00",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🕕 ۰۶:۰۰ (۶ صبح)",
+                    callback_data="admin_backup_quick_time:06:00",
+                ),
+                InlineKeyboardButton(
+                    text="🕛 ۱۲:۰۰ (۱۲ ظهر)",
+                    callback_data="admin_backup_quick_time:12:00",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_backup_menu",
+                ),
+            ],
+        ]
+    )
+    text = (
+        "⏰ <b>تنظیم ساعت ارسال نسخه پشتیبان</b>\n\n"
+        "ساعت مورد نظر خود را به وقت تهران با فرمت <code>HH:MM</code> ارسال کنید، یا یکی از گزینه‌های سریع زیر را انتخاب کنید:\n\n"
+        "مثال: <code>00:00</code> یا <code>04:30</code>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_backup_quick_time:"))
+async def admin_backup_quick_time_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ تغییر این تنظیم تنها توسط مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+    new_time = callback.data.split(":", 1)[1]
+    from db.models import set_backup_config
+
+    await set_backup_config(schedule_time=new_time)
+    await state.clear()
+    text, keyboard = await _build_backup_menu_content(callback.from_user.id)
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(f"✅ ساعت ارسال روی {to_persian_digits(new_time)} تنظیم شد.")
+
+
+@router.message(AdminControlStates.waiting_backup_time, F.text)
+async def admin_backup_time_save(message: types.Message, state: FSMContext) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_backup_menu_content(message.from_user.id)
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    raw_time = persian_to_english_digits(message.text.strip())
+    pattern = r"^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$"
+    match = re.match(pattern, raw_time)
+    if not match:
+        await message.answer(
+            "⚠️ فرمت ساعت وارد شده صحیح نیست!\n"
+            "لطفاً ساعت را با فرمت <code>HH:MM</code> بین <code>00:00</code> تا <code>23:59</code> ارسال نمایید یا دستور /cancel را بفرستید."
+        )
+        return
+
+    h = int(match.group(1))
+    m = int(match.group(2))
+    formatted_time = f"{h:02d}:{m:02d}"
+
+    from db.models import set_backup_config
+
+    await set_backup_config(schedule_time=formatted_time)
+    await state.clear()
+    text, keyboard = await _build_backup_menu_content(message.from_user.id)
+    await message.answer(
+        f"✅ ساعت ارسال نسخه پشتیبان با موفقیت به <b>{to_persian_digits(formatted_time)}</b> تغییر یافت.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_backup_freq_menu")
+async def admin_backup_freq_menu_handler(callback: types.CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ تغییر این تنظیم تنها توسط مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+    from db.models import get_backup_config
+
+    cfg = await get_backup_config()
+    cur_freq = cfg.get("frequency", "24h")
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"{'🟢 ' if cur_freq == '24h' else ''}هر ۲۴ ساعت (یک‌بار در روز)",
+                    callback_data="admin_backup_set_freq:24h",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"{'🟢 ' if cur_freq == '12h' else ''}هر ۱۲ ساعت (دو‌بار در روز)",
+                    callback_data="admin_backup_set_freq:12h",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"{'🟢 ' if cur_freq == '6h' else ''}هر ۶ ساعت (چهار‌بار در روز)",
+                    callback_data="admin_backup_set_freq:6h",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به منوی بکاپ",
+                    callback_data="admin_backup_menu",
+                )
+            ],
+        ]
+    )
+    text = (
+        "🔁 <b>انتخاب دوره تکرار پشتیبان‌گیری (فرکانس)</b>\n\n"
+        "مشخص کنید نسخه پشتیبان خودکار در طول شبانه‌روز با چه فاصله‌ای تهیه و ارسال شود:"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_backup_set_freq:"))
+async def admin_backup_set_freq_handler(callback: types.CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ تغییر این تنظیم تنها توسط مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+    freq = callback.data.split(":", 1)[1]
+    if freq in ("6h", "12h", "24h"):
+        from db.models import set_backup_config
+
+        await set_backup_config(frequency=freq)
+    text, keyboard = await _build_backup_menu_content(callback.from_user.id)
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        f"✅ فرکانس به هر {to_persian_digits(freq.replace('h', ''))} ساعت تغییر یافت."
+    )
+
+
+@router.callback_query(F.data == "admin_backup_manual_now")
+async def admin_backup_manual_now_handler(
+    callback: types.CallbackQuery, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "backup"):
+        return
+    await callback.answer(
+        "⏳ در حال تهیه و بسته‌بندی نسخه پشتیبان... لطفاً صبر کنید.",
+        show_alert=False,
+    )
+
+    from services.backup_scheduler import create_and_send_backup
+
+    admin_name = (
+        callback.from_user.full_name
+        or callback.from_user.username
+        or str(callback.from_user.id)
+    )
+    success, err = await create_and_send_backup(
+        bot=bot,
+        trigger="manual",
+        admin_id=callback.from_user.id,
+        admin_name=admin_name,
+    )
+    if success:
+        await callback.answer(
+            "✅ نسخه پشتیبان با موفقیت ساخته شد و در چت خصوصی برای شما ارسال گردید.",
+            show_alert=True,
+        )
+        text, keyboard = await _build_backup_menu_content(callback.from_user.id)
+        await safe_edit_text(
+            callback.message,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    else:
+        await callback.answer(f"❌ خطا در تهیه نسخه پشتیبان: {err}", show_alert=True)
+
+
+@router.callback_query(F.data == "admin_backup_history")
+async def admin_backup_history_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "backup"):
+        return
+    from db.models import get_backup_history
+    from services.backup_scheduler import _format_size_readable
+    from utils.formatting import format_datetime_iran
+
+    history = await get_backup_history()
+    if not history:
+        content = "<i>تاکنون هیچ رویداد پشتیبان‌گیری ثبت نشده است.</i>"
+    else:
+        lines = []
+        for idx, entry in enumerate(history[:10], start=1):
+            ts = entry.get("timestamp", "")
+            formatted_ts = format_datetime_iran(ts, with_seconds=True) if ts else "-"
+            size_b = entry.get("size_bytes", 0)
+            size_str = _format_size_readable(size_b) if size_b else "-"
+            trig = "🤖 خودکار" if entry.get("trigger") == "auto" else "👤 دستی"
+            admin_str = (
+                f" ({entry.get('by_admin_name')})" if entry.get("by_admin_name") else ""
+            )
+            st = "🟢 موفق" if entry.get("status") == "success" else "🔴 ناموفق"
+
+            lines.append(
+                f"<b>{to_persian_digits(idx)}.</b> {trig}{admin_str} | {st}\n"
+                f"   📅 {formatted_ts}\n"
+                f"   💾 حجم: {size_str}"
+            )
+        content = "\n\n".join(lines)
+
+    text = (
+        "📜 <b>تاریخچه آخرین پشتیبان‌گیری‌های ثبت‌شده</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"{content}\n"
+        "━━━━━━━━━━━━━━━━━━━━"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به منوی بکاپ",
+                    callback_data="admin_backup_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_backup_reset_confirm")
+async def admin_backup_reset_confirm_handler(callback: types.CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ این عملیات فقط برای مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+
+    text = (
+        "⚠️ <b>بازنشانی تنظیمات پشتیبان‌گیری</b>\n\n"
+        "آیا از بازنشانی تنظیمات پشتیبان‌گیری پایگاه داده به مقادیر پیش‌فرض اطمینان دارید؟\n\n"
+        "• وضعیت: <b>فعال</b>\n"
+        "• ساعت ارسال: <b>۰۰:۰۰ شب</b>\n"
+        "• فرکانس: <b>هر ۲۴ ساعت</b>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ بله، بازنشانی شود",
+                    callback_data="admin_backup_reset_apply",
+                ),
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data="admin_backup_menu",
+                ),
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_backup_reset_apply")
+async def admin_backup_reset_apply_handler(callback: types.CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer(
+            "⛔️ این عملیات فقط برای مالک اصلی ربات مجاز است.",
+            show_alert=True,
+        )
+        return
+    from db.models import reset_backup_config
+
+    await reset_backup_config()
+    text, keyboard = await _build_backup_menu_content(callback.from_user.id)
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        "✅ تنظیمات پشتیبان‌گیری به حالت پیش‌فرض بازنشانی شد.",
+        show_alert=True,
+    )
+
+
+@router.message(Command("backup"))
+async def admin_backup_command(message: types.Message, bot: Bot) -> None:
+    if not await _require_permission(message, "backup"):
+        return
+    status_msg = await message.answer("⏳ در حال تهیه نسخه پشتیبان از پایگاه داده...")
+    from services.backup_scheduler import create_and_send_backup
+
+    admin_name = (
+        message.from_user.full_name
+        or message.from_user.username
+        or str(message.from_user.id)
+    )
+    success, err = await create_and_send_backup(
+        bot=bot,
+        trigger="manual",
+        admin_id=message.from_user.id,
+        admin_name=admin_name,
+    )
+    try:
+        await status_msg.delete()
+    except Exception:
+        pass
+    if not success:
+        await message.answer(f"❌ خطا در ارسال نسخه پشتیبان: {err}")
