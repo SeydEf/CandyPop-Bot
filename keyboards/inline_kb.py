@@ -213,7 +213,8 @@ def card_payment_keyboard(
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف از خرید", callback_data="buy_cancel"
+                    text="❌ انصراف از خرید",
+                    callback_data=f"cancel_inv_{invoice_id}",
                 ),
             ],
         ]

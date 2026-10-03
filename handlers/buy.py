@@ -1157,9 +1157,23 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
         await callback.answer("❌ متأسفانه فاکتور پیدا نشد.", show_alert=True)
         return
 
+    if invoice["status"] == "cancelled":
+        await callback.answer(
+            "⚠️ این فاکتور قبلاً لغو شده است و امکان پرداخت آن وجود ندارد. لطفاً مجدداً سفارش ثبت فرمایید.",
+            show_alert=True,
+        )
+        return
+
+    if invoice["status"] == "expired":
+        await callback.answer(
+            "⚠️ مهلت پرداخت این فاکتور به پایان رسیده و منقضی شده است. لطفاً مجدداً سفارش ثبت فرمایید.",
+            show_alert=True,
+        )
+        return
+
     if invoice["status"] != "pending":
         await callback.answer(
-            "⚠️ این فاکتور قبلاً پردازش شده یا منقضی شده است.", show_alert=True
+            "⚠️ این فاکتور قبلاً پردازش شده یا نامعتبر است.", show_alert=True
         )
         return
 
@@ -1217,7 +1231,7 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
             [
                 InlineKeyboardButton(
                     text="❌ انصراف از خرید",
-                    callback_data="buy_cancel",
+                    callback_data=f"cancel_inv_{invoice_id}",
                 )
             ]
         ]
@@ -1629,14 +1643,34 @@ async def receive_receipt_text(
         await set_invoice_message_id(invoice_id, primary_msg_id)
 
 
-@router.callback_query(F.data == "buy_cancel")
+@router.callback_query(F.data.startswith("cancel_inv_") | (F.data == "buy_cancel"))
 async def buy_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    invoice_id = None
+    if callback.data and callback.data.startswith("cancel_inv_"):
+        invoice_id = callback.data[len("cancel_inv_") :]
+    if not invoice_id:
+        data = await state.get_data()
+        invoice_id = data.get("invoice_id")
+    if not invoice_id and callback.from_user:
+        from db.models import get_latest_card_invoice_for_user
+
+        latest = await get_latest_card_invoice_for_user(callback.from_user.id)
+        if latest and latest.get("status") == "pending":
+            invoice_id = latest["id"]
+
+    if invoice_id:
+        from db.models import update_invoice_status
+
+        await update_invoice_status(invoice_id, "cancelled")
+
     await state.clear()
+    msg_inv = f" شماره <code>{invoice_id}</code>" if invoice_id else ""
     await callback.message.edit_text(
-        "❌ فرآیند خرید لغو شد. در هر زمان می‌توانید دوباره اقدام کنید.",
+        f"❌ فاکتور{msg_inv} با موفقیت لغو شد.\n\n"
+        "در هر زمان می‌توانید از منوی ربات اقدام به ثبت سفارش یا تمدید فرمایید.",
         parse_mode="HTML",
     )
-    await callback.answer()
+    await callback.answer("عملیات لغو شد.")
 
 
 def _is_likely_receipt_text(text: str) -> bool:
@@ -1700,6 +1734,15 @@ async def _handle_unpaid_receipt_reminder(message: types.Message) -> bool:
     invoice_id = invoice["id"]
     status = invoice.get("status", "")
 
+    if status == "cancelled":
+        await message.answer(
+            f"⚠️ <b>فاکتور کارت به کارت شما لغو شده است.</b>\n\n"
+            f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n\n"
+            f"این فاکتور قبلاً توسط شما لغو شده و امکان پرداخت یا ارسال فیش برای آن وجود ندارد. لطفاً جهت خرید یا تمدید، مجدداً از منوی ربات سفارش جدیدی ثبت فرمایید.",
+            parse_mode="HTML",
+        )
+        return True
+
     if status != "pending" or is_invoice_expired(invoice):
         await message.answer(
             f"⚠️ <b>فاکتور کارت به کارت شما منقضی یا نامعتبر شده است.</b>\n\n"
@@ -1727,7 +1770,7 @@ async def _handle_unpaid_receipt_reminder(message: types.Message) -> bool:
             [
                 InlineKeyboardButton(
                     text="❌ انصراف از خرید",
-                    callback_data="buy_cancel",
+                    callback_data=f"cancel_inv_{invoice_id}",
                 )
             ],
         ]

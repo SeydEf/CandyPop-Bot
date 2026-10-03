@@ -9250,6 +9250,7 @@ async def _render_invoices_list(
         "pending": "در انتظار تأیید 🟡",
         "rejected": "رد شده 🔴",
         "expired": "منقضی شده ⌛️",
+        "cancelled": "لغوشده 🚫",
     }
     status_title = status_titles.get(status_filter, status_filter)
 
@@ -9259,6 +9260,7 @@ async def _render_invoices_list(
         "pending": "🟡 در انتظار",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی",
+        "cancelled": "🚫 لغوشده",
     }
 
     search_badge = (
@@ -9507,6 +9509,7 @@ async def _render_invoice_details(
         "pending": "🟡 در انتظار تأیید",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی‌شده",
+        "cancelled": "🚫 لغوشده",
     }
 
     tg_id = inv["tg_id"]

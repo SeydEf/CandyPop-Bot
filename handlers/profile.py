@@ -135,6 +135,8 @@ def _format_status_badge(status: str) -> str:
         return "⚠️ منقضی‌شده"
     elif status == "rejected":
         return "❌ ردشده"
+    elif status == "cancelled":
+        return "🚫 لغوشده"
     return status
 
 

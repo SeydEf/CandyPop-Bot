@@ -94,6 +94,7 @@ async def render_admin_notification_view(
         "pending": "🟡 در انتظار پرداخت",
         "rejected": "🔴 ردشده",
         "expired": "⌛️ منقضی‌شده",
+        "cancelled": "🚫 لغوشده",
     }
     badge = status_badges.get(status, status)
     base_text += f"\n\n🔘 <b>وضعیت فعلی:</b> {badge}"
