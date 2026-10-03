@@ -89,6 +89,7 @@ class AdminControlStates(StatesGroup):
     waiting_invoice_search = State()
     waiting_receipt_disabled_text = State()
     waiting_receipt_expiry_minutes = State()
+    waiting_receipt_unpaid_reminder_text = State()
     waiting_disc_fixed_amount = State()
     waiting_disc_min_gb = State()
     waiting_disc_max_gb = State()
@@ -7471,10 +7472,13 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
     text_en = cfg["text_enabled"]
     action = cfg["disabled_action"]
     custom_text = cfg["disabled_text"]
+    reminder_unpaid = cfg.get("reminder_unpaid_enabled", True)
+    reminder_text = cfg.get("reminder_unpaid_text", "")
 
     overall_badge = "🟢 فعال" if overall else "🔴 غیرفعال"
     photo_badge = "🟢 مجاز" if photo else "🔴 غیرمجاز"
     text_badge = "🟢 مجاز" if text_en else "🔴 غیرمجاز"
+    reminder_badge = "🟢 فعال" if reminder_unpaid else "🔴 غیرفعال"
 
     action_titles = {
         "both": "🔄 هر دو (پاپ‌آپ + ویرایش پیام)",
@@ -7492,9 +7496,12 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
         f"📸 <b>ارسال تصویر فیش (عکس):</b> {photo_badge}\n"
         f"📝 <b>ارسال متن و شناسه پیگیری:</b> {text_badge}\n"
         f"⚡️ <b>واکنش هنگام غیرفعال بودن:</b> {action_badge}\n"
-        f"⏳ <b>مهلت انقضای فاکتورها:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
+        f"⏳ <b>مهلت انقضای فاکتورها:</b> {to_persian_digits(expiry_minutes)} دقیقه\n"
+        f"🔔 <b>راهنمای عدم فشردن دکمه پرداخت:</b> {reminder_badge}\n\n"
         f"💬 <b>متن پیام هنگام غیرفعال بودن:</b>\n"
-        f"<code>{custom_text}</code>\n"
+        f"<code>{custom_text}</code>\n\n"
+        f"💬 <b>متن پیام راهنمای عدم فشردن دکمه:</b>\n"
+        f"<code>{reminder_text}</code>\n"
     )
 
     overall_btn_text = "🔴 غیرفعال‌سازی کلی" if overall else "🟢 فعال‌سازی کلی"
@@ -7519,6 +7526,12 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
             ],
             [
                 InlineKeyboardButton(
+                    text=f"🔔 راهنمای دکمه پرداخت: {reminder_badge}",
+                    callback_data="admin_toggle_receipt_unpaid_reminder",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text=f"⏳ تنظیم مهلت انقضا ({to_persian_digits(expiry_minutes)} دقیقه)",
                     callback_data="admin_receipt_config_expiry_menu",
                 )
@@ -7531,15 +7544,23 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
             ],
             [
                 InlineKeyboardButton(
-                    text="✏️ ویرایش متن پیام غیرفعال بودن",
+                    text="✏️ ویرایش پیام غیرفعال بودن",
                     callback_data="admin_edit_receipt_disabled_text",
-                )
+                ),
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی پیام",
+                    callback_data="admin_reset_receipt_disabled_text",
+                ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🔄 بازنشانی متن به پیش‌فرض",
-                    callback_data="admin_reset_receipt_disabled_text",
-                )
+                    text="✏️ ویرایش متن راهنمای پرداخت",
+                    callback_data="admin_edit_receipt_unpaid_reminder_text",
+                ),
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی راهنما",
+                    callback_data="admin_reset_receipt_unpaid_reminder_text",
+                ),
             ],
             [
                 InlineKeyboardButton(
@@ -7758,7 +7779,126 @@ async def admin_reset_receipt_disabled_text(callback: types.CallbackQuery) -> No
         reply_markup=keyboard,
         parse_mode="HTML",
     )
-    await callback.answer("✅ متن پیام به پیش‌فرض بازنشانی شد.", show_alert=False)
+    await callback.answer("✅ متن پیام به حالت پیش‌فرض بازنشانی شد.")
+
+
+@router.callback_query(F.data == "admin_toggle_receipt_unpaid_reminder")
+async def admin_toggle_receipt_unpaid_reminder(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import get_receipt_config, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_receipt_config()
+    new_val = not cfg.get("reminder_unpaid_enabled", True)
+    await set_receipt_config(reminder_unpaid_enabled=new_val)
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    st_msg = (
+        "🟢 راهنمای عدم فشردن دکمه پرداخت فعال شد."
+        if new_val
+        else "🔴 راهنمای عدم فشردن دکمه پرداخت غیرفعال شد."
+    )
+    await callback.answer(st_msg, show_alert=False)
+
+
+@router.callback_query(F.data == "admin_edit_receipt_unpaid_reminder_text")
+async def admin_edit_receipt_unpaid_reminder_text_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_receipt_unpaid_reminder_text)
+    from utils.helpers import safe_edit_text
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_receipt_config_menu"
+                )
+            ]
+        ]
+    )
+    text = (
+        "✏️ <b>ویرایش متن پیام راهنمای عدم فشردن دکمه پرداخت:</b>\n\n"
+        "این پیام زمانی به کاربر نمایش داده می‌شود که تصویر یا اطلاعات فیش واریز را بدون زدن دکمه «پرداخت کردم» ارسال کند.\n\n"
+        "💡 <i>می‌توانید از متغیرهای زیر در متن استفاده کنید:</i>\n"
+        "• <code>{invoice_id}</code>: شماره فاکتور\n"
+        "• <code>{amount}</code>: مبلغ فاکتور\n\n"
+        "لطفاً متن جدید را ارسال فرمایید:\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_receipt_unpaid_reminder_text, F.text)
+async def admin_edit_receipt_unpaid_reminder_text_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.from_user:
+        return
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_receipt_config_menu_content()
+        await message.answer(
+            f"❌ ویرایش متن راهنما لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_receipt_config
+
+    new_text = message.text.strip()
+    await set_receipt_config(reminder_unpaid_text=new_text)
+    await state.clear()
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await message.answer(
+        f"✅ متن پیام راهنمای پرداخت با موفقیت به‌روزرسانی شد.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_reset_receipt_unpaid_reminder_text")
+async def admin_reset_receipt_unpaid_reminder_text(
+    callback: types.CallbackQuery,
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import DEFAULT_RECEIPT_CONFIG, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    await set_receipt_config(
+        reminder_unpaid_text=DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
+    )
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer("✅ متن راهنما به حالت پیش‌فرض بازنشانی شد.", show_alert=True)
 
 
 async def _build_receipt_expiry_menu_content() -> tuple[str, InlineKeyboardMarkup]:

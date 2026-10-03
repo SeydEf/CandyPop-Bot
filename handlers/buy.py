@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from aiogram import Bot, F, Router, types
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -1637,3 +1637,123 @@ async def buy_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+def _is_likely_receipt_text(text: str) -> bool:
+    from keyboards.reply_kb import (
+        BTN_BUY,
+        BTN_GUIDE,
+        BTN_INCREASE_WALLET,
+        BTN_INVITE,
+        BTN_MY_SUBS,
+        BTN_PRICING,
+        BTN_PROFILE,
+        BTN_SUPPORT,
+        BTN_TEST,
+    )
+    from utils.formatting import persian_to_english_digits
+
+    clean_text = text.strip()
+    if not clean_text or clean_text.startswith("/"):
+        return False
+
+    standard_buttons = {
+        BTN_BUY,
+        BTN_GUIDE,
+        BTN_INCREASE_WALLET,
+        BTN_INVITE,
+        BTN_MY_SUBS,
+        BTN_PRICING,
+        BTN_PROFILE,
+        BTN_SUPPORT,
+        BTN_TEST,
+    }
+    if clean_text in standard_buttons:
+        return False
+
+    digits_only = [c for c in persian_to_english_digits(clean_text) if c.isdigit()]
+    keywords = ["پیگیری", "تراکنش", "واریز", "کارت", "رسید", "پرداخت"]
+    if len(digits_only) >= 5 or any(kw in clean_text for kw in keywords):
+        return True
+    return False
+
+
+async def _handle_unpaid_receipt_reminder(message: types.Message) -> bool:
+    if not message.from_user:
+        return False
+
+    from db.models import (
+        get_latest_card_invoice_for_user,
+        get_receipt_config,
+        is_invoice_expired,
+    )
+    from utils.formatting import format_price
+
+    receipt_cfg = await get_receipt_config()
+    if not receipt_cfg.get("reminder_unpaid_enabled", True):
+        return False
+
+    invoice = await get_latest_card_invoice_for_user(message.from_user.id)
+    if not invoice:
+        return False
+
+    invoice_id = invoice["id"]
+    status = invoice.get("status", "")
+
+    if status != "pending" or is_invoice_expired(invoice):
+        await message.answer(
+            f"⚠️ <b>فاکتور کارت به کارت شما منقضی یا نامعتبر شده است.</b>\n\n"
+            f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n\n"
+            f"مهلت پرداخت این فاکتور به پایان رسیده است. لطفاً جهت خرید یا تمدید، مجدداً از منوی ربات اقدام فرمایید.",
+            parse_mode="HTML",
+        )
+        return True
+
+    raw_template = receipt_cfg.get("reminder_unpaid_text") or ""
+    amount_str = format_price(invoice.get("amount", 0))
+
+    reminder_msg = raw_template.replace("{invoice_id}", invoice_id).replace(
+        "{amount}", amount_str
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ پرداخت کردم",
+                    callback_data=f"paid_{invoice_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف از خرید",
+                    callback_data="buy_cancel",
+                )
+            ],
+        ]
+    )
+
+    await message.answer(
+        reminder_msg,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    return True
+
+
+@router.message(StateFilter(None), F.photo | F.document)
+async def unhandled_receipt_media_reminder(
+    message: types.Message, state: FSMContext
+) -> None:
+    await _handle_unpaid_receipt_reminder(message)
+
+
+@router.message(
+    StateFilter(None),
+    F.text,
+    lambda msg: bool(msg.text and _is_likely_receipt_text(msg.text)),
+)
+async def unhandled_receipt_text_reminder(
+    message: types.Message, state: FSMContext
+) -> None:
+    await _handle_unpaid_receipt_reminder(message)

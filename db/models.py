@@ -1115,6 +1115,13 @@ DEFAULT_RECEIPT_CONFIG: dict[str, Any] = {
     "disabled_action": "both",
     "disabled_text": "⚠️ در حال حاضر امکان ارسال رسید و ثبت خودکار پرداخت غیرفعال است. لطفاً جهت پیگیری واریز خود به پشتیبانی پیام دهید.",
     "expiry_minutes": INVOICE_EXPIRY_MINUTES,
+    "reminder_unpaid_enabled": True,
+    "reminder_unpaid_text": (
+        "برای ثبت فیش و بررسی توسط پشتیبانی، ابتدا باید روی دکمه <b>«✅ پرداخت کردم»</b> بزنید و سپس رسید خود را ارسال فرمایید.\n\n"
+        "🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        "💰 <b>مبلغ فاکتور:</b> <b>{amount}</b>\n\n"
+        "👇 <i>لطفاً ابتدا روی دکمه «✅ پرداخت کردم» زیر بزنید و مجدداً رسید را ارسال کنید:</i>"
+    ),
 }
 
 
@@ -1128,6 +1135,12 @@ async def get_receipt_config() -> dict[str, Any]:
     )
     expiry_str = await get_setting(
         "receipt_invoice_expiry_minutes", str(INVOICE_EXPIRY_MINUTES)
+    )
+    reminder_unpaid_str = (
+        await get_setting("receipt_reminder_unpaid_enabled", "1") or "1"
+    )
+    reminder_unpaid_text = await get_setting(
+        "receipt_reminder_unpaid_text", DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
     )
     try:
         expiry_minutes = int(expiry_str)
@@ -1145,6 +1158,10 @@ async def get_receipt_config() -> dict[str, Any]:
         ),
         "disabled_text": custom_text or DEFAULT_RECEIPT_CONFIG["disabled_text"],
         "expiry_minutes": expiry_minutes,
+        "reminder_unpaid_enabled": reminder_unpaid_str == "1",
+        "reminder_unpaid_text": (
+            reminder_unpaid_text or DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
+        ),
     }
 
 
@@ -1155,6 +1172,8 @@ async def set_receipt_config(
     disabled_action: str | None = None,
     disabled_text: str | None = None,
     expiry_minutes: int | None = None,
+    reminder_unpaid_enabled: bool | None = None,
+    reminder_unpaid_text: str | None = None,
 ) -> None:
     if overall_enabled is not None:
         await set_setting("receipt_overall_enabled", "1" if overall_enabled else "0")
@@ -1169,6 +1188,12 @@ async def set_receipt_config(
     if expiry_minutes is not None:
         clamped_exp = max(5, min(1440, expiry_minutes))
         await set_setting("receipt_invoice_expiry_minutes", str(clamped_exp))
+    if reminder_unpaid_enabled is not None:
+        await set_setting(
+            "receipt_reminder_unpaid_enabled", "1" if reminder_unpaid_enabled else "0"
+        )
+    if reminder_unpaid_text is not None:
+        await set_setting("receipt_reminder_unpaid_text", reminder_unpaid_text.strip())
 
 
 async def reset_receipt_config() -> None:
@@ -1178,6 +1203,45 @@ async def reset_receipt_config() -> None:
     await set_setting("receipt_disabled_action", "both")
     await set_setting("receipt_disabled_text", DEFAULT_RECEIPT_CONFIG["disabled_text"])
     await set_setting("receipt_invoice_expiry_minutes", str(INVOICE_EXPIRY_MINUTES))
+    await set_setting("receipt_reminder_unpaid_enabled", "1")
+    await set_setting(
+        "receipt_reminder_unpaid_text", DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
+    )
+
+
+async def get_latest_card_invoice_for_user(tg_id: int) -> dict[str, Any] | None:
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        """
+        SELECT * FROM invoices
+        WHERE tg_id = ? AND payment_method = 'card'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (tg_id,),
+    )
+    if rows:
+        return dict(rows[0])
+    return None
+
+
+def is_invoice_expired(invoice: dict[str, Any]) -> bool:
+    if invoice.get("status") == "expired":
+        return True
+    exp_str = invoice.get("expires_at")
+    if exp_str:
+        try:
+            from datetime import datetime, timezone
+
+            if exp_str.endswith("Z"):
+                exp_str = exp_str[:-1] + "+00:00"
+            exp_dt = datetime.fromisoformat(exp_str)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) >= exp_dt
+        except Exception:
+            return False
+    return False
 
 
 async def get_all_user_ids() -> list[int]:
