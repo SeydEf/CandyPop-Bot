@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 import uuid
 
 from aiogram import Bot, F, Router, types
@@ -10,7 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
-from db.discounts import calculate_discount_amount, validate_discount_code
+from db.discounts import validate_discount_code
 from db.models import (
     create_invoice,
     debit_wallet,
@@ -667,6 +668,135 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
     await callback.answer()
 
 
+async def _build_renewal_invoice(
+    data: dict[str, Any],
+    coupon_dc: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    from db.discounts import calculate_discount_amount
+    from db.models import (
+        get_renewal_discount_config,
+        get_reserve_renewal_config,
+    )
+
+    email = data.get("renew_email", "")
+    duration = data.get("duration", 30)
+    users = data.get("users", 1)
+    gb = data.get("gb", 10)
+    original_price = data.get("original_price") or data.get("price", 0)
+
+    bd = await get_price_breakdown(gb, duration, users)
+    if not original_price:
+        original_price = bd["total_price"]
+
+    dur_str = (
+        f" (+{format_price(bd['duration_surcharge'])})"
+        if bd["duration_surcharge"] > 0
+        else ""
+    )
+    user_str = (
+        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    )
+
+    reserve_cfg = await get_reserve_renewal_config()
+    reserve_enabled = bool(reserve_cfg.get("enabled", True))
+    is_change_plan = data.get("is_change_plan", False)
+    if not is_change_plan:
+        title = (
+            "📋 <b>پیش‌فاکتور رزرو با مشخصات فعلی</b>"
+            if reserve_enabled
+            else "📋 <b>پیش‌فاکتور تمدید پلن فعلی</b>"
+        )
+    else:
+        title = (
+            "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
+            if reserve_enabled
+            else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
+        )
+
+    renew_cfg = await get_renewal_discount_config()
+    default_enabled = renew_cfg.get("enabled", False)
+    default_percent = renew_cfg.get("percent", 10)
+    allow_coupon = renew_cfg.get("allow_coupon", True)
+    stack_discounts = renew_cfg.get("stack_discounts", False)
+
+    default_discount_amount = 0
+    coupon_discount_amount = 0
+    coupon_code_str = None
+    coupon_detail = ""
+
+    if coupon_dc and allow_coupon:
+        coupon_code_str = coupon_dc.get("code")
+        c_amt, _ = calculate_discount_amount(coupon_dc, original_price)
+        coupon_discount_amount = c_amt
+        rules = coupon_dc.get("rules") or {}
+        if rules.get("discount_type") == "fixed":
+            coupon_detail = f"{format_price(rules.get('amount', 0))} نقدی"
+        else:
+            pct = rules.get("amount") or coupon_dc.get("discount_percent", 0)
+            coupon_detail = f"{to_persian_digits(pct)}٪"
+
+    if default_enabled:
+        default_discount_amount = int(original_price * (default_percent / 100.0))
+
+    if coupon_dc and allow_coupon:
+        if default_enabled and stack_discounts:
+            rules = coupon_dc.get("rules") or {}
+            if rules.get("discount_type") == "fixed":
+                total_discount = min(
+                    original_price, default_discount_amount + coupon_discount_amount
+                )
+            else:
+                c_pct = rules.get("amount") or coupon_dc.get("discount_percent", 0)
+                tot_pct = min(100, default_percent + c_pct)
+                total_discount = int(original_price * (tot_pct / 100.0))
+        elif default_enabled and not stack_discounts:
+            total_discount = min(original_price, coupon_discount_amount)
+            default_discount_amount = 0
+        else:
+            total_discount = min(original_price, coupon_discount_amount)
+    else:
+        total_discount = min(original_price, default_discount_amount)
+
+    final_price = max(0, original_price - total_discount)
+
+    text = (
+        f"{title}\n\n"
+        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+        f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n"
+        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
+        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+    )
+
+    if total_discount > 0:
+        text += f"💵 <b>مبلغ پایه:</b> <s>{format_price(original_price)}</s>\n"
+        if default_discount_amount > 0:
+            text += f"🎁 <b>تخفیف ویژه تمدید ({to_persian_digits(default_percent)}٪):</b> <code>-{format_price(default_discount_amount)}</code>\n"
+        if coupon_code_str:
+            text += f"🏷️ <b>کد تخفیف (<code>{coupon_code_str}</code> - {coupon_detail}):</b> <code>-{format_price(coupon_discount_amount)}</code>\n"
+        if default_discount_amount > 0 and coupon_code_str and stack_discounts:
+            text += f"📉 <b>مجموع سود شما:</b> <b>{format_price(total_discount)}</b>\n"
+        text += (
+            f"\n💎 <b>مبلغ کل قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
+        )
+    else:
+        text += f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
+
+    text += "💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
+
+    pricing_info = {
+        "original_price": original_price,
+        "final_price": final_price,
+        "total_discount": total_discount,
+        "coupon_code": coupon_code_str,
+        "coupon_discount_amount": coupon_discount_amount,
+        "allow_coupon": allow_coupon,
+        "has_coupon": bool(coupon_code_str),
+        "default_enabled": default_enabled,
+        "default_discount_amount": default_discount_amount,
+    }
+    return text, pricing_info
+
+
 @router.callback_query(F.data == "renew_same")
 async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
@@ -691,43 +821,29 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
         duration=duration,
         users=current_users,
         gb=current_gb,
+        original_price=price,
         price=price,
         is_change_plan=False,
     )
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    from db.models import get_reserve_renewal_config
-
-    reserve_cfg = await get_reserve_renewal_config()
-    reserve_enabled = bool(reserve_cfg.get("enabled", True))
-    same_plan_title = (
-        "📋 <b>پیش‌فاکتور رزرو با مشخصات فعلی</b>"
-        if reserve_enabled
-        else "📋 <b>پیش‌فاکتور تمدید پلن فعلی</b>"
+    data = await state.get_data()
+    text, p_info = await _build_renewal_invoice(data)
+    await state.update_data(
+        price=p_info["final_price"],
+        final_price=p_info["final_price"],
+        original_price=p_info["original_price"],
+        discount_code=None,
+        discount_amount=p_info["total_discount"],
     )
 
-    text = (
-        f"{same_plan_title}\n\n"
-        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(current_users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(current_gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
-    )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
         reply_markup=renew_payment_method_keyboard(
-            is_change_plan=False, card_enabled=card_cfg.get("enabled", True)
+            is_change_plan=False,
+            has_discount=False,
+            card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=p_info["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -874,49 +990,37 @@ async def renew_custom_duration_input(
     duration = days
     await state.update_data(duration=duration)
     data = await state.get_data()
-    email = data.get("renew_email", "")
     gb = data.get("gb", 30)
     users = data.get("users", 1)
 
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]
-    await state.update_data(price=price)
-
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    await state.update_data(
+        original_price=price,
+        price=price,
+        is_change_plan=True,
     )
 
-    from db.models import get_reserve_renewal_config
-
-    reserve_cfg = await get_reserve_renewal_config()
-    reserve_enabled = bool(reserve_cfg.get("enabled", True))
-    dur_inv_title = (
-        "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
-        if reserve_enabled
-        else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
+    data = await state.get_data()
+    text, p_info = await _build_renewal_invoice(data)
+    await state.update_data(
+        price=p_info["final_price"],
+        final_price=p_info["final_price"],
+        original_price=p_info["original_price"],
+        discount_code=None,
+        discount_amount=p_info["total_discount"],
     )
 
-    text = (
-        f"{dur_inv_title}\n\n"
-        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
-    )
     from keyboards.inline_kb import renew_payment_method_keyboard
 
     card_cfg = await get_card_config()
     await message.answer(
         text,
         reply_markup=renew_payment_method_keyboard(
-            is_change_plan=True, card_enabled=card_cfg.get("enabled", True)
+            is_change_plan=True,
+            has_discount=False,
+            card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=p_info["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -930,50 +1034,38 @@ async def renew_select_duration(
     await state.update_data(duration=duration)
 
     data = await state.get_data()
-    email = data.get("renew_email", "")
     gb = data.get("gb", 30)
     users = data.get("users", 1)
 
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]
 
-    await state.update_data(price=price)
-
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
+    await state.update_data(
+        original_price=price,
+        price=price,
+        is_change_plan=True,
     )
 
-    from db.models import get_reserve_renewal_config
-
-    reserve_cfg = await get_reserve_renewal_config()
-    reserve_enabled = bool(reserve_cfg.get("enabled", True))
-    dur_inv_title = (
-        "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
-        if reserve_enabled
-        else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
+    data = await state.get_data()
+    text, p_info = await _build_renewal_invoice(data)
+    await state.update_data(
+        price=p_info["final_price"],
+        final_price=p_info["final_price"],
+        original_price=p_info["original_price"],
+        discount_code=None,
+        discount_amount=p_info["total_discount"],
     )
 
-    text = (
-        f"{dur_inv_title}\n\n"
-        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
-    )
     from keyboards.inline_kb import renew_payment_method_keyboard
 
     card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
         reply_markup=renew_payment_method_keyboard(
-            is_change_plan=True, card_enabled=card_cfg.get("enabled", True)
+            is_change_plan=True,
+            has_discount=False,
+            card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=p_info["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1352,9 +1444,20 @@ async def renew_wallet_confirm(
 async def renew_discount_apply_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
+    from db.models import get_renewal_discount_config
+
+    renew_cfg = await get_renewal_discount_config()
+    if not renew_cfg.get("allow_coupon", True):
+        await callback.answer(
+            "❌ امکان استفاده از کد تخفیف برای تمدید اشتراک توسط مدیریت غیرفعال شده است.",
+            show_alert=True,
+        )
+        return
+
     data = await state.get_data()
     price = data.get("price", 0)
     await state.update_data(original_price=data.get("original_price", price))
+    await state.set_state(SubStates.waiting_renew_discount)
     cancel_kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -1398,32 +1501,24 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
     original_price = data.get("original_price") or data.get("price", 0)
 
     if message.text.strip() == "/cancel":
-        await state.clear()
-        bd = await get_price_breakdown(gb, duration, users)
-        dur_str = (
-            f" (+{format_price(bd['duration_surcharge'])})"
-            if bd["duration_surcharge"] > 0
-            else ""
+        await state.set_state(None)
+        text, p_info = await _build_renewal_invoice(data, coupon_dc=None)
+        await state.update_data(
+            price=p_info["final_price"],
+            final_price=p_info["final_price"],
+            original_price=p_info["original_price"],
+            discount_code=None,
+            discount_amount=p_info["total_discount"],
         )
-        user_str = (
-            f" (+{format_price(bd['user_surcharge'])})"
-            if bd["user_surcharge"] > 0
-            else ""
-        )
-        text = (
-            f"📦 <b>خلاصه سفارش تمدید</b>\n\n"
-            f"📦 نام سرویس: {email}\n"
-            f"⏱ مدت جدید: {duration} روز{dur_str}\n"
-            f"👤 تعداد کاربر جدید: {to_persian_digits(users)} کاربر{user_str}\n"
-            f"📊 حجم جدید: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-            f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-            f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
-        )
+        is_change_plan = data.get("is_change_plan", False)
         card_cfg = await get_card_config()
         await message.answer(
             text,
             reply_markup=renew_payment_method_keyboard(
-                has_discount=False, card_enabled=card_cfg.get("enabled", True)
+                is_change_plan=is_change_plan,
+                has_discount=False,
+                card_enabled=card_cfg.get("enabled", True),
+                allow_coupon=p_info["allow_coupon"],
             ),
             parse_mode="HTML",
         )
@@ -1464,54 +1559,27 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
         )
         return
 
-    discount_amount, final_price = calculate_discount_amount(dc, original_price)
-    clean_code = dc["code"]
-    rules = dc.get("rules") or {}
-    disc_type = rules.get("discount_type", "percent")
-    if disc_type == "fixed":
-        disc_label = f"{format_price(rules.get('amount', 0))} تخفیف نقدی"
-    else:
-        percent = rules.get("amount") or dc["discount_percent"]
-        disc_label = f"{to_persian_digits(percent)}٪ تخفیف"
+    text, p_info = await _build_renewal_invoice(data, coupon_dc=dc)
 
+    await state.set_state(None)
     await state.update_data(
-        discount_code=clean_code,
+        discount_code=p_info["coupon_code"],
         discount_percent=dc.get("discount_percent", 0),
-        discount_amount=discount_amount,
-        price=final_price,
-        original_price=original_price,
+        discount_amount=p_info["total_discount"],
+        price=p_info["final_price"],
+        final_price=p_info["final_price"],
+        original_price=p_info["original_price"],
     )
 
-    bd = await get_price_breakdown(gb, duration, users)
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    text = (
-        f"🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n\n"
-        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💰 <b>مبلغ اصلی:</b> <s>{format_price(original_price)}</s>\n"
-        f"🎁 <b>کد تخفیف:</b> <code>{clean_code}</code> (<b>{disc_label}</b>)\n"
-        f"📉 <b>سود شما از این خرید:</b> {format_price(discount_amount)}\n"
-        f"💎 <b>مبلغ نهایی قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
-    )
     is_change_plan = data.get("is_change_plan", False)
     card_cfg = await get_card_config()
     await message.answer(
-        text,
+        "🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n\n" + text,
         reply_markup=renew_payment_method_keyboard(
             is_change_plan=is_change_plan,
             has_discount=True,
             card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=p_info["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1521,41 +1589,14 @@ async def renew_discount_process(message: types.Message, state: FSMContext) -> N
 async def renew_discount_cancel_handler(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
+    await state.set_state(None)
     data = await state.get_data()
-    email = data.get("renew_email", "")
-    duration = data.get("duration", 30)
-    users = data.get("users", 1)
-    gb = data.get("gb", 10)
-    original_price = data.get("original_price") or data.get("price", 0)
-
-    await state.clear()
-    bd = await get_price_breakdown(gb, duration, users)
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-    from db.models import get_reserve_renewal_config
-
-    reserve_cfg = await get_reserve_renewal_config()
-    reserve_enabled = bool(reserve_cfg.get("enabled", True))
-    summary_title = (
-        "📦 <b>خلاصه سفارش رزرو اشتراک</b>"
-        if reserve_enabled
-        else "📦 <b>خلاصه سفارش تمدید</b>"
-    )
-
-    text = (
-        f"{summary_title}\n\n"
-        f"📦 نام سرویس: {email}\n"
-        f"⏱ مدت جدید: {duration} روز{dur_str}\n"
-        f"👤 تعداد کاربر جدید: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم جدید: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💰 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 <b>روش پرداخت را انتخاب کنید:</b>"
+    text, p_info = await _build_renewal_invoice(data)
+    await state.update_data(
+        price=p_info["final_price"],
+        final_price=p_info["final_price"],
+        original_price=p_info["original_price"],
+        discount_amount=p_info["total_discount"],
     )
     is_change_plan = data.get("is_change_plan", False)
     card_cfg = await get_card_config()
@@ -1563,8 +1604,9 @@ async def renew_discount_cancel_handler(
         text,
         reply_markup=renew_payment_method_keyboard(
             is_change_plan=is_change_plan,
-            has_discount=False,
+            has_discount=bool(data.get("discount_code")),
             card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=p_info["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1575,47 +1617,19 @@ async def renew_discount_cancel_handler(
 async def renew_discount_remove(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    data = await state.get_data()
-    email = data.get("renew_email", "")
-    duration = data.get("duration", 30)
-    users = data.get("users", 1)
-    gb = data.get("gb", 10)
-    original_price = data.get("original_price") or data.get("price", 0)
-
     await state.update_data(
         discount_code=None,
         discount_percent=None,
-        price=original_price,
     )
-
-    bd = await get_price_breakdown(gb, duration, users)
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    from db.models import get_reserve_renewal_config
-
-    reserve_cfg = await get_reserve_renewal_config()
-    reserve_enabled = bool(reserve_cfg.get("enabled", True))
-    cancel_disc_title = (
-        "📋 <b>پیش‌فاکتور رزرو اشتراک</b>"
-        if reserve_enabled
-        else "📋 <b>پیش‌فاکتور تمدید اشتراک</b>"
-    )
-
-    text = (
-        f"{cancel_disc_title}\n\n"
-        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+    data = await state.get_data()
+    text, p_info = await _build_renewal_invoice(data, coupon_dc=None)
+    await state.update_data(
+        price=p_info["final_price"],
+        final_price=p_info["final_price"],
+        original_price=p_info["original_price"],
+        discount_code=None,
+        discount_percent=None,
+        discount_amount=p_info["total_discount"],
     )
     is_change_plan = data.get("is_change_plan", False)
     card_cfg = await get_card_config()
@@ -1625,6 +1639,7 @@ async def renew_discount_remove(
             is_change_plan=is_change_plan,
             has_discount=False,
             card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=p_info["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1653,9 +1668,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
     discount_code = data.get("discount_code")
     original_price = data.get("original_price", price)
     final_price = data.get("final_price", price)
-    payable_amount = (
-        final_price if (discount_code and final_price is not None) else price
-    )
+    payable_amount = final_price if final_price is not None else price
     tg_id = callback.from_user.id
 
     invoice = await create_invoice(
@@ -1687,11 +1700,12 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
     card_holder = card_config["card_holder"]
 
     disc_info = ""
-    if discount_code:
-        disc_info = (
-            f"💵 <b>مبلغ اولیه:</b> <s>{format_price(original_price)}</s>\n"
-            f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
-        )
+    if original_price > payable_amount:
+        disc_info = f"💵 <b>مبلغ پایه:</b> <s>{format_price(original_price)}</s>\n"
+        if discount_code:
+            disc_info += f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
+        else:
+            disc_info += "🎁 <b>تخفیف ویژه تمدید اشتراک</b>\n"
 
     from db.models import get_receipt_config, get_reserve_renewal_config
 

@@ -1267,12 +1267,15 @@ async def _build_admin_invoice_notification_text(
     orig_amount = invoice.get("original_amount") or invoice["amount"]
     disc_info = ""
     has_discount = False
-    if disc_code and orig_amount > invoice["amount"]:
+    if orig_amount > invoice["amount"]:
         has_discount = True
-        disc_info = (
-            f"🏷️ <b>کد تخفیف:</b> <code>{disc_code}</code>\n"
-            f"💵 <b>مبلغ اولیه:</b> <s>{format_price(orig_amount)}</s>\n"
-        )
+        disc_info = f"💵 <b>مبلغ:</b> <s>{format_price(orig_amount)}</s>\n"
+        if disc_code:
+            disc_info += f"🏷️ <b>کد تخفیف:</b> <code>{disc_code}</code>\n"
+        elif is_renewal:
+            disc_info += "🎁 <b>تخفیف ویژه تمدید اشتراک</b>\n"
+        else:
+            disc_info += "🎁 <b>تخفیف پیش‌فرض</b>\n"
 
     if has_discount:
         price_line = f"💰 <b>مبلغ واریزی نهایی (تخفیف‌خورده):</b> <b>{format_price(invoice['amount'])}</b>\n"

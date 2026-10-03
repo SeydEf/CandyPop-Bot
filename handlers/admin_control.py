@@ -103,6 +103,7 @@ class AdminControlStates(StatesGroup):
     waiting_inbound_monitor_target_host = State()
 
     waiting_backup_time = State()
+    waiting_renewal_discount_percent = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -3349,7 +3350,13 @@ async def admin_discounts_menu(
             InlineKeyboardButton(
                 text="➕ ساخت کد تخفیف جدید", callback_data="admin_disc_create_menu"
             )
-        ]
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔄 تنظیمات تخفیف تمدید اشتراک",
+                callback_data="admin_renewal_discount_menu",
+            )
+        ],
     ]
 
     for dc in codes[:10]:
@@ -5536,6 +5543,315 @@ async def admin_disc_r_exp_custom_save(
     text, kb = await _build_disc_rules_menu_content(code)
     await message.answer(
         f"✅ تاریخ انقضای کد <code>{code}</code> تنظیم شد: <b>{exp_desc}</b>\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+# ---------------------------------------------------------
+# ساب‌پنل تنظیمات تخفیف پیش‌فرض تمدید اشتراک
+# ---------------------------------------------------------
+async def _build_renewal_discount_menu_content() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_renewal_discount_config
+
+    cfg = await get_renewal_discount_config()
+    enabled = cfg.get("enabled", False)
+    percent = cfg.get("percent", 10)
+    allow_coupon = cfg.get("allow_coupon", True)
+    stack_discounts = cfg.get("stack_discounts", False)
+
+    status_str = "🟢 فعال" if enabled else "🔴 غیرفعال"
+    toggle_btn_text = (
+        "🔴 غیرفعال‌سازی تخفیف تمدید" if enabled else "🟢 فعال‌سازی تخفیف تمدید"
+    )
+
+    allow_coupon_str = "🟢 مجاز" if allow_coupon else "🔴 غیرمجاز"
+    allow_coupon_btn = (
+        "ورود کد تخفیف در تمدید: 🟢 مجاز"
+        if allow_coupon
+        else "ورود کد تخفیف در تمدید: 🔴 غیرمجاز"
+    )
+
+    stack_str = (
+        "🟢 فعال (تجمیع درصدها)"
+        if stack_discounts
+        else "🔴 غیرفعال (جایگزینی با کد تخفیف)"
+    )
+    stack_btn = (
+        "تجمیع با کد تخفیف: 🟢 فعال"
+        if stack_discounts
+        else "تجمیع با کد تخفیف: 🔴 غیرفعال"
+    )
+
+    text = (
+        "🔄 <b>تنظیمات تخفیف پیش‌فرض تمدید اشتراک</b>\n\n"
+        "در این بخش می‌توانید مشخص کنید که آیا کاربران هنگام تمدید اشتراک به‌صورت پیش‌فرض از تخفیف برخوردار شوند یا خیر.\n\n"
+        f"🔘 <b>وضعیت سیستم تخفیف تمدید:</b> {status_str}\n"
+        f"📊 <b>درصد تخفیف پیش‌فرض:</b> <b>{to_persian_digits(percent)}٪</b>\n"
+        f"🏷 <b>امکان ورود کد تخفیف در تمدید:</b> {allow_coupon_str}\n"
+        f"➕ <b>تجمیع با کدهای تخفیف دیگر:</b> {stack_str}\n\n"
+        "💡 <i>در صورت غیرفعال بودن تجمیع، در صورت ورود کد تخفیف معتبر توسط کاربر، کد تخفیف جایگزین تخفیف تمدید خواهد شد.</i>\n\n"
+        "جهت تغییر هر یک از تنظیمات، روی دکمه مربوطه بزنید:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_btn_text, callback_data="admin_toggle_renewal_discount"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"📊 تغییر درصد تخفیف ({to_persian_digits(percent)}٪)",
+                    callback_data="admin_renewal_discount_set_percent_start",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=allow_coupon_btn,
+                    callback_data="admin_toggle_renewal_allow_coupon",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=stack_btn,
+                    callback_data="admin_toggle_renewal_stack_discounts",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی تنظیمات به پیش‌فرض",
+                    callback_data="admin_renewal_discount_reset_confirm",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به کدهای تخفیف",
+                    callback_data="admin_discounts_menu",
+                )
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_renewal_discount_menu")
+async def admin_renewal_discount_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+    await state.clear()
+
+    text, keyboard = await _build_renewal_discount_menu_content()
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_renewal_discount")
+async def admin_toggle_renewal_discount(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+
+    from db.models import get_renewal_discount_config, set_renewal_discount_config
+
+    cfg = await get_renewal_discount_config()
+    new_state = not cfg.get("enabled", False)
+    await set_renewal_discount_config(enabled=new_state)
+
+    status_word = "فعال" if new_state else "غیرفعال"
+    await callback.answer(f"✅ تخفیف پیش‌فرض تمدید {status_word} شد.", show_alert=True)
+    await admin_renewal_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_toggle_renewal_allow_coupon")
+async def admin_toggle_renewal_allow_coupon(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+
+    from db.models import get_renewal_discount_config, set_renewal_discount_config
+
+    cfg = await get_renewal_discount_config()
+    new_state = not cfg.get("allow_coupon", True)
+    await set_renewal_discount_config(allow_coupon=new_state)
+
+    status_word = "مجاز" if new_state else "غیرمجاز"
+    await callback.answer(
+        f"✅ امکان ورود کد تخفیف در تمدید {status_word} شد.", show_alert=True
+    )
+    await admin_renewal_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_toggle_renewal_stack_discounts")
+async def admin_toggle_renewal_stack_discounts(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+
+    from db.models import get_renewal_discount_config, set_renewal_discount_config
+
+    cfg = await get_renewal_discount_config()
+    new_state = not cfg.get("stack_discounts", False)
+    await set_renewal_discount_config(stack_discounts=new_state)
+
+    status_word = "فعال (تجمیع درصدها)" if new_state else "غیرفعال (جایگزینی)"
+    await callback.answer(f"✅ حالت تجمیع تخفیف‌ها {status_word} شد.", show_alert=True)
+    await admin_renewal_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_renewal_discount_reset_confirm")
+async def admin_renewal_discount_reset(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+
+    from db.models import reset_renewal_discount_config
+
+    await reset_renewal_discount_config()
+    await callback.answer(
+        "✅ کلیه تنظیمات تخفیف تمدید به حالت اولیه بازنشانی شد.", show_alert=True
+    )
+    await admin_renewal_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_renewal_discount_set_percent_start")
+async def admin_renewal_discount_set_percent_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_renewal_discount_percent)
+
+    from db.models import get_renewal_discount_config
+
+    cfg = await get_renewal_discount_config()
+    current_p = cfg.get("percent", 10)
+
+    text = (
+        "📊 <b>تنظیم درصد تخفیف پیش‌فرض تمدید</b>\n\n"
+        f"درصد تخفیف فعلی: <b>{to_persian_digits(current_p)}٪</b>\n\n"
+        "می‌توانید یکی از درصدهای آماده زیر را انتخاب کنید یا درصد دلخواه خود را (بین ۱ تا ۱۰۰) به صورت عدد ارسال کنید:\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="۵٪", callback_data="admin_renewal_discount_p_5"
+                ),
+                InlineKeyboardButton(
+                    text="۱۰٪", callback_data="admin_renewal_discount_p_10"
+                ),
+                InlineKeyboardButton(
+                    text="۱۵٪", callback_data="admin_renewal_discount_p_15"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۲۰٪", callback_data="admin_renewal_discount_p_20"
+                ),
+                InlineKeyboardButton(
+                    text="۲۵٪", callback_data="admin_renewal_discount_p_25"
+                ),
+                InlineKeyboardButton(
+                    text="۳۰٪", callback_data="admin_renewal_discount_p_30"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_renewal_discount_menu",
+                )
+            ],
+        ]
+    )
+
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_renewal_discount_p_(\d+)$"))
+async def admin_renewal_discount_set_percent_quick(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "discounts"):
+        return
+
+    percent = int(callback.data.split("_")[-1])
+    from db.models import set_renewal_discount_config
+
+    await set_renewal_discount_config(percent=percent)
+    await state.clear()
+    await callback.answer(
+        f"✅ درصد تخفیف تمدید روی {to_persian_digits(percent)}٪ تنظیم شد.",
+        show_alert=True,
+    )
+    await admin_renewal_discount_menu(callback, state)
+
+
+@router.message(AdminControlStates.waiting_renewal_discount_percent, F.text)
+async def admin_renewal_discount_save_percent(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text:
+        return
+
+    from utils.formatting import to_english_digits
+
+    clean_text = to_english_digits(message.text.strip())
+
+    if clean_text == "/cancel":
+        await state.clear()
+        text, kb = await _build_renewal_discount_menu_content()
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    try:
+        val = int(clean_text)
+        if val < 1 or val > 100:
+            raise ValueError()
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_renewal_discount_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح بین ۱ تا ۱۰۰ ارسال کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_renewal_discount_config
+
+    await set_renewal_discount_config(percent=val)
+    await state.clear()
+
+    text, kb = await _build_renewal_discount_menu_content()
+    await message.answer(
+        f"✅ درصد تخفیف پیش‌فرض تمدید با موفقیت روی <b>{to_persian_digits(val)}٪</b> تنظیم شد.\n\n{text}",
         reply_markup=kb,
         parse_mode="HTML",
     )

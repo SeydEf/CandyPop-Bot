@@ -1572,6 +1572,59 @@ async def reset_reserve_renewal_config() -> None:
     await set_setting("reserve_allow_early_activation", "1")
 
 
+DEFAULT_RENEWAL_DISCOUNT_CONFIG: dict[str, Any] = {
+    "enabled": False,
+    "percent": 10,
+    "allow_coupon": True,
+    "stack_discounts": False,
+}
+
+
+async def get_renewal_discount_config() -> dict[str, Any]:
+    enabled_str = await get_setting("renewal_discount_enabled", "0") or "0"
+    percent_str = await get_setting("renewal_discount_percent", "10") or "10"
+    allow_coupon_str = await get_setting("renewal_allow_coupon", "1") or "1"
+    stack_str = await get_setting("renewal_stack_discounts", "0") or "0"
+
+    try:
+        percent = int(percent_str)
+        if percent < 1 or percent > 100:
+            percent = 10
+    except (ValueError, TypeError):
+        percent = 10
+
+    return {
+        "enabled": enabled_str == "1",
+        "percent": percent,
+        "allow_coupon": allow_coupon_str == "1",
+        "stack_discounts": stack_str == "1",
+    }
+
+
+async def set_renewal_discount_config(
+    enabled: bool | None = None,
+    percent: int | None = None,
+    allow_coupon: bool | None = None,
+    stack_discounts: bool | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("renewal_discount_enabled", "1" if enabled else "0")
+    if percent is not None:
+        clamped = max(1, min(100, int(percent)))
+        await set_setting("renewal_discount_percent", str(clamped))
+    if allow_coupon is not None:
+        await set_setting("renewal_allow_coupon", "1" if allow_coupon else "0")
+    if stack_discounts is not None:
+        await set_setting("renewal_stack_discounts", "1" if stack_discounts else "0")
+
+
+async def reset_renewal_discount_config() -> None:
+    await set_setting("renewal_discount_enabled", "0")
+    await set_setting("renewal_discount_percent", "10")
+    await set_setting("renewal_allow_coupon", "1")
+    await set_setting("renewal_stack_discounts", "0")
+
+
 DEFAULT_BACKUP_CONFIG: dict[str, Any] = {
     "auto_enabled": True,
     "schedule_time": "00:00",

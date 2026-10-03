@@ -528,30 +528,39 @@ def renew_payment_method_keyboard(
     is_change_plan: bool = False,
     has_discount: bool = False,
     card_enabled: bool = True,
+    allow_coupon: bool = True,
 ) -> InlineKeyboardMarkup:
-    discount_btn = (
-        InlineKeyboardButton(
-            text="❌ حذف کد تخفیف",
-            callback_data="renew_discount_remove",
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if has_discount:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="❌ حذف کد تخفیف",
+                    callback_data="renew_discount_remove",
+                )
+            ]
         )
-        if has_discount
-        else InlineKeyboardButton(
-            text="🏷️ اعمال کد تخفیف",
-            callback_data="renew_discount_apply",
+    elif allow_coupon:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🏷️ اعمال کد تخفیف",
+                    callback_data="renew_discount_apply",
+                )
+            ]
         )
-    )
 
     back_callback = "renew_back_to_duration" if is_change_plan else "sub_renew_current"
 
-    rows = [
-        [discount_btn],
+    rows.append(
         [
             InlineKeyboardButton(
                 text="💰 کیف پول",
                 callback_data="renew_pay_wallet",
             ),
-        ],
-    ]
+        ]
+    )
     if card_enabled:
         rows.append(
             [
