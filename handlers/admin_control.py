@@ -10227,6 +10227,7 @@ async def admin_stats_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         f"       •• 👛 پرداخت از کیف پول: <b>{to_persian_digits(stats.get('wallet_count', 0))}</b> فقره ({format_price(stats.get('wallet_revenue', 0))})\n"
         f"  • 🟡 پندینگ: <b>{to_persian_digits(stats['pending_invoices_count'])}</b> فقره ({format_price(stats['pending_amount'])})\n"
         f"  • 🔴 ردشده: <b>{to_persian_digits(stats['rejected_invoices_count'])}</b> فقره ({format_price(stats['rejected_amount'])})\n"
+        f"  • 🔘 کنسل شده: <b>{to_persian_digits(stats['cancelled_invoices_count'])}</b> فقره ({format_price(stats['cancelled_amount'])})\n"
         f"  • 💼 موجودی کیف پول کاربران: <b>{format_price(stats['total_wallets_balance'])}</b>\n\n"
         f"⚙️ <b>زیرساخت و سرور</b>\n"
         f"{traffic_text}"

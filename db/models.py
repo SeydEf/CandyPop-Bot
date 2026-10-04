@@ -2169,6 +2169,13 @@ async def get_bot_statistics() -> dict[str, Any]:
         rejected_amount = row[1] if row else 0
 
     async with db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status = 'cancelled'"
+    ) as c:
+        row = await c.fetchone()
+        cancelled_invoices_count = row[0] if row else 0
+        cancelled_amount = row[1] if row else 0
+
+    async with db.execute(
         """
         SELECT COUNT(*), COALESCE(SUM(amount), 0) 
         FROM invoices 
@@ -2244,6 +2251,8 @@ async def get_bot_statistics() -> dict[str, Any]:
         "pending_amount": pending_amount,
         "rejected_invoices_count": rejected_invoices_count,
         "rejected_amount": rejected_amount,
+        "cancelled_invoices_count": cancelled_invoices_count,
+        "cancelled_amount": cancelled_amount,
         "topups_count": topups_count,
         "topups_revenue": topups_revenue,
         "subs_sales_count": subs_sales_count,
