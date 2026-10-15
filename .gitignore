@@ -22,3 +22,6 @@ ENV/
 .DS_Store
 *.log
 logs/
+AGENTS.md
+ruff.toml
+.agents/
