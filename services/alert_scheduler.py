@@ -14,6 +14,7 @@ from db.models import (
     clear_notified_alerts,
     get_alert_config,
     get_all_notified_alerts_map,
+    get_renewal_discount_config,
     record_notified_alert,
     record_scheduler_run,
     remove_notified_alerts,
@@ -41,6 +42,8 @@ async def _process_single_client(
     notified_map: dict[tuple[str, str], float],
     bot: Bot,
     semaphore: asyncio.Semaphore,
+    renewal_discount_enabled: bool = False,
+    renewal_discount_percent: int = 0,
 ) -> None:
     async with semaphore:
         email = client.get("email", "")
@@ -153,6 +156,12 @@ async def _process_single_client(
 
             return
 
+        btn_renew_text = (
+            f"🔄 تمدید اشتراک ({to_persian_digits(renewal_discount_percent)}٪ تخفیف)"
+            if (renewal_discount_enabled and renewal_discount_percent > 0)
+            else "🔄 تمدید اشتراک"
+        )
+
         if is_expired:
             from db.models import get_reserved_renewal
             from services.renewal_service import activate_reserved_renewal
@@ -174,17 +183,23 @@ async def _process_single_client(
                     if is_volume_expired
                     else "پایان مهلت زمانی اعتبار"
                 )
+                discount_text = (
+                    f"\n\n🎁 <b>تخفیف ویژه تمدید:</b> هم‌اکنون می‌توانید با <b>{to_persian_digits(renewal_discount_percent)}٪ تخفیف ویژه</b>، اشتراک خود را تمدید کرده و مجدداً متصل شوید!"
+                    if (renewal_discount_enabled and renewal_discount_percent > 0)
+                    else ""
+                )
                 text = (
                     f"⛔️ <b>اشتراک شما غیرفعال و منقضی گردید!</b>\n\n"
                     f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                     f"📌 <b>علت انقضا:</b> {reason}\n\n"
                     f"اتصال سرویس شما قطع شده است. جهت اتصال مجدد و تمدید فوری اشتراک روی دکمه زیر کلیک کنید:"
+                    f"{discount_text}"
                 )
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
                             InlineKeyboardButton(
-                                text="🔄 تمدید اشتراک",
+                                text=btn_renew_text,
                                 callback_data=f"sub_renew_{email}",
                             )
                         ]
@@ -270,17 +285,23 @@ async def _process_single_client(
                         if step_gb > 0
                         else "کمتر از ۱ گیگ"
                     )
+                    discount_text = (
+                        f"\n\n🎁 <b>پیشنهاد ویژه:</b> تمدید این اشتراک هم‌اکنون با <b>{to_persian_digits(renewal_discount_percent)}٪ تخفیف</b> محاسبه خواهد شد!"
+                        if (renewal_discount_enabled and renewal_discount_percent > 0)
+                        else ""
+                    )
                     text = (
                         f"⚠️ <b>هشدار اتمام حجم ترافیک ({step_title})</b>\n\n"
                         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                         f"📊 <b>حجم باقی‌مانده:</b> <b>{rem_gb_str}</b>\n\n"
                         f"ترافیک اشتراک شما روبه‌اتمام است. برای جلوگیری از قطعی سرویس، می‌توانید همین حالا آن را تمدید بفرمایید."
+                        f"{discount_text}"
                     )
                     keyboard = InlineKeyboardMarkup(
                         inline_keyboard=[
                             [
                                 InlineKeyboardButton(
-                                    text="🔄 تمدید اشتراک",
+                                    text=btn_renew_text,
                                     callback_data=f"sub_renew_{email}",
                                 )
                             ]
@@ -316,17 +337,23 @@ async def _process_single_client(
                         if rem_days > 0
                         else "کمتر از ۲۴ ساعت"
                     )
+                    discount_text = (
+                        f"\n\n🎁 <b>هدیه ویژه تمدید:</b> تمدید اشتراک شما هم‌اکنون شامل <b>{to_persian_digits(renewal_discount_percent)}٪ تخفیف اختصاصی</b> است. پیش از پایان مهلت از این تخفیف استفاده کنید!"
+                        if (renewal_discount_enabled and renewal_discount_percent > 0)
+                        else ""
+                    )
                     text = (
                         f"⏳ <b>یادآور روزانه اتمام زمان اشتراک</b>\n\n"
                         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                         f"⏱ <b>زمان باقی‌مانده:</b> <b>{rem_days_str}</b>\n\n"
                         f"مدت اعتبار اشتراک شما به زودی به پایان می‌رسد. جهت تمدید سرویس روی دکمه زیر کلیک نمایید."
+                        f"{discount_text}"
                     )
                     keyboard = InlineKeyboardMarkup(
                         inline_keyboard=[
                             [
                                 InlineKeyboardButton(
-                                    text="🔄 تمدید اشتراک",
+                                    text=btn_renew_text,
                                     callback_data=f"sub_renew_{email}",
                                 )
                             ]
@@ -365,6 +392,10 @@ async def check_and_send_alerts(bot: Bot) -> None:
         expired_notice_enabled = bool(config.get("expired_notice_enabled", True))
         auto_delete_enabled = bool(config.get("auto_delete_enabled", True))
 
+        renewal_discount_cfg = await get_renewal_discount_config()
+        renewal_discount_enabled = bool(renewal_discount_cfg.get("enabled", False))
+        renewal_discount_percent = int(renewal_discount_cfg.get("percent", 0))
+
         clients = await xui_api.list_clients()
         if not clients:
             return
@@ -392,6 +423,8 @@ async def check_and_send_alerts(bot: Bot) -> None:
                 notified_map=notified_map,
                 bot=bot,
                 semaphore=semaphore,
+                renewal_discount_enabled=renewal_discount_enabled,
+                renewal_discount_percent=renewal_discount_percent,
             )
             for c in clients
         ]
