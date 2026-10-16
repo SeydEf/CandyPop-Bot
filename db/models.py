@@ -1437,6 +1437,18 @@ async def clear_notified_alerts(email: str) -> None:
     await db.commit()
 
 
+async def remove_notified_alerts(email: str, alert_types: list[str]) -> None:
+    if not alert_types:
+        return
+    db = await get_db()
+    placeholders = ",".join("?" for _ in alert_types)
+    await db.execute(
+        f"DELETE FROM notified_alerts WHERE email = ? AND alert_type IN ({placeholders})",
+        (email, *alert_types),
+    )
+    await db.commit()
+
+
 async def get_ip_violation(email: str) -> dict[str, Any] | None:
     db = await get_db()
     async with db.execute(

@@ -16,6 +16,7 @@ from db.models import (
     get_all_notified_alerts_map,
     record_notified_alert,
     record_scheduler_run,
+    remove_notified_alerts,
     resolve_client_tg_id,
 )
 from services import xui_api
@@ -36,7 +37,7 @@ async def _process_single_client(
     expiring_days_enabled: bool,
     expired_notice_enabled: bool,
     auto_delete_enabled: bool,
-    notified_set: set[tuple[str, str]],
+    email_alerts: dict[str, set[str]],
     notified_map: dict[tuple[str, str], float],
     bot: Bot,
     semaphore: asyncio.Semaphore,
@@ -63,6 +64,53 @@ async def _process_single_client(
         is_volume_expired = total > 0 and used >= total
         is_time_expired = expiry_time > 0 and now_ms >= expiry_time
         is_expired = is_volume_expired or is_time_expired
+
+        client_alerts = email_alerts.setdefault(email, set())
+
+        stale_alerts: list[str] = []
+
+        if not is_expired and "expired_notice" in client_alerts:
+            stale_alerts.append("expired_notice")
+
+        if expiry_time < 0:
+            for alert_type in list(client_alerts):
+                if alert_type.startswith("expiring_day_"):
+                    stale_alerts.append(alert_type)
+        elif expiry_time > 0 and not is_time_expired:
+            rem_ms = expiry_time - now_ms
+            rem_days = int(rem_ms / (86400 * 1000))
+            if rem_days >= 0:
+                for alert_type in list(client_alerts):
+                    if alert_type.startswith("expiring_day_"):
+                        try:
+                            day_val = int(alert_type.split("_")[2])
+                            if rem_days > day_val:
+                                stale_alerts.append(alert_type)
+                        except (IndexError, ValueError):
+                            pass
+
+        if total == 0:
+            for alert_type in list(client_alerts):
+                if alert_type.startswith("low_gb_"):
+                    stale_alerts.append(alert_type)
+        elif total > 0 and not is_volume_expired:
+            rem_bytes = max(0, total - used)
+            rem_gb = rem_bytes / (1024**3)
+            for alert_type in list(client_alerts):
+                if alert_type.startswith("low_gb_"):
+                    try:
+                        gb_val = int(alert_type.split("_")[2])
+                        if rem_gb > gb_val:
+                            stale_alerts.append(alert_type)
+                    except (IndexError, ValueError):
+                        pass
+
+        if stale_alerts:
+            await remove_notified_alerts(email, stale_alerts)
+            for sa in stale_alerts:
+                client_alerts.discard(sa)
+                notified_map.pop((email, sa), None)
+            logger.info("Cleared stale alerts for %s: %s", email, stale_alerts)
 
         if is_test_sub and is_expired:
             text = (
@@ -99,6 +147,7 @@ async def _process_single_client(
                 logger.info("Auto-deleting expired test client %s", email)
                 await xui_api.delete_client(email)
                 await clear_notified_alerts(email)
+                client_alerts.clear()
             except Exception as e:
                 logger.error("Failed to delete expired test client %s: %s", email, e)
 
@@ -119,7 +168,7 @@ async def _process_single_client(
                     logger.info("Successfully activated reserved renewal for %s", email)
                     return
 
-            if expired_notice_enabled and (email, "expired_notice") not in notified_set:
+            if expired_notice_enabled and "expired_notice" not in client_alerts:
                 reason = (
                     "اتمام کامل حجم ترافیک"
                     if is_volume_expired
@@ -149,7 +198,7 @@ async def _process_single_client(
                         parse_mode="HTML",
                     )
                     await record_notified_alert(email, "expired_notice")
-                    notified_set.add((email, "expired_notice"))
+                    client_alerts.add("expired_notice")
                     notified_map[(email, "expired_notice")] = time.time()
                     logger.info("Sent expired_notice alert to %s (%s)", email, tg_id)
                 except (TelegramForbiddenError, TelegramBadRequest):
@@ -173,7 +222,7 @@ async def _process_single_client(
 
                 if (
                     expired_days >= auto_delete_days
-                    and (email, "auto_deleted") not in notified_set
+                    and "auto_deleted" not in client_alerts
                 ):
                     try:
                         logger.info(
@@ -184,6 +233,7 @@ async def _process_single_client(
                         )
                         await xui_api.delete_client(email)
                         await clear_notified_alerts(email)
+                        client_alerts.clear()
 
                         try:
                             del_text = (
@@ -213,7 +263,7 @@ async def _process_single_client(
                 step_gb = int(math.ceil(rem_gb))
                 alert_key = f"low_gb_{step_gb}"
 
-                if (email, alert_key) not in notified_set:
+                if alert_key not in client_alerts:
                     rem_gb_str = format_size_gb(rem_gb)
                     step_title = (
                         f"کمتر از {to_persian_digits(step_gb)} گیگ"
@@ -244,7 +294,7 @@ async def _process_single_client(
                             parse_mode="HTML",
                         )
                         await record_notified_alert(email, alert_key)
-                        notified_set.add((email, alert_key))
+                        client_alerts.add(alert_key)
                         logger.info("Sent %s alert to %s (%s)", alert_key, email, tg_id)
                     except (TelegramForbiddenError, TelegramBadRequest):
                         pass
@@ -260,7 +310,7 @@ async def _process_single_client(
             if 0 <= rem_days <= min_days:
                 alert_key = f"expiring_day_{rem_days}"
 
-                if (email, alert_key) not in notified_set:
+                if alert_key not in client_alerts:
                     rem_days_str = (
                         f"{to_persian_digits(rem_days)} روز"
                         if rem_days > 0
@@ -290,7 +340,7 @@ async def _process_single_client(
                             parse_mode="HTML",
                         )
                         await record_notified_alert(email, alert_key)
-                        notified_set.add((email, alert_key))
+                        client_alerts.add(alert_key)
                         logger.info("Sent %s alert to %s (%s)", alert_key, email, tg_id)
                     except (TelegramForbiddenError, TelegramBadRequest):
                         pass
@@ -322,7 +372,9 @@ async def check_and_send_alerts(bot: Bot) -> None:
         now_ms = int(time.time() * 1000)
 
         notified_map = await get_all_notified_alerts_map()
-        notified_set = set(notified_map.keys())
+        email_alerts: dict[str, set[str]] = {}
+        for em, alert_type in notified_map.keys():
+            email_alerts.setdefault(em, set()).add(alert_type)
 
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
         tasks = [
@@ -336,7 +388,7 @@ async def check_and_send_alerts(bot: Bot) -> None:
                 expiring_days_enabled=expiring_days_enabled,
                 expired_notice_enabled=expired_notice_enabled,
                 auto_delete_enabled=auto_delete_enabled,
-                notified_set=notified_set,
+                email_alerts=email_alerts,
                 notified_map=notified_map,
                 bot=bot,
                 semaphore=semaphore,

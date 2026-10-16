@@ -764,6 +764,9 @@ async def admin_sub_gb_save(message: types.Message, state: FSMContext) -> None:
 
     try:
         await xui_api.update_client(email, update_data)
+        from db.models import clear_notified_alerts
+
+        await clear_notified_alerts(email)
         await state.clear()
         await _render_sub_dashboard(
             message,
@@ -888,6 +891,9 @@ async def admin_sub_days_save(message: types.Message, state: FSMContext) -> None
 
     try:
         await xui_api.update_client(email, update_data)
+        from db.models import clear_notified_alerts
+
+        await clear_notified_alerts(email)
         await state.clear()
         await _render_sub_dashboard(
             message,
