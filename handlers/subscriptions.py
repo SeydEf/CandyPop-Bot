@@ -35,6 +35,10 @@ from keyboards.inline_kb import (
     subscription_manage_keyboard,
     subscriptions_list_keyboard,
 )
+from services.renewal_service import (
+    activate_reserved_renewal,
+    is_client_expired,
+)
 from keyboards.reply_kb import BTN_MY_SUBS
 from services import xui_api
 from services.pricing import get_price_breakdown
@@ -1423,6 +1427,14 @@ async def renew_wallet_confirm(
             bot=callback.bot,
         )
         await state.clear()
+
+        if renewal_result.get("status") == "reserved":
+
+            client_check = await xui_api.get_client(email)
+            if client_check and is_client_expired(client_check):
+                act_res = await activate_reserved_renewal(email, force=True, bot=None)
+                if act_res.get("status") == "activated":
+                    renewal_result["status"] = "active"
 
         if renewal_result.get("status") == "reserved":
             success_text = (

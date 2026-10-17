@@ -77,6 +77,11 @@ async def activate_fresh_plan(
     except Exception as e:
         logger.warning("Failed to clear notified alerts for %s: %s", email, e)
 
+    try:
+        await delete_reserved_renewal(email)
+    except Exception as e:
+        logger.warning("Failed to delete reserved renewal for %s: %s", email, e)
+
     return res
 
 

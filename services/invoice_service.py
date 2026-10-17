@@ -19,6 +19,11 @@ from db.models import (
     process_referral_commission,
     update_invoice_status,
 )
+from services.renewal_service import (
+    activate_reserved_renewal,
+    is_client_expired,
+    process_renewal_purchase,
+)
 from keyboards.inline_kb import sub_config_links_keyboard
 from services import xui_api
 from utils.formatting import (
@@ -98,7 +103,6 @@ async def approve_invoice(
         is_reserved = False
         if target_email:
             email = target_email
-            from services.renewal_service import process_renewal_purchase
 
             ok, renewal_msg, is_reserved = await process_renewal_purchase(
                 email=email,
@@ -109,6 +113,20 @@ async def approve_invoice(
                 invoice_id=invoice_id,
                 bot=bot,
             )
+            action_msg = "اشتراک شما با موفقیت تمدید و فعال گردید"
+
+            if is_reserved:
+                client_check = await xui_api.get_client(email)
+                if client_check and is_client_expired(client_check):
+                    act_res = await activate_reserved_renewal(
+                        email, force=True, bot=None
+                    )
+                    if act_res.get("status") == "activated":
+                        is_reserved = False
+                        logger.info(
+                            "Immediately activated reserved renewal on admin approval for expired client %s",
+                            email,
+                        )
         else:
             user = await get_user(tg_id)
             username = user.get("username") if user else None
