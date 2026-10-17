@@ -147,7 +147,6 @@ async def _build_dashboard_info(
         return None
 
     from db.models import get_reserve_renewal_config, get_reserved_renewal
-    from services.renewal_service import activate_reserved_renewal, is_client_expired
 
     if is_client_expired(client):
         res_rec = await get_reserved_renewal(email)
@@ -1417,7 +1416,7 @@ async def renew_wallet_confirm(
     try:
         from services.renewal_service import process_renewal_purchase
 
-        renewal_result = await process_renewal_purchase(
+        renewal_ok, renewal_status, is_reserved = await process_renewal_purchase(
             email=email,
             tg_id=tg_id,
             duration_days=duration,
@@ -1428,15 +1427,7 @@ async def renew_wallet_confirm(
         )
         await state.clear()
 
-        if renewal_result.get("status") == "reserved":
-
-            client_check = await xui_api.get_client(email)
-            if client_check and is_client_expired(client_check):
-                act_res = await activate_reserved_renewal(email, force=True, bot=None)
-                if act_res.get("status") == "activated":
-                    renewal_result["status"] = "active"
-
-        if renewal_result.get("status") == "reserved":
+        if renewal_ok and is_reserved:
             success_text = (
                 f"📦 <b>بسته تمدید شما با موفقیت رزرو شد!</b>\n\n"
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
@@ -1818,7 +1809,6 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
 @router.callback_query(F.data.startswith("sub_act_res_confirm_"))
 async def sub_act_res_confirm_handler(callback: types.CallbackQuery) -> None:
     email = callback.data[len("sub_act_res_confirm_") :]
-    from services.renewal_service import activate_reserved_renewal
 
     res = await activate_reserved_renewal(email, force=True, bot=callback.bot)
     if res.get("status") == "activated":

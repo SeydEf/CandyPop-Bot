@@ -134,6 +134,19 @@ async def process_renewal_purchase(
         )
         return RenewalPurchaseResult(True, "اشتراک شما با موفقیت تمدید شد.", False)
 
+    await create_reserved_renewal(
+        email=email,
+        tg_id=tg_id,
+        duration_days=duration_days,
+        data_gb=data_gb,
+        users_count=users_count,
+        invoice_id=invoice_id,
+    )
+    msg = (
+        "بسته تمدید با موفقیت برای شما رزرو گردید. "
+        "به محض اتمام حجم یا زمان اشتراک فعلی، این بسته به صورت خودکار برای سرویس شما فعال خواهد شد."
+    )
+
     if is_client_expired(client):
         await activate_fresh_plan(
             email=email,
@@ -147,18 +160,6 @@ async def process_renewal_purchase(
         msg = "اشتراک منقضی‌شده شما با موفقیت تمدید و فعال گردید."
         return RenewalPurchaseResult(True, msg, False)
 
-    await create_reserved_renewal(
-        email=email,
-        tg_id=tg_id,
-        duration_days=duration_days,
-        data_gb=data_gb,
-        users_count=users_count,
-        invoice_id=invoice_id,
-    )
-    msg = (
-        "بسته تمدید با موفقیت برای شما رزرو گردید. "
-        "به محض اتمام حجم یا زمان اشتراک فعلی، این بسته به صورت خودکار برای سرویس شما فعال خواهد شد."
-    )
     return RenewalPurchaseResult(True, msg, True)
 
 

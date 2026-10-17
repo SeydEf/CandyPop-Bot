@@ -20,8 +20,6 @@ from db.models import (
     update_invoice_status,
 )
 from services.renewal_service import (
-    activate_reserved_renewal,
-    is_client_expired,
     process_renewal_purchase,
 )
 from keyboards.inline_kb import sub_config_links_keyboard
@@ -104,7 +102,7 @@ async def approve_invoice(
         if target_email:
             email = target_email
 
-            ok, renewal_msg, is_reserved = await process_renewal_purchase(
+            renewal_ok, _, is_reserved = await process_renewal_purchase(
                 email=email,
                 tg_id=tg_id,
                 duration_days=duration,
@@ -115,18 +113,18 @@ async def approve_invoice(
             )
             action_msg = "اشتراک شما با موفقیت تمدید و فعال گردید"
 
-            if is_reserved:
-                client_check = await xui_api.get_client(email)
-                if client_check and is_client_expired(client_check):
-                    act_res = await activate_reserved_renewal(
-                        email, force=True, bot=None
-                    )
-                    if act_res.get("status") == "activated":
-                        is_reserved = False
-                        logger.info(
-                            "Immediately activated reserved renewal on admin approval for expired client %s",
-                            email,
-                        )
+            # if is_reserved:
+            #     client_check = await xui_api.get_client(email)
+            #     if client_check and is_client_expired(client_check):
+            #         act_res = await activate_reserved_renewal(
+            #             email, force=True, bot=None
+            #         )
+            #         if act_res.get("status") == "activated":
+            #             is_reserved = False
+            #             logger.info(
+            #                 "Immediately activated reserved renewal on admin approval for expired client %s",
+            #                 email,
+            #             )
         else:
             user = await get_user(tg_id)
             username = user.get("username") if user else None
@@ -155,7 +153,7 @@ async def approve_invoice(
             )
             action_msg = "اشتراک فعال گردید"
 
-        if is_reserved:
+        if renewal_ok and is_reserved:
             user_text = (
                 f"{prefix_msg}بسته تمدید شما با موفقیت رزرو گردید!</b>\n\n"
                 f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
@@ -172,6 +170,22 @@ async def approve_invoice(
                 parse_mode="HTML",
             )
             return True, f"بسته تمدید رزرو گردید ({email})", invoice
+        elif renewal_ok and not is_reserved:
+            user_text = (
+                f"{prefix_msg}بسته تمدید شما با موفقیت فعال گردید!</b>\n\n"
+                f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                f"⏱ <b>مدت اعتبار بسته:</b> {duration} روز\n"
+                f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users_count)} کاربر\n"
+                f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n\n"
+            )
+            await bot.send_message(
+                chat_id=tg_id,
+                text=user_text,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
+            return True, f"بسته تمدید فعال گردید ({email})", invoice
 
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
