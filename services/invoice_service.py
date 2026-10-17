@@ -113,18 +113,6 @@ async def approve_invoice(
             )
             action_msg = "اشتراک شما با موفقیت تمدید و فعال گردید"
 
-            # if is_reserved:
-            #     client_check = await xui_api.get_client(email)
-            #     if client_check and is_client_expired(client_check):
-            #         act_res = await activate_reserved_renewal(
-            #             email, force=True, bot=None
-            #         )
-            #         if act_res.get("status") == "activated":
-            #             is_reserved = False
-            #             logger.info(
-            #                 "Immediately activated reserved renewal on admin approval for expired client %s",
-            #                 email,
-            #             )
         else:
             user = await get_user(tg_id)
             username = user.get("username") if user else None
