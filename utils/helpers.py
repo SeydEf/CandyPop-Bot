@@ -7,6 +7,14 @@ import qrcode
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
 
+from config import SUB_BASE_URL
+
+
+def _build_sub_link(sub_id: str) -> str:
+    if sub_id:
+        return f"{SUB_BASE_URL}/{sub_id}"
+    return "نامشخص"
+
 
 def generate_qr(data: str) -> io.BytesIO:
     qr = qrcode.QRCode(

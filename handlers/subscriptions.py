@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import INVOICE_EXPIRY_MINUTES, SUB_BASE_URL
+from config import INVOICE_EXPIRY_MINUTES
 from db.discounts import validate_discount_code
 from db.models import (
     create_invoice,
@@ -50,7 +50,7 @@ from utils.formatting import (
     persian_to_english_digits,
     to_persian_digits,
 )
-from utils.helpers import generate_qr
+from utils.helpers import generate_qr, _build_sub_link
 
 logger = logging.getLogger(__name__)
 router = Router(name="subscriptions")
@@ -81,12 +81,6 @@ async def _fetch_subs_from_xui(tg_id: int) -> list[dict]:
             }
         )
     return subs
-
-
-def _build_sub_link(sub_id: str) -> str:
-    if sub_id:
-        return f"{SUB_BASE_URL}/{sub_id}"
-    return "نامشخص"
 
 
 @router.message(Command("subs"))

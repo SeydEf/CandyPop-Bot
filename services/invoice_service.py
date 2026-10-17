@@ -29,7 +29,7 @@ from utils.formatting import (
     format_size_gb,
     to_persian_digits,
 )
-from utils.helpers import gb_to_bytes, generate_email, generate_qr
+from utils.helpers import gb_to_bytes, generate_email, generate_qr, _build_sub_link
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,46 @@ async def approve_invoice(
             )
             action_msg = "اشتراک شما با موفقیت تمدید و فعال گردید"
 
+            if renewal_ok and is_reserved:
+                user_text = (
+                    f"{prefix_msg}بسته تمدید شما با موفقیت رزرو گردید!</b>\n\n"
+                    f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+                    f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                    f"⏱ <b>مدت اعتبار بسته:</b> {to_persian_digits(duration)} روز\n"
+                    f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users_count)} کاربر\n"
+                    f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n"
+                    f"💳 <b>روش پرداخت:</b> کارت به کارت\n\n"
+                    f"💡 <i>این بسته رزرو شد و پس از پایان اعتبار زمانی یا حجمی اشتراک فعلی، به‌صورت کاملاً خودکار فعال می‌شود. در صورت نیاز می‌توانید آن را در بخش مدیریت اشتراک زودتر فعال کنید.</i>"
+                )
+                await bot.send_message(
+                    chat_id=tg_id,
+                    text=user_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
+                return True, f"بسته تمدید رزرو گردید ({email})", invoice
+            elif renewal_ok and not is_reserved:
+                client = await xui_api.get_client(email)
+                sub_id = client.get("subId", "") if client else ""
+                sub_link = _build_sub_link(sub_id)
+
+                user_text = (
+                    f"{prefix_msg}بسته تمدید شما با موفقیت فعال گردید!</b>\n\n"
+                    f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                    f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز\n"
+                    f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users_count)} کاربر\n"
+                    f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)}\n"
+                    f"💳 <b>روش پرداخت:</b> کارت به کارت\n\n"
+                    f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
+                    f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
+                )
+                await bot.send_message(
+                    chat_id=tg_id,
+                    text=user_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
+                return True, f"بسته تمدید فعال گردید ({email})", invoice
         else:
             user = await get_user(tg_id)
             username = user.get("username") if user else None
@@ -140,40 +180,6 @@ async def approve_invoice(
                 group=active_group,
             )
             action_msg = "اشتراک فعال گردید"
-
-        if renewal_ok and is_reserved:
-            user_text = (
-                f"{prefix_msg}بسته تمدید شما با موفقیت رزرو گردید!</b>\n\n"
-                f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
-                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-                f"⏱ <b>مدت اعتبار بسته:</b> {duration} روز\n"
-                f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users_count)} کاربر\n"
-                f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n\n"
-                f"💡 <i>این بسته به صورت رزرو ذخیره شد و به محض اتمام اعتبار زمانی یا حجمی اشتراک فعلی، به صورت کاملاً خودکار فعال خواهد شد. همچنین می‌توانید در بخش مدیریت اشتراک، آن را در صورت نیاز زودتر فعال کنید.</i>"
-            )
-            await bot.send_message(
-                chat_id=tg_id,
-                text=user_text,
-                reply_markup=sub_config_links_keyboard(email),
-                parse_mode="HTML",
-            )
-            return True, f"بسته تمدید رزرو گردید ({email})", invoice
-        elif renewal_ok and not is_reserved:
-            user_text = (
-                f"{prefix_msg}بسته تمدید شما با موفقیت فعال گردید!</b>\n\n"
-                f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
-                f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-                f"⏱ <b>مدت اعتبار بسته:</b> {duration} روز\n"
-                f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users_count)} کاربر\n"
-                f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n\n"
-            )
-            await bot.send_message(
-                chat_id=tg_id,
-                text=user_text,
-                reply_markup=sub_config_links_keyboard(email),
-                parse_mode="HTML",
-            )
-            return True, f"بسته تمدید فعال گردید ({email})", invoice
 
         client = await xui_api.get_client(email)
         sub_id = client.get("subId", "") if client else ""
