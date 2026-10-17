@@ -18,6 +18,7 @@ from db.models import (
     get_active_client_group,
     get_balance,
     get_card_config,
+    is_admin,
     update_invoice_status,
 )
 from keyboards.inline_kb import (
@@ -316,10 +317,25 @@ async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None
         ]
     )
 
+    user_is_admin = await is_admin(callback.from_user.id)
+    if not user_is_admin:
+        tg_id = callback.from_user.id
+        raw_username = callback.from_user.username
+        if raw_username:
+            prefix = "".join(c for c in raw_username if c.isalnum() or c == "_")
+            if not prefix:
+                prefix = str(tg_id)
+        else:
+            prefix = str(tg_id)
+        hint_text = f"💡 <i>پیشوند <code>{prefix}_</code> به‌صورت خودکار به ابتدای نام انتخابی اضافه خواهد شد.</i>\n\n"
+    else:
+        hint_text = ""
+
     await callback.message.edit_text(
         f"✏️ <b>تغییر نام سرویس «{email}»</b>\n\n"
         "لطفاً نام جدید و دلخواه خود را ارسال کنید (حداکثر ۵۰ کاراکتر):\n\n"
-        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+        f"{hint_text}"
+        "❌ <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=cancel_kb,
         parse_mode="HTML",
     )
@@ -352,7 +368,46 @@ async def rename_process(message: types.Message, state: FSMContext) -> None:
         await state.clear()
         return
 
-    new_name = message.text.strip()[:50]
+    raw_input = message.text.strip()
+    user_is_admin = await is_admin(message.from_user.id)
+
+    if not user_is_admin:
+        tg_id = message.from_user.id
+        raw_username = message.from_user.username
+        if raw_username:
+            prefix = "".join(c for c in raw_username if c.isalnum() or c == "_")
+            if not prefix:
+                prefix = str(tg_id)
+        else:
+            prefix = str(tg_id)
+
+        clean_input = raw_input.lstrip("@_")
+        if not clean_input:
+            cancel_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف و بازگشت",
+                            callback_data=f"sub_view_{old_email}",
+                        )
+                    ]
+                ]
+            )
+            await message.answer(
+                "⚠️ <b>نام وارد شده نامعتبر است.</b>\n\n"
+                "لطفاً نام دیگری را ارسال فرمایید:\n\n"
+                "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+
+        if clean_input.startswith(f"{prefix}_"):
+            new_name = clean_input[:50]
+        else:
+            new_name = f"{prefix}_{clean_input}"[:50]
+    else:
+        new_name = raw_input[:50]
 
     client = await xui_api.get_client(old_email)
     if not client:
