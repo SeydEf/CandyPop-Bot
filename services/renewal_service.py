@@ -22,9 +22,7 @@ logger = logging.getLogger(__name__)
 
 def is_client_expired(client: dict[str, Any]) -> bool:
     total = client.get("totalGB", 0) or 0
-    up = client.get("up", 0) or 0
-    down = client.get("down", 0) or 0
-    used = up + down
+    used = client.get("usedTraffic", 0) or 0
     expiry_time = client.get("expiryTime", 0) or 0
     now_ms = int(time.time() * 1000)
 
