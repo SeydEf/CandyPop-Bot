@@ -43,10 +43,11 @@ from keyboards.reply_kb import BTN_MY_SUBS
 from services import xui_api
 from services.pricing import get_price_breakdown
 from utils.formatting import (
+    format_detailed_traffic,
     format_price,
     format_remaining_days,
-    format_size,
     format_size_gb,
+    format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
 )
@@ -159,10 +160,10 @@ async def _build_dashboard_info(
     sub_link = _build_sub_link(sub_id)
 
     if total_bytes > 0:
-        usage_text = f"{format_size(used_traffic)} / {format_size(total_bytes)}"
-        remaining_text = format_size(remaining)
+        usage_text = f"{format_detailed_traffic(used_traffic)} / {format_size_persian_gb(total_bytes)}"
+        remaining_text = format_detailed_traffic(remaining)
     else:
-        usage_text = f"{format_size(used_traffic)} / نامحدود"
+        usage_text = f"{format_detailed_traffic(used_traffic)} / نامحدود"
         remaining_text = "نامحدود"
 
     limit_ip = client.get("limitIp", 0)

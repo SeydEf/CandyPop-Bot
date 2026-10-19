@@ -44,10 +44,11 @@ from services.pricing import (
     get_pricing_config,
 )
 from utils.formatting import (
+    format_detailed_traffic,
     format_price,
     format_remaining_days,
-    format_size,
     format_size_gb,
+    format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
 )
@@ -1311,12 +1312,10 @@ async def _build_admin_invoice_notification_text(
                 remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
 
                 if total_bytes > 0:
-                    usage_str = (
-                        f"{format_size(used_traffic)} / {format_size(total_bytes)}"
-                    )
-                    remaining_str = format_size(remaining)
+                    usage_str = f"{format_detailed_traffic(used_traffic)} / {format_size_persian_gb(total_bytes)}"
+                    remaining_str = format_detailed_traffic(remaining)
                 else:
-                    usage_str = f"{format_size(used_traffic)} / نامحدود"
+                    usage_str = f"{format_detailed_traffic(used_traffic)} / نامحدود"
                     remaining_str = "نامحدود"
 
                 limit_ip = client.get("limitIp", 0)

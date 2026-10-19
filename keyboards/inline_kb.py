@@ -4,7 +4,7 @@ from typing import Any
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from utils.formatting import to_persian_digits
+from utils.formatting import format_detailed_traffic, to_persian_digits
 
 
 async def volume_keyboard() -> InlineKeyboardMarkup:
@@ -287,13 +287,20 @@ def subscriptions_list_keyboard(
     rows: list[list[InlineKeyboardButton]] = []
     for sub in subs:
         email = sub["email"]
-        name = sub["service_name"]
+        name = sub.get("service_name", email)
         is_enable = sub.get("enable", True)
         status_icon = "🟢" if is_enable else "🔴"
+        total_bytes = sub.get("totalGB", 0)
+        used_traffic = sub.get("usedTraffic", 0)
+        if total_bytes > 0:
+            remaining = max(0, total_bytes - used_traffic)
+            rem_text = format_detailed_traffic(remaining)
+        else:
+            rem_text = "نامحدود"
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{status_icon} {name}",
+                    text=f"{status_icon} {name} | {rem_text}",
                     callback_data=f"sub_view_{email}",
                 )
             ]

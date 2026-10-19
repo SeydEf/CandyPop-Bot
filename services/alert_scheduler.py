@@ -21,7 +21,7 @@ from db.models import (
     resolve_client_tg_id,
 )
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits
+from utils.formatting import format_detailed_traffic, to_persian_digits
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +279,7 @@ async def _process_single_client(
                 alert_key = f"low_gb_{step_gb}"
 
                 if alert_key not in client_alerts:
-                    rem_gb_str = format_size_gb(rem_gb)
+                    rem_gb_str = format_detailed_traffic(rem_bytes)
                     step_title = (
                         f"کمتر از {to_persian_digits(step_gb)} گیگ"
                         if step_gb > 0

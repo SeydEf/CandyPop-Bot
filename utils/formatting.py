@@ -43,6 +43,40 @@ def format_size_gb(gb: float) -> str:
     return f"{gb:.1f}GB"
 
 
+def format_detailed_traffic(bytes_val: float | int) -> str:
+    if bytes_val <= 0:
+        return f"{to_persian_digits(0)} مگابایت ({to_persian_digits(0)} گیگابایت)"
+
+    mb = bytes_val / (1024**2)
+    gb = bytes_val / (1024**3)
+
+    mb_int = int(round(mb))
+    if bytes_val > 0 and mb_int == 0:
+        mb_int = 1
+    mb_str = to_persian_digits(mb_int)
+
+    gb_rounded = round(gb, 2)
+    if gb_rounded == int(gb_rounded):
+        gb_text = str(int(gb_rounded))
+    else:
+        gb_text = f"{gb_rounded:.2f}".rstrip("0").rstrip(".")
+    gb_str = to_persian_digits(gb_text)
+
+    return f"{mb_str} مگابایت ({gb_str} گیگابایت)"
+
+
+def format_size_persian_gb(bytes_val: float | int) -> str:
+    if bytes_val <= 0:
+        return "نامحدود"
+    gb = bytes_val / (1024**3)
+    gb_rounded = round(gb, 2)
+    if gb_rounded == int(gb_rounded):
+        gb_text = str(int(gb_rounded))
+    else:
+        gb_text = f"{gb_rounded:.2f}".rstrip("0").rstrip(".")
+    return f"{to_persian_digits(gb_text)} گیگابایت"
+
+
 def format_remaining_days(expiry_ms: int) -> str:
     import time
 
