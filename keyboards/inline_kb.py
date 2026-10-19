@@ -290,17 +290,11 @@ def subscriptions_list_keyboard(
         name = sub.get("service_name", email)
         is_enable = sub.get("enable", True)
         status_icon = "🟢" if is_enable else "🔴"
-        total_bytes = sub.get("totalGB", 0)
-        used_traffic = sub.get("usedTraffic", 0)
-        if total_bytes > 0:
-            remaining = max(0, total_bytes - used_traffic)
-            rem_text = format_detailed_traffic(remaining)
-        else:
-            rem_text = "نامحدود"
+
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{status_icon} {name} | {rem_text}",
+                    text=f"{status_icon} {name}",
                     callback_data=f"sub_view_{email}",
                 )
             ]
@@ -1600,28 +1594,8 @@ def admin_user_subs_list_keyboard(
         email = c.get("email", "نامشخص")
         enable = c.get("enable", True)
         st_icon = "🟢" if enable else "🔴"
-        total_bytes = c.get("totalGB") or 0
-        used_bytes = (c.get("up", 0) or 0) + (c.get("down", 0) or 0) or (
-            c.get("usedTraffic", 0) or 0
-        )
-        if total_bytes > 0:
-            rem_bytes = max(0, total_bytes - used_bytes)
-            vol_str = format_detailed_traffic(rem_bytes)
-        else:
-            vol_str = "نامحدود"
 
-        expiry_ms = c.get("expiryTime", 0) or 0
-        now_ms = int(time.time() * 1000)
-        if expiry_ms > 0:
-            rem_days = max(0, int((expiry_ms - now_ms) / (86400 * 1000)))
-            dur_str = f"{to_persian_digits(rem_days)} روز" if rem_days > 0 else "منقضی"
-        elif expiry_ms < 0:
-            init_days = abs(expiry_ms) // (86400 * 1000)
-            dur_str = f"{to_persian_digits(init_days)} روز (پس از اتصال)"
-        else:
-            dur_str = "نامحدود"
-
-        btn_text = f"{st_icon} {email} | {vol_str} | {dur_str}"
+        btn_text = f"{st_icon} {email}"
         rows.append(
             [
                 InlineKeyboardButton(

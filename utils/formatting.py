@@ -53,13 +53,15 @@ def format_detailed_traffic(bytes_val: float | int) -> str:
     mb_int = int(round(mb))
     if bytes_val > 0 and mb_int == 0:
         mb_int = 1
-    mb_str = to_persian_digits(mb_int)
+    mb_str = to_persian_digits(f"{mb_int:,}")
 
     gb_rounded = round(gb, 2)
-    if gb_rounded == int(gb_rounded):
-        gb_text = str(int(gb_rounded))
+    int_part = int(gb_rounded)
+    dec_part = f"{gb_rounded:.2f}".split(".")[1].rstrip("0")
+    if dec_part:
+        gb_text = f"{int_part:,}.{dec_part}"
     else:
-        gb_text = f"{gb_rounded:.2f}".rstrip("0").rstrip(".")
+        gb_text = f"{int_part:,}"
     gb_str = to_persian_digits(gb_text)
 
     return f"{mb_str} مگابایت ({gb_str} گیگابایت)"
@@ -70,10 +72,12 @@ def format_size_persian_gb(bytes_val: float | int) -> str:
         return "نامحدود"
     gb = bytes_val / (1024**3)
     gb_rounded = round(gb, 2)
-    if gb_rounded == int(gb_rounded):
-        gb_text = str(int(gb_rounded))
+    int_part = int(gb_rounded)
+    dec_part = f"{gb_rounded:.2f}".split(".")[1].rstrip("0")
+    if dec_part:
+        gb_text = f"{int_part:,}.{dec_part}"
     else:
-        gb_text = f"{gb_rounded:.2f}".rstrip("0").rstrip(".")
+        gb_text = f"{int_part:,}"
     return f"{to_persian_digits(gb_text)} گیگابایت"
 
 
