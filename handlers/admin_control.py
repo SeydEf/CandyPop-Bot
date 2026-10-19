@@ -26,9 +26,11 @@ from services.test_sub_config import (
 )
 from utils.formatting import (
     format_datetime,
+    format_detailed_traffic,
     format_price,
     format_size,
     format_size_gb,
+    format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
 )
@@ -10354,12 +10356,14 @@ async def admin_online_clients_list(
         elif client and "usedTraffic" in client:
             used_bytes = client.get("usedTraffic", 0) or 0
 
-        used_str = format_size(used_bytes)
-        total_str = format_size(total_bytes) if total_bytes > 0 else "نامحدود"
+        used_str = format_detailed_traffic(used_bytes)
+        total_str = (
+            format_size_persian_gb(total_bytes) if total_bytes > 0 else "نامحدود"
+        )
 
         if total_bytes > 0:
             rem_bytes = max(0, total_bytes - used_bytes)
-            vol_line = f"   📊 مصرف: <b>{used_str}</b> از <b>{total_str}</b> (🔋 باقیمانده: <b>{format_size(rem_bytes)}</b>)"
+            vol_line = f"   📊 مصرف: <b>{used_str}</b> از <b>{total_str}</b> (🔋 باقیمانده: <b>{format_detailed_traffic(rem_bytes)}</b>)"
         else:
             vol_line = f"   📊 مصرف: <b>{used_str}</b> (سقف: <b>نامحدود</b>)"
 

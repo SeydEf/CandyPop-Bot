@@ -22,8 +22,10 @@ from db.models import (
 from services import xui_api
 from utils.formatting import (
     format_datetime,
+    format_detailed_traffic,
     format_price,
     format_size_gb,
+    format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
 )
@@ -291,9 +293,13 @@ async def _render_sub_dashboard(
     )
 
     total_bytes = client.get("totalGB", 0)
-    total_gb = total_bytes / (1024**3)
-    used_gb = used_bytes / (1024**3)
-    rem_gb = max(0.0, total_gb - used_gb)
+    total_str = format_size_persian_gb(total_bytes) if total_bytes > 0 else "نامحدود"
+    used_str = format_detailed_traffic(used_bytes)
+    rem_str = (
+        format_detailed_traffic(max(0, total_bytes - used_bytes))
+        if total_bytes > 0
+        else "نامحدود"
+    )
 
     expiry_ms = client.get("expiryTime", 0)
     now_ms = int(time.time() * 1000)
@@ -341,9 +347,9 @@ async def _render_sub_dashboard(
         f"📡 <b>وضعیت اتصال و آنلاین:</b>\n"
         f"   • 🌐 آخرین اتصال: {last_online_str}\n"
         f"   • 🔄 آخرین دریافت ساب: {last_sub_fetch_str}\n\n"
-        f"📊 <b>حجم کل:</b> {format_size_gb(total_gb)}\n"
-        f"📉 <b>حجم مصرفی:</b> {format_size_gb(used_gb)}\n"
-        f"🔋 <b>حجم باقیمانده:</b> {format_size_gb(rem_gb)}\n\n"
+        f"📊 <b>حجم کل:</b> {total_str}\n"
+        f"📉 <b>حجم مصرفی:</b> {used_str}\n"
+        f"🔋 <b>حجم باقیمانده:</b> {rem_str}\n\n"
         f"⏱ <b>تاریخ انقضا:</b> {time_str}\n\n"
         f"🔗 <b>لینک ساب‌اسکریپشن:</b>\n<code>{sub_link}</code>"
     )

@@ -1592,8 +1592,6 @@ def admin_user_subs_list_keyboard(
 ) -> InlineKeyboardMarkup:
     import time
 
-    from utils.formatting import format_size_gb
-
     rows: list[list[InlineKeyboardButton]] = []
     start_idx = current_page * page_size
 
@@ -1602,7 +1600,15 @@ def admin_user_subs_list_keyboard(
         email = c.get("email", "نامشخص")
         enable = c.get("enable", True)
         st_icon = "🟢" if enable else "🔴"
-        total_gb = (c.get("totalGB") or 0) / (1024**3)
+        total_bytes = c.get("totalGB") or 0
+        used_bytes = (c.get("up", 0) or 0) + (c.get("down", 0) or 0) or (
+            c.get("usedTraffic", 0) or 0
+        )
+        if total_bytes > 0:
+            rem_bytes = max(0, total_bytes - used_bytes)
+            vol_str = format_detailed_traffic(rem_bytes)
+        else:
+            vol_str = "نامحدود"
 
         expiry_ms = c.get("expiryTime", 0) or 0
         now_ms = int(time.time() * 1000)
@@ -1615,7 +1621,7 @@ def admin_user_subs_list_keyboard(
         else:
             dur_str = "نامحدود"
 
-        btn_text = f"{st_icon} {email} | {format_size_gb(total_gb)} | {dur_str}"
+        btn_text = f"{st_icon} {email} | {vol_str} | {dur_str}"
         rows.append(
             [
                 InlineKeyboardButton(
