@@ -16,7 +16,7 @@ from db.models import (
     get_sub_final_attachment,
 )
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits
+from utils.formatting import format_size_gb, to_persian_digits, _build_sub_link
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +76,6 @@ async def activate_fresh_plan(
     except Exception as e:
         logger.warning("Failed to clear notified alerts for %s: %s", email, e)
 
-    try:
-        await delete_reserved_renewal(email)
-    except Exception as e:
-        logger.warning("Failed to delete reserved renewal for %s: %s", email, e)
-
     return res
 
 
@@ -133,19 +128,6 @@ async def process_renewal_purchase(
         )
         return RenewalPurchaseResult(True, "اشتراک شما با موفقیت تمدید شد.", False)
 
-    await create_reserved_renewal(
-        email=email,
-        tg_id=tg_id,
-        duration_days=duration_days,
-        data_gb=data_gb,
-        users_count=users_count,
-        invoice_id=invoice_id,
-    )
-    msg = (
-        "بسته تمدید با موفقیت برای شما رزرو گردید. "
-        "به محض اتمام حجم یا زمان اشتراک فعلی، این بسته به صورت خودکار برای سرویس شما فعال خواهد شد."
-    )
-
     if is_client_expired(client):
         await activate_fresh_plan(
             email=email,
@@ -158,6 +140,19 @@ async def process_renewal_purchase(
         )
         msg = "اشتراک منقضی‌شده شما با موفقیت تمدید و فعال گردید."
         return RenewalPurchaseResult(True, msg, False)
+
+    await create_reserved_renewal(
+        email=email,
+        tg_id=tg_id,
+        duration_days=duration_days,
+        data_gb=data_gb,
+        users_count=users_count,
+        invoice_id=invoice_id,
+    )
+    msg = (
+        "بسته تمدید با موفقیت برای شما رزرو گردید. "
+        "به محض اتمام حجم یا زمان اشتراک فعلی، این بسته به صورت خودکار برای سرویس شما فعال خواهد شد."
+    )
 
     return RenewalPurchaseResult(True, msg, True)
 
@@ -218,12 +213,12 @@ async def activate_reserved_renewal(
     client["limitIp"] = users_count
     client["enable"] = True
 
-    sub_id = client.get("subId", "")
-    sub_link = _build_sub_link(sub_id)
-
     await xui_api.update_client(email, client)
     await clear_notified_alerts(email)
     await delete_reserved_renewal(email)
+
+    sub_id = client.get("subId", "")
+    sub_link = _build_sub_link(sub_id)
 
     logger.info(
         "Activated reserved renewal for client %s: %d GB, %d days",
@@ -235,13 +230,13 @@ async def activate_reserved_renewal(
     if bot and tg_id > 0:
         try:
             msg = (
-                f"🎉 <b>بسته رزرو شده شما فعال شد!</b>\n\n"
+                f"🎉 <b>بسته تمدید شما با موفقیت فعال شد!</b>\n\n"
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-                f"📊 <b>حجم ترافیک:</b> <b>{format_size_gb(data_gb)}</b>\n"
-                f"⏱ <b>مدت اعتبار:</b> <b>{to_persian_digits(total_duration_days)} روز</b>\n"
-                f"👥 <b>تعداد کاربر مجاز:</b> <b>{to_persian_digits(users_count)} کاربر</b>\n"
-                f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n"
-                f"سرویس شما با موفقیت به بسته جدید ارتقا یافت و فعال گردید."
+                f"⏱ <b>مدت اعتبار جدید:</b> {to_persian_digits(total_duration_days)} روز\n"
+                f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users_count)} کاربر\n"
+                f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(data_gb)}\n"
+                f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
+                f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
             )
 
             final_attachment = await get_sub_final_attachment()
