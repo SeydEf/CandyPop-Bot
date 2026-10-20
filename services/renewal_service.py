@@ -13,6 +13,7 @@ from db.models import (
     get_reserve_renewal_config,
     get_reserved_renewal,
     get_start_first_use_config,
+    get_sub_final_attachment,
 )
 from services import xui_api
 from utils.formatting import format_size_gb, to_persian_digits
@@ -217,6 +218,9 @@ async def activate_reserved_renewal(
     client["limitIp"] = users_count
     client["enable"] = True
 
+    sub_id = client.get("subId", "")
+    sub_link = _build_sub_link(sub_id)
+
     await xui_api.update_client(email, client)
     await clear_notified_alerts(email)
     await delete_reserved_renewal(email)
@@ -235,9 +239,14 @@ async def activate_reserved_renewal(
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                 f"📊 <b>حجم ترافیک:</b> <b>{format_size_gb(data_gb)}</b>\n"
                 f"⏱ <b>مدت اعتبار:</b> <b>{to_persian_digits(total_duration_days)} روز</b>\n"
-                f"👥 <b>تعداد کاربر مجاز:</b> <b>{to_persian_digits(users_count)} کاربر</b>\n\n"
+                f"👥 <b>تعداد کاربر مجاز:</b> <b>{to_persian_digits(users_count)} کاربر</b>\n"
+                f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n"
                 f"سرویس شما با موفقیت به بسته جدید ارتقا یافت و فعال گردید."
             )
+
+            final_attachment = await get_sub_final_attachment()
+            if final_attachment:
+                msg += final_attachment
             await bot.send_message(chat_id=tg_id, text=msg, parse_mode="HTML")
         except Exception as e:
             logger.warning(
