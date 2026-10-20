@@ -72,6 +72,8 @@ class AdminControlStates(StatesGroup):
     waiting_group_create_name = State()
     waiting_group_rename_name = State()
 
+    waiting_sub_final_note = State()
+
     waiting_card_number = State()
     waiting_card_holder = State()
 
@@ -573,6 +575,12 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="📦 تنظیمات تمدید رزرو شده (Queued Renewal)",
                     callback_data="admin_reserve_renewal_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📎 پیوست پیام نهایی خرید/تمدید",
+                    callback_data="admin_sub_note_menu",
                 ),
             ],
             [
@@ -12836,3 +12844,167 @@ async def admin_backup_command(message: types.Message, bot: Bot) -> None:
         pass
     if not success:
         await message.answer(f"❌ خطا در ارسال نسخه پشتیبان: {err}")
+
+
+async def _build_sub_note_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_sub_final_note_config
+
+    cfg = await get_sub_final_note_config()
+    is_enabled = cfg["enabled"]
+    note_text = cfg["text"].strip()
+    status_str = "فعال 🟢" if is_enabled else "غیرفعال 🔴"
+    toggle_text = "🔴 غیرفعال‌سازی" if is_enabled else "🟢 فعال‌سازی"
+
+    display_note = (
+        f"<code>{note_text}</code>"
+        if note_text
+        else "<i>(هنوز متنی تنظیم نشده است)</i>"
+    )
+
+    text = (
+        "📎 <b>تنظیم پیوست پیام نهایی خرید و تمدید</b>\n\n"
+        "این متن به صورت خودکار به انتهای پیام نهایی خرید و تمدید اشتراک (پیامی که حاوی لینک هوشمند اشتراک و QR کد است) پیوست خواهد شد.\n\n"
+        f"🔘 <b>وضعیت:</b> {status_str}\n\n"
+        f"📝 <b>متن پیوست فعلی:</b>\n{display_note}\n\n"
+        "💡 <i>می‌توانید برای اطلاع‌رسانی قوانین، کانال پشتیبانی، آموزش اتصال یا راهنمای اپلیکیشن‌ها از این بخش استفاده کنید.</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✏️ تنظیم / ویرایش متن پیوست",
+                    callback_data="admin_sub_note_edit",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=toggle_text,
+                    callback_data="admin_sub_note_toggle",
+                ),
+                InlineKeyboardButton(
+                    text="🗑 حذف متن پیوست",
+                    callback_data="admin_sub_note_clear",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات",
+                    callback_data="admin_settings_menu",
+                ),
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_sub_note_menu")
+async def admin_sub_note_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "sub_final_note"):
+        return
+    await state.clear()
+    text, keyboard = await _build_sub_note_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_sub_note_toggle")
+async def admin_sub_note_toggle_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "sub_final_note"):
+        return
+    from db.models import get_sub_final_note_config, set_sub_final_note_config
+
+    cfg = await get_sub_final_note_config()
+    new_status = not cfg["enabled"]
+    await set_sub_final_note_config(enabled=new_status)
+    text, keyboard = await _build_sub_note_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    toast = "فعال شد 🟢" if new_status else "غیرفعال شد 🔴"
+    await callback.answer(f"پیوست پیام نهایی {toast}")
+
+
+@router.callback_query(F.data == "admin_sub_note_clear")
+async def admin_sub_note_clear_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "sub_final_note"):
+        return
+    from db.models import set_sub_final_note_config
+
+    await set_sub_final_note_config(text="")
+    text, keyboard = await _build_sub_note_panel()
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer("متن پیوست پاک شد 🗑")
+
+
+@router.callback_query(F.data == "admin_sub_note_edit")
+async def admin_sub_note_edit_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "sub_final_note"):
+        return
+    await state.set_state(AdminControlStates.waiting_sub_final_note)
+    text = (
+        "✏️ <b>ورود متن پیوست جدید</b>\n\n"
+        "متن مورد نظر خود را برای پیوست به پیام نهایی خرید و تمدید ارسال کنید.\n"
+        "(پشتیبانی از تگ‌های HTML مانند <code>&lt;b&gt;</code> و <code>&lt;code&gt;</code> مجاز است)\n\n"
+        "<i>برای انصراف /cancel را ارسال کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data="admin_sub_note_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_sub_final_note)
+async def admin_sub_note_save_handler(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _require_permission(message, "sub_final_note"):
+        return
+    if not message.text:
+        await message.answer("❌ لطفاً متن معتبر ارسال کنید.")
+        return
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_sub_note_panel()
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    note_text = message.text.strip()
+    if len(note_text) > 600:
+        await message.answer(
+            "⚠️ متن پیوست به دلیل محدودیت کپشن تلگرام حداکثر می‌تواند ۶۰۰ کاراکتر باشد. لطفاً متن کوتاه‌تری ارسال کنید."
+        )
+        return
+
+    from db.models import set_sub_final_note_config
+
+    await set_sub_final_note_config(enabled=True, text=note_text)
+    await state.clear()
+    text, keyboard = await _build_sub_note_panel()
+    await message.answer(
+        f"✅ <b>متن پیوست با موفقیت ذخیره و فعال شد!</b>\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )

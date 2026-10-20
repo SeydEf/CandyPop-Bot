@@ -23,6 +23,7 @@ from db.models import (
     get_balance,
     get_card_config,
     get_invoice,
+    get_sub_final_attachment,
     set_invoice_message_id,
     set_invoice_receipt,
     update_invoice_status,
@@ -715,6 +716,9 @@ async def buy_wallet_confirm(
             f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
             f"💡 <i>برای اتصال، لینک بالا را کپی کرده یا کد QR را در نرم‌افزار خود اسکن کنید.</i>"
         )
+        final_attachment = await get_sub_final_attachment()
+        if final_attachment:
+            success_text += final_attachment
 
         await state.clear()
         if sub_id:
@@ -728,12 +732,20 @@ async def buy_wallet_confirm(
                 await callback.message.delete()
             except Exception:
                 pass
-            await callback.message.answer_photo(
-                photo=photo,
-                caption=success_text,
-                reply_markup=sub_config_links_keyboard(email),
-                parse_mode="HTML",
-            )
+            if len(success_text) <= 1024:
+                await callback.message.answer_photo(
+                    photo=photo,
+                    caption=success_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
+            else:
+                await callback.message.answer_photo(photo=photo)
+                await callback.message.answer(
+                    success_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
         else:
             await callback.message.edit_text(
                 success_text,

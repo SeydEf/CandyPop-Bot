@@ -4,7 +4,7 @@ from typing import Any
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from utils.formatting import format_detailed_traffic, to_persian_digits
+from utils.formatting import to_persian_digits
 
 
 async def volume_keyboard() -> InlineKeyboardMarkup:
@@ -1584,7 +1584,6 @@ def admin_user_subs_list_keyboard(
     total_pages: int,
     page_size: int = 5,
 ) -> InlineKeyboardMarkup:
-    import time
 
     rows: list[list[InlineKeyboardButton]] = []
     start_idx = current_page * page_size

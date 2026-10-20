@@ -15,6 +15,7 @@ from db.models import (
     get_active_inbound_ids,
     get_invoice,
     get_start_first_use_config,
+    get_sub_final_attachment,
     get_user,
     process_referral_commission,
     update_invoice_status,
@@ -98,6 +99,8 @@ async def approve_invoice(
 
         await process_referral_commission(tg_id, amount, bot)
 
+        final_attachment = await get_sub_final_attachment()
+
         is_reserved = False
         if target_email:
             email = target_email
@@ -124,6 +127,7 @@ async def approve_invoice(
                     f"💳 <b>روش پرداخت:</b> کارت به کارت\n\n"
                     f"💡 <i>این بسته رزرو شد و پس از پایان اعتبار زمانی یا حجمی اشتراک فعلی، به‌صورت کاملاً خودکار فعال می‌شود. در صورت نیاز می‌توانید آن را در بخش مدیریت اشتراک زودتر فعال کنید.</i>"
                 )
+
                 await bot.send_message(
                     chat_id=tg_id,
                     text=user_text,
@@ -146,6 +150,8 @@ async def approve_invoice(
                     f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
                     f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
                 )
+                if final_attachment:
+                    user_text += final_attachment
                 await bot.send_message(
                     chat_id=tg_id,
                     text=user_text,
@@ -194,17 +200,28 @@ async def approve_invoice(
             f"📊 حجم: {format_size_gb(gb)}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
         )
+        if final_attachment:
+            user_text += final_attachment
 
         if sub_id:
             qr_buf = generate_qr(sub_link)
             photo = BufferedInputFile(qr_buf.getvalue(), filename="qrcode.png")
-            await bot.send_photo(
-                chat_id=tg_id,
-                photo=photo,
-                caption=user_text,
-                reply_markup=sub_config_links_keyboard(email),
-                parse_mode="HTML",
-            )
+            if len(user_text) <= 1024:
+                await bot.send_photo(
+                    chat_id=tg_id,
+                    photo=photo,
+                    caption=user_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
+            else:
+                await bot.send_photo(chat_id=tg_id, photo=photo)
+                await bot.send_message(
+                    chat_id=tg_id,
+                    text=user_text,
+                    reply_markup=sub_config_links_keyboard(email),
+                    parse_mode="HTML",
+                )
         else:
             await bot.send_message(
                 chat_id=tg_id,

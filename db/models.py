@@ -579,6 +579,32 @@ async def delete_start_message() -> None:
     await set_setting("start_message_data", "")
 
 
+async def get_sub_final_note_config() -> dict[str, Any]:
+    enabled_val = await get_setting("sub_final_note_enabled", "1")
+    text_val = await get_setting("sub_final_note_text", "") or ""
+    return {
+        "enabled": enabled_val == "1",
+        "text": text_val,
+    }
+
+
+async def set_sub_final_note_config(
+    enabled: bool | None = None,
+    text: str | None = None,
+) -> None:
+    if enabled is not None:
+        await set_setting("sub_final_note_enabled", "1" if enabled else "0")
+    if text is not None:
+        await set_setting("sub_final_note_text", text)
+
+
+async def get_sub_final_attachment() -> str:
+    cfg = await get_sub_final_note_config()
+    if cfg["enabled"] and cfg["text"].strip():
+        return f"\n\n{cfg['text'].strip()}"
+    return ""
+
+
 async def get_pricing_display_config() -> dict[str, Any]:
     enabled_val = await get_setting("pricing_section_enabled", "1")
     hide_btn_val = await get_setting("pricing_hide_button", "0")
@@ -2003,6 +2029,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "start_message": "تنظیم پیام پس از استارت",
     "channel_lock": "تنظیمات عضویت اجباری کانال",
     "channel_posts": "مدیریت پست‌ها و کپشن خودکار کانال",
+    "sub_final_note": "تنظیم پیوست پیام نهایی خرید/تمدید",
     "backup": "📦 مدیریت و پشتیبان‌گیری دیتابیس",
     "reset_configs": "بازنشانی تنظیمات به پیش‌فرض",
     "stats": "مشاهده آمار و گزارشات ربات",
@@ -2034,6 +2061,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "start_message": True,
     "channel_lock": True,
     "channel_posts": True,
+    "sub_final_note": True,
     "backup": False,
     "reset_configs": False,
     "stats": True,

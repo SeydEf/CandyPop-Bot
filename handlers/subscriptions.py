@@ -18,6 +18,7 @@ from db.models import (
     get_active_client_group,
     get_balance,
     get_card_config,
+    get_sub_final_attachment,
     is_admin,
     update_invoice_status,
 )
@@ -1433,6 +1434,7 @@ async def renew_wallet_confirm(
                 f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
                 f"💡 <i>این بسته رزرو شد و پس از پایان اعتبار زمانی یا حجمی اشتراک فعلی، به‌صورت کاملاً خودکار فعال می‌شود. در صورت نیاز می‌توانید آن را در بخش مدیریت اشتراک زودتر فعال کنید.</i>"
             )
+
             await callback.message.edit_text(
                 success_text,
                 reply_markup=sub_config_links_keyboard(email),
@@ -1455,6 +1457,10 @@ async def renew_wallet_confirm(
                 f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
             )
 
+            final_attachment = await get_sub_final_attachment()
+            if final_attachment:
+                success_text += final_attachment
+
             if sub_id:
                 from aiogram.types import BufferedInputFile
 
@@ -1464,12 +1470,20 @@ async def renew_wallet_confirm(
                     await callback.message.delete()
                 except Exception:
                     pass
-                await callback.message.answer_photo(
-                    photo=photo,
-                    caption=success_text,
-                    reply_markup=sub_config_links_keyboard(email),
-                    parse_mode="HTML",
-                )
+                if len(success_text) <= 1024:
+                    await callback.message.answer_photo(
+                        photo=photo,
+                        caption=success_text,
+                        reply_markup=sub_config_links_keyboard(email),
+                        parse_mode="HTML",
+                    )
+                else:
+                    await callback.message.answer_photo(photo=photo)
+                    await callback.message.answer(
+                        success_text,
+                        reply_markup=sub_config_links_keyboard(email),
+                        parse_mode="HTML",
+                    )
             else:
                 await callback.message.edit_text(
                     success_text,
