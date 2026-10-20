@@ -16,7 +16,8 @@ from db.models import (
     get_sub_final_attachment,
 )
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits, _build_sub_link
+from utils.formatting import format_size_gb, to_persian_digits
+from utils.helpers import _build_sub_link
 
 logger = logging.getLogger(__name__)
 
