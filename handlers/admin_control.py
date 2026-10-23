@@ -1656,8 +1656,12 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
         else:
             status_desc = "غیرفعال 🔴"
 
+        is_unlimited = bool(p.get("is_unlimited", False))
+        vol_label = (
+            "♾️ نامحدود (۳۰۰ گیگ)" if is_unlimited else f"{to_persian_digits(gb)} گیگ"
+        )
         lines.append(
-            f"  {to_persian_digits(i + 1)}. <b>{to_persian_digits(gb)} گیگ</b> ── <code>{mode_desc}</code>{txt_note} ╸ <b>{status_desc}</b>"
+            f"  {to_persian_digits(i + 1)}. <b>{vol_label}</b> ── <code>{mode_desc}</code>{txt_note} ╸ <b>{status_desc}</b>"
         )
 
     list_desc = "\n".join(lines) if lines else "<i>هیچ پلنی تعریف نشده است.</i>"
@@ -1674,9 +1678,11 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     plan_btns = []
     for i, p in enumerate(vol_plans):
         gb = p.get("gb", 0)
+        is_unlimited = bool(p.get("is_unlimited", False))
         is_manual = p.get("price_type") == "manual" and p.get("price", 0) > 0
         tag = f" ({format_price(p['price'])})" if is_manual else " (خودکار)"
-        btn_label = p.get("button_text", "").strip() or f"{gb} گیگ{tag}"
+        default_label = f"♾️ نامحدود{tag}" if is_unlimited else f"{gb} گیگ{tag}"
+        btn_label = p.get("button_text", "").strip() or default_label
 
         enb_buy = p.get("enabled_buy", True)
         enb_renew = p.get("enabled_renew", True)
@@ -1759,12 +1765,24 @@ async def _build_volume_plan_details(
 
     enb_buy = p.get("enabled_buy", True)
     enb_renew = p.get("enabled_renew", True)
+    is_unlimited = bool(p.get("is_unlimited", False))
     buy_status_str = "🟢 فعال" if enb_buy else "🔴 غیرفعال"
     renew_status_str = "🟢 فعال" if enb_renew else "🔴 غیرفعال"
+    unlimited_status_str = (
+        "🟢 فعال (نمایش نامحدود به خریدار)"
+        if is_unlimited
+        else "⚪️ غیرفعال (نمایش عادی)"
+    )
+    vol_title = (
+        "♾️ نامحدود (۳۰۰ گیگابایت)"
+        if is_unlimited
+        else f"{to_persian_digits(gb)} گیگابایت"
+    )
 
     text = (
-        f"📦 <b>جزئیات پلن حجم: {to_persian_digits(gb)} گیگابایت</b>\n\n"
+        f"📦 <b>جزئیات پلن حجم: {vol_title}</b>\n\n"
         f"📍 <b>موقعیت در لیست:</b> جایگاه {to_persian_digits(idx + 1)} از {to_persian_digits(len(vol_plans))}\n"
+        f"♾️ <b>حالت نامحدود:</b> <b>{unlimited_status_str}</b>\n"
         f"🔘 <b>نحوه قیمت‌گذاری:</b> <b>{type_str}</b>\n"
         f"💵 <b>مبلغ موثر:</b> <code>{format_price(cur_price)}</code>\n"
         f"📝 <b>متن دکمه کیبورد:</b> {btn_text_display}\n"
@@ -1826,6 +1844,14 @@ async def _build_volume_plan_details(
                 text="🗑️ حذف این پلن",
                 callback_data=f"admin_vol_plan_delete_{idx}",
             ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"♾️ نمایش نامحدود: {'🟢 فعال' if is_unlimited else '⚪️ غیرفعال'}",
+                callback_data=f"admin_vol_plan_toggle_unlimited_{idx}",
+            )
         ]
     )
     rows.append(
@@ -1896,6 +1922,34 @@ async def admin_vol_plan_toggle_renew(callback: types.CallbackQuery) -> None:
         text, markup = res
         await safe_edit_text(callback.message, text, reply_markup=markup)
     await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_toggle_unlimited_\d+$"))
+async def admin_vol_plan_toggle_unlimited(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+
+    curr = bool(vol_plans[idx].get("is_unlimited", False))
+    new_state = not curr
+    vol_plans[idx]["is_unlimited"] = new_state
+    if new_state:
+        vol_plans[idx]["gb"] = 300
+    await set_volume_plans(vol_plans)
+
+    res = await _build_volume_plan_details(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(
+            callback.message, text, reply_markup=markup, parse_mode="HTML"
+        )
+    await callback.answer("✅ وضعیت پلن نامحدود به‌روزرسانی شد.")
 
 
 @router.callback_query(F.data == "admin_vol_plan_toggle_custom_buy")
@@ -2073,47 +2127,59 @@ async def admin_vol_plan_edit_gb_save(
     data = await state.get_data()
     idx = data.get("edit_vol_idx", 0)
 
-    try:
-        clean = (
-            persian_to_english_digits(message.text.strip())
-            .replace(",", "")
-            .replace("،", "")
-            .replace(" ", "")
-        )
-        val = int(clean)
-        if val <= 0:
-            raise ValueError
-    except ValueError:
-        cancel_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت",
-                        callback_data=f"admin_vol_plan_view_{idx}",
-                    )
+    raw = message.text.strip()
+    is_unlimited = False
+    clean_lower = (
+        persian_to_english_digits(raw).lower().replace(" ", "").replace("‌", "")
+    )
+    if clean_lower in ["نامحدود", "unlimited", "بینهایت", "بی‌نهایت"]:
+        val = 300
+        is_unlimited = True
+    else:
+        try:
+            clean = clean_lower.replace(",", "").replace("،", "")
+            val = int(clean)
+            if val <= 0:
+                raise ValueError
+            if val == 300:
+                is_unlimited = True
+        except ValueError:
+            cancel_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف و بازگشت",
+                            callback_data=f"admin_vol_plan_view_{idx}",
+                        )
+                    ]
                 ]
-            ]
-        )
-        await message.answer(
-            "❌ لطفاً یک عدد صحیح مثبت معتبر ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
-            reply_markup=cancel_kb,
-            parse_mode="HTML",
-        )
-        return
+            )
+            await message.answer(
+                "❌ لطفاً یک عدد صحیح مثبت یا عبارت «نامحدود» ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
 
     from services.pricing import get_volume_plans, set_volume_plans
 
     vol_plans = await get_volume_plans()
     if 0 <= idx < len(vol_plans):
         vol_plans[idx]["gb"] = val
+        vol_plans[idx]["is_unlimited"] = is_unlimited
         await set_volume_plans(vol_plans)
 
     await state.clear()
     res = await _build_volume_plan_details(idx)
     if res:
         text, keyboard = res
+        title_msg = (
+            "<b>♾️ نامحدود (۳۰۰ گیگابایت)</b>"
+            if is_unlimited
+            else f"<b>{to_persian_digits(val)} گیگابایت</b>"
+        )
         await message.answer(
-            f"✅ حجم پلن با موفقیت به <b>{to_persian_digits(val)} گیگابایت</b> تغییر یافت.\n\n{text}",
+            f"✅ حجم پلن با موفقیت به {title_msg} تغییر یافت.\n\n{text}",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -2450,7 +2516,7 @@ async def admin_vol_plan_add_start(
     await safe_edit_text(
         callback.message,
         "➕ <b>افزودن پلن حجم جدید</b>\n\n"
-        "میزان حجم پلن را به گیگابایت (GB) ارسال کنید (مثال: <code>35</code>):\n\n"
+        "میزان حجم پلن را به گیگابایت (GB) ارسال کنید یا برای پلن نامحدود عبارت «<b>نامحدود</b>» یا عدد «<b>300</b>» را بفرستید:\n\n"
         "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=cancel_kb,
         parse_mode="HTML",
@@ -2467,35 +2533,41 @@ async def admin_vol_plan_add_gb_received(
         await message.answer("❌ عملیات لغو شد.")
         return
 
-    try:
-        clean = (
-            persian_to_english_digits(message.text.strip())
-            .replace(",", "")
-            .replace("،", "")
-            .replace(" ", "")
-        )
-        gb = int(clean)
-        if gb <= 0:
-            raise ValueError
-    except ValueError:
-        cancel_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت",
-                        callback_data="admin_volume_plans_menu",
-                    )
+    raw = message.text.strip()
+    is_unlimited = False
+    clean_lower = (
+        persian_to_english_digits(raw).lower().replace(" ", "").replace("‌", "")
+    )
+    if clean_lower in ["نامحدود", "unlimited", "بینهایت", "بی‌نهایت"]:
+        gb = 300
+        is_unlimited = True
+    else:
+        try:
+            clean = clean_lower.replace(",", "").replace("،", "")
+            gb = int(clean)
+            if gb <= 0:
+                raise ValueError
+            if gb == 300:
+                is_unlimited = True
+        except ValueError:
+            cancel_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="❌ انصراف و بازگشت",
+                            callback_data="admin_volume_plans_menu",
+                        )
+                    ]
                 ]
-            ]
-        )
-        await message.answer(
-            "❌ لطفاً یک عدد صحیح مثبت معتبر ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
-            reply_markup=cancel_kb,
-            parse_mode="HTML",
-        )
-        return
+            )
+            await message.answer(
+                "❌ لطفاً یک عدد صحیح مثبت یا عبارت «نامحدود» ارسال کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
 
-    await state.update_data(new_vol_gb=gb)
+    await state.update_data(new_vol_gb=gb, new_vol_is_unlimited=is_unlimited)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -2518,9 +2590,13 @@ async def admin_vol_plan_add_gb_received(
             ],
         ]
     )
+    plan_title = (
+        "<b>♾️ نامحدود (۳۰۰ گیگابایت)</b>"
+        if is_unlimited
+        else f"حجم <b>{to_persian_digits(gb)} گیگابایت</b>"
+    )
     await message.answer(
-        f"حجم <b>{to_persian_digits(gb)} گیگابایت</b> ثبت شد.\n\n"
-        "نحوه قیمت‌گذاری این پلن جدید را انتخاب کنید:",
+        f"پلن {plan_title} ثبت شد.\n\nنحوه قیمت‌گذاری این پلن جدید را انتخاب کنید:",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -2534,6 +2610,7 @@ async def admin_vol_plan_add_auto(
         return
     data = await state.get_data()
     gb = data.get("new_vol_gb", 10)
+    is_unlimited = bool(data.get("new_vol_is_unlimited", False))
 
     from services.pricing import get_volume_plans, set_volume_plans
 
@@ -2545,6 +2622,7 @@ async def admin_vol_plan_add_auto(
             "price": 0,
             "enabled_buy": True,
             "enabled_renew": True,
+            "is_unlimited": is_unlimited,
         }
     )
     await set_volume_plans(vol_plans)
@@ -2596,6 +2674,7 @@ async def admin_vol_plan_add_price_received(
 
     data = await state.get_data()
     gb = data.get("new_vol_gb", 10)
+    is_unlimited = bool(data.get("new_vol_is_unlimited", False))
 
     try:
         clean = (
@@ -2635,14 +2714,20 @@ async def admin_vol_plan_add_price_received(
             "price": val,
             "enabled_buy": True,
             "enabled_renew": True,
+            "is_unlimited": is_unlimited,
         }
     )
     await set_volume_plans(vol_plans)
     await state.clear()
 
     text, keyboard = await _build_volume_plans_panel()
+    plan_title = (
+        "<b>♾️ نامحدود (۳۰۰ گیگابایت)</b>"
+        if is_unlimited
+        else f"<b>{to_persian_digits(gb)} گیگابایت</b>"
+    )
     await message.answer(
-        f"✅ پلن حجم <b>{to_persian_digits(gb)} گیگابایت</b> با قیمت مشخص <b>{format_price(val)}</b> با موفقیت اضافه شد.\n\n{text}",
+        f"✅ پلن حجم {plan_title} با قیمت مشخص <b>{format_price(val)}</b> با موفقیت اضافه شد.\n\n{text}",
         reply_markup=keyboard,
         parse_mode="HTML",
     )

@@ -41,6 +41,7 @@ from keyboards.inline_kb import (
 from keyboards.reply_kb import BTN_BUY, main_menu_keyboard
 from services import xui_api
 from services.pricing import (
+    format_volume_label,
     get_price_breakdown,
     get_pricing_config,
 )
@@ -48,7 +49,6 @@ from utils.formatting import (
     format_detailed_traffic,
     format_price,
     format_remaining_days,
-    format_size_gb,
     format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
@@ -150,7 +150,7 @@ async def _get_users_step_text(gb: int, users: int = 1) -> str:
 
     return (
         f"📋 <b>مشخصات و قیمت مراحل قبلی:</b>\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} <i>({format_price(data_price)})</i>\n\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} <i>({format_price(data_price)})</i>\n\n"
         f"👤 <b>گام ۲ از ۳: انتخاب تعداد کاربر همزمان (ظرفیت اتصال)</b>\n\n"
         f"چه تعداد کاربر یا دستگاه به‌صورت همزمان از این سرویس استفاده خواهند کرد؟\n"
         f"💡 <i>به ازای هر کاربر اضافه، مبلغ +{format_price(user_surcharge_unit)} به اشتراک افزوده می‌شود.</i>\n\n"
@@ -361,7 +361,7 @@ async def _get_duration_step_text(gb: int, users: int) -> str:
 
     return (
         f"📋 <b>مشخصات و قیمت مراحل قبلی:</b>\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} <i>({format_price(data_price)})</i>\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} <i>({format_price(data_price)})</i>\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر<i>{user_surcharge_str}</i>\n"
         f"💵 <b>مجموع قیمت پایه (حجم + کاربر):</b> <b>{format_price(base_sum)}</b>\n\n"
         f"⏱ <b>گام ۳ از ۳: انتخاب مدت‌زمان اعتبار</b>\n\n"
@@ -504,7 +504,7 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
 
     text = (
         f"📋 <b>پیش‌فاکتور خرید اشتراک جدید</b>\n\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"⏱ <b>مدت زمان:</b> {days} روز{dur_str}\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
@@ -541,7 +541,7 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
 
     text = (
         f"📋 <b>پیش‌فاکتور خرید اشتراک جدید</b>\n\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
         f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
@@ -596,7 +596,7 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
         f"🛍 <b>جزئیات سفارش:</b>\n"
         f"⏱ مدت زمان: {duration} روز{dur_str}\n"
         f"👥 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم ترافیک: {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"📊 حجم ترافیک: {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n"
         f"💎 مبلغ کل: <b>{format_price(price)}</b>\n\n"
         f"💳 موجودی فعلی حساب: {format_price(balance)}\n"
         f"📉 موجودی پس از پرداخت: {format_price(after_balance)}\n\n"
@@ -710,7 +710,7 @@ async def buy_wallet_confirm(
             f"🔹 <b>شناسه سرویس:</b> <code>{email}</code>\n"
             f"⏱ <b>مدت اعتبار:</b> {duration} روز\n"
             f"👥 <b>تعداد کاربر همزمان:</b> {to_persian_digits(users)} کاربر\n"
-            f"📊 <b>حجم اشتراک:</b> {format_size_gb(gb)}\n"
+            f"📊 <b>حجم اشتراک:</b> {await format_volume_label(gb)}\n"
             f"💳 <b>روش پرداخت:</b> کیف پول حساب\n"
             f"👛 <b>موجودی باقیمانده:</b> {format_price(new_balance)}\n\n"
             f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
@@ -831,7 +831,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
             f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
             f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
             f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-            f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+            f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
             f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
             f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
         )
@@ -914,7 +914,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         f"🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n\n"
         f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💵 مبلغ اولیه: <s>{format_price(original_price)}</s>\n"
         f"🏷️ کد تخفیف: <code>{clean_code}</code> (<b>{disc_label}</b>)\n"
         f"🎁 سود شما از این خرید: -{format_price(discount_amount)}\n\n"
@@ -961,7 +961,7 @@ async def buy_discount_cancel(callback: types.CallbackQuery, state: FSMContext) 
         f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
         f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
         f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
@@ -1005,7 +1005,7 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
         f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
         f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
         f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
@@ -1096,7 +1096,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         f"📋 <b>جزئیات سفارش شما:</b>\n"
         f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n"
         f"{disc_info}"
         f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
@@ -1395,7 +1395,7 @@ async def _build_admin_invoice_notification_text(
         f"{order_header}"
         f"⏱ مدت: {invoice['duration_days']} روز\n"
         f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
-        f"📊 حجم: {format_size_gb(invoice['data_gb'])}\n"
+        f"📊 حجم: {await format_volume_label(invoice['data_gb'], with_real_gb=True)}\n"
         f"{disc_info}"
         f"{price_line}"
     )

@@ -145,6 +145,7 @@ async def load_pricing_config() -> dict[str, Any]:
                     "button_text": str(p.get("button_text", "")).strip(),
                     "enabled_buy": bool(p.get("enabled_buy", True)),
                     "enabled_renew": bool(p.get("enabled_renew", True)),
+                    "is_unlimited": bool(p.get("is_unlimited", False)),
                 }
                 for p in raw_vol_plans
                 if int(p.get("gb", 0)) > 0
@@ -323,6 +324,7 @@ async def set_volume_plans(plans: list[dict[str, Any]]) -> None:
             "button_text": str(p.get("button_text", "")).strip(),
             "enabled_buy": bool(p.get("enabled_buy", True)),
             "enabled_renew": bool(p.get("enabled_renew", True)),
+            "is_unlimited": bool(p.get("is_unlimited", False)),
         }
         for p in plans
         if int(p.get("gb", 0)) > 0
@@ -334,19 +336,37 @@ async def set_volume_plans(plans: list[dict[str, Any]]) -> None:
 def format_volume_button_text(plan: dict[str, Any], data_price: int) -> str:
     from utils.formatting import format_price
 
+    is_unlimited = bool(plan.get("is_unlimited", False))
     btn_text = str(plan.get("button_text", "")).strip()
     if not btn_text:
+        if is_unlimited:
+            return f"♾️ نامحدود ({format_price(data_price)})"
         return f"📊 {plan.get('gb', 0)} گیگ ({format_price(data_price)})"
 
     raw_price_str = f"{data_price:,}"
     price_str = format_price(data_price)
-    gb_str = str(plan.get("gb", 0))
+    gb_str = "نامحدود" if is_unlimited else str(plan.get("gb", 0))
 
     return (
         btn_text.replace("{gb}", gb_str)
         .replace("{price}", price_str)
         .replace("{raw_price}", raw_price_str)
     )
+
+
+async def is_unlimited_volume(gb: int) -> bool:
+    if gb != 300:
+        return False
+    vol_plans = await get_volume_plans()
+    return any(p.get("gb") == 300 and p.get("is_unlimited") for p in vol_plans)
+
+
+async def format_volume_label(gb: int, with_real_gb: bool = False) -> str:
+    from utils.formatting import format_size_gb
+
+    if await is_unlimited_volume(gb):
+        return "♾️ نامحدود (۳۰۰ گیگ)" if with_real_gb else "♾️ نامحدود"
+    return format_size_gb(gb)
 
 
 async def get_duration_plans() -> list[dict[str, Any]]:

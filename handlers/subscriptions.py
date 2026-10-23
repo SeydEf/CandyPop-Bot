@@ -42,7 +42,7 @@ from services.renewal_service import (
 )
 from keyboards.reply_kb import BTN_MY_SUBS
 from services import xui_api
-from services.pricing import get_price_breakdown
+from services.pricing import format_volume_label, get_price_breakdown
 from utils.formatting import (
     format_detailed_traffic,
     format_price,
@@ -818,7 +818,7 @@ async def _build_renewal_invoice(
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
     )
 
     if total_discount > 0:
@@ -1335,7 +1335,7 @@ async def renew_wallet_payment(
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ فاکتور:</b> {format_price(price)}\n"
         f"💰 <b>موجودی فعلی شما:</b> {format_price(balance)}\n"
         f"📉 <b>موجودی پس از پرداخت:</b> {format_price(after_balance)}\n\n"
@@ -1429,7 +1429,7 @@ async def renew_wallet_confirm(
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                 f"⏱ <b>مدت اعتبار بسته:</b> {duration} روز\n"
                 f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر\n"
-                f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n"
+                f"📊 <b>حجم ترافیک بسته:</b> {await format_volume_label(gb)}\n"
                 f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
                 f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
                 f"💡 <i>این بسته رزرو شد و پس از پایان اعتبار زمانی یا حجمی اشتراک فعلی، به‌صورت کاملاً خودکار فعال می‌شود. در صورت نیاز می‌توانید آن را در بخش مدیریت اشتراک زودتر فعال کنید.</i>"
@@ -1450,7 +1450,7 @@ async def renew_wallet_confirm(
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                 f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز\n"
                 f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر\n"
-                f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)}\n"
+                f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb)}\n"
                 f"💳 <b>روش پرداخت:</b> کیف پول (آنی)\n"
                 f"👛 <b>موجودی باقیمانده کیف پول:</b> {format_price(new_balance)}\n\n"
                 f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
@@ -1789,7 +1789,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)} ({format_price(bd['data_price'])})\n"
+        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n"
         f"{disc_info}"
         f"💎 <b>مبلغ نهایی جهت واریز:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
