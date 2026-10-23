@@ -14,6 +14,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import ADMIN_CHAT_ID
 from db.models import reset_all_test_subs
 from services.pricing import (
+    format_volume_label,
     get_pricing_config,
     reset_pricing_config_to_defaults,
     update_base_gb_rate,
@@ -2622,7 +2623,7 @@ async def admin_vol_plan_add_start(
     await safe_edit_text(
         callback.message,
         "➕ <b>افزودن پلن حجم جدید</b>\n\n"
-        "میزان حجم پلن را به گیگابایت (GB) ارسال کنید یا برای پلن نامحدود عبارت «<b>نامحدود</b>» یا عدد «<b>300</b>» را بفرستید:\n\n"
+        "میزان حجم پلن را به گیگابایت (GB) ارسال کنید یا برای پلن نامحدود عبارت «<b>نامحدود</b>» را بفرستید:\n\n"
         "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=cancel_kb,
         parse_mode="HTML",
@@ -9740,14 +9741,16 @@ async def _render_invoice_details(
         spec_str = "شارژ مستقیم کیف پول کاربر"
     elif target_email:
         type_str = "🔄 تمدید اشتراک موجود"
+        vol_str = await format_volume_label(inv.get("data_gb", 0), with_real_gb=True)
         spec_str = (
             f"نام سرویس: <code>{target_email}</code>\n"
-            f"   • حجم: {format_size_gb(inv.get('data_gb', 0))} | مدت: {to_persian_digits(inv.get('duration_days', 0))} روز"
+            f"   • حجم: {vol_str} | مدت: {to_persian_digits(inv.get('duration_days', 0))} روز"
         )
     else:
         type_str = "🛍 خرید اشتراک جدید"
+        vol_str = await format_volume_label(inv.get("data_gb", 0), with_real_gb=True)
         spec_str = (
-            f"حجم: {format_size_gb(inv.get('data_gb', 0))} | "
+            f"حجم: {vol_str} | "
             f"مدت: {to_persian_digits(inv.get('duration_days', 0))} روز | "
             f"تعداد کاربر: {to_persian_digits(inv.get('users_count', 1))} کاربر"
         )
@@ -10038,14 +10041,16 @@ async def admin_invoice_reapprove_ask(
     ):
         op_desc = f"شارژ مستقیم کیف پول کاربر به مبلغ {amount_str}"
     elif target_email:
+        vol_str = await format_volume_label(inv.get("data_gb", 0), with_real_gb=True)
         op_desc = (
             f"تمدید اشتراک <code>{target_email}</code> "
-            f"({to_persian_digits(inv.get('duration_days', 0))} روز | {format_size_gb(inv.get('data_gb', 0))})"
+            f"({to_persian_digits(inv.get('duration_days', 0))} روز | {vol_str})"
         )
     else:
+        vol_str = await format_volume_label(inv.get("data_gb", 0), with_real_gb=True)
         op_desc = (
             f"ساخت اشتراک جدید "
-            f"({to_persian_digits(inv.get('duration_days', 0))} روز | {format_size_gb(inv.get('data_gb', 0))})"
+            f"({to_persian_digits(inv.get('duration_days', 0))} روز | {vol_str})"
         )
 
     text = (

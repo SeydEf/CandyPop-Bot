@@ -42,7 +42,11 @@ from services.renewal_service import (
 )
 from keyboards.reply_kb import BTN_MY_SUBS
 from services import xui_api
-from services.pricing import format_volume_label, get_price_breakdown
+from services.pricing import (
+    format_volume_label,
+    get_price_breakdown,
+    is_unlimited_volume,
+)
 from utils.formatting import (
     format_detailed_traffic,
     format_price,
@@ -160,7 +164,17 @@ async def _build_dashboard_info(
     sub_id = client.get("subId", "")
     sub_link = _build_sub_link(sub_id)
 
-    if total_bytes > 0:
+    total_gb_int = int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
+    is_unlimited = (total_bytes == 0) or (await is_unlimited_volume(total_gb_int))
+
+    if is_unlimited:
+        if total_bytes > 0:
+            usage_text = f"{format_detailed_traffic(used_traffic)} / ♾️ نامحدود (سقف منصفانه {format_size_persian_gb(total_bytes)})"
+            remaining_text = f"{format_detailed_traffic(remaining)} (از سقف منصفانه)"
+        else:
+            usage_text = f"{format_detailed_traffic(used_traffic)} / ♾️ نامحدود"
+            remaining_text = "♾️ نامحدود"
+    elif total_bytes > 0:
         usage_text = f"{format_detailed_traffic(used_traffic)} / {format_size_persian_gb(total_bytes)}"
         remaining_text = format_detailed_traffic(remaining)
     else:
@@ -188,10 +202,13 @@ async def _build_dashboard_info(
     else:
         status_text = "🔴 غیرفعال"
 
+    plan_type_line = "📦 <b>نوع اشتراک:</b> ♾️ نامحدود\n" if is_unlimited else ""
+
     text = (
         f"<b>داشبورد مدیریت اشتراک</b>\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{client.get('email', email)}</code>\n"
         f"⚡️ <b>وضعیت اشتراک:</b> {status_text}\n"
+        f"{plan_type_line}"
         f"👥 <b>ظرفیت کاربر:</b> {users_text}\n"
         f"📊 <b>میزان مصرف:</b> {usage_text}\n"
         f"🔋 <b>ترافیک باقیمانده:</b> {remaining_text}\n"
@@ -210,11 +227,12 @@ async def _build_dashboard_info(
         res_dur = res_rec.get("duration_days", 0)
         res_gb = res_rec.get("data_gb", 0)
         res_users = res_rec.get("users_count", 1)
+        res_vol_label = await format_volume_label(res_gb, with_fair_policy=True)
         text += (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 <b>بسته تمدید رزروشده:</b>\n"
             f"⏱ <b>مدت اعتبار:</b> {res_dur} روز\n"
-            f"📊 <b>حجم ترافیک:</b> {format_size_gb(res_gb)}\n"
+            f"📊 <b>حجم ترافیک:</b> {res_vol_label}\n"
             f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(res_users)} کاربر\n"
             f"💡 <i>این بسته پس از پایان حجم یا زمان سرویس فعلی، به‌صورت خودکار فعال می‌شود.</i>"
         )
@@ -1853,7 +1871,7 @@ async def sub_act_res_prompt_handler(callback: types.CallbackQuery) -> None:
         f"⚡️ <b>فعال‌سازی پیش از موعد بسته تمدید</b>\n\n"
         f"🏷 <b>سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار بسته:</b> {res_rec.get('duration_days', 0)} روز\n"
-        f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(res_rec.get('data_gb', 0))}\n"
+        f"📊 <b>حجم ترافیک بسته:</b> {await format_volume_label(res_rec.get('data_gb', 0), with_fair_policy=True)}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(res_rec.get('users_count', 1))} کاربر\n\n"
         f"⚠️ <b>توجه مهم:</b>\n"
         f"با فعال‌سازی پیش از موعد، مصرف دوره جاری صفر شده و بسته رزرو از همین لحظه فعال می‌شود.\n\n"

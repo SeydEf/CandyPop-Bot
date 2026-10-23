@@ -20,6 +20,7 @@ from db.models import (
     search_users,
 )
 from services import xui_api
+from services.pricing import format_volume_label, is_unlimited_volume
 from utils.formatting import (
     format_datetime,
     format_detailed_traffic,
@@ -187,8 +188,20 @@ async def _perform_search_and_render(
             email = c.get("email", "نامشخص")
             enable = c.get("enable", True)
             status_icon = "🟢" if enable else "🔴"
-            total_gb = (c.get("totalGB") or 0) / (1024**3)
-            lines.append(f"• {status_icon} <b>{email}</b> ({format_size_gb(total_gb)})")
+            c_total_bytes = c.get("totalGB") or 0
+            c_total_gb = c_total_bytes / (1024**3)
+            c_gb_int = int(round(c_total_gb))
+            c_is_unlimited = (c_total_bytes == 0) or (
+                await is_unlimited_volume(c_gb_int)
+            )
+            if c_is_unlimited:
+                if c_total_bytes == 0:
+                    gb_badge = "♾️ نامحدود"
+                else:
+                    gb_badge = f"♾️ نامحدود ({to_persian_digits(c_gb_int)} گیگ)"
+            else:
+                gb_badge = format_size_gb(c_total_gb)
+            lines.append(f"• {status_icon} <b>{email}</b> ({gb_badge})")
             keyboard_rows.append(
                 [
                     InlineKeyboardButton(
@@ -293,13 +306,26 @@ async def _render_sub_dashboard(
     )
 
     total_bytes = client.get("totalGB", 0)
-    total_str = format_size_persian_gb(total_bytes) if total_bytes > 0 else "نامحدود"
+    total_gb_int = int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
+    is_unlimited = (total_bytes == 0) or (await is_unlimited_volume(total_gb_int))
+
+    if is_unlimited:
+        if total_bytes > 0:
+            total_str = f"♾️ نامحدود (سقف منصفانه {format_size_persian_gb(total_bytes)})"
+            rem_str = f"{format_detailed_traffic(max(0, total_bytes - used_bytes))} (از سقف منصفانه)"
+        else:
+            total_str = "♾️ نامحدود"
+            rem_str = "♾️ نامحدود"
+    else:
+        total_str = (
+            format_size_persian_gb(total_bytes) if total_bytes > 0 else "نامحدود"
+        )
+        rem_str = (
+            format_detailed_traffic(max(0, total_bytes - used_bytes))
+            if total_bytes > 0
+            else "نامحدود"
+        )
     used_str = format_detailed_traffic(used_bytes)
-    rem_str = (
-        format_detailed_traffic(max(0, total_bytes - used_bytes))
-        if total_bytes > 0
-        else "نامحدود"
-    )
 
     expiry_ms = client.get("expiryTime", 0)
     now_ms = int(time.time() * 1000)
@@ -336,11 +362,13 @@ async def _render_sub_dashboard(
     sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
     notice_block = f"{notice}\n\n" if notice else ""
+    plan_type_line = "📦 <b>نوع اشتراک:</b> ♾️ نامحدود\n" if is_unlimited else ""
 
     text = (
         f"{notice_block}"
         f"⚙️ <b>مدیریت اشتراک:</b> <code>{email}</code>\n\n"
         f"🔘 <b>وضعیت:</b> {status_str}\n"
+        f"{plan_type_line}"
         f"👥 <b>سقف کاربر (IP):</b> {limit_ip_str}\n"
         f"🏷 <b>گروه مشتری:</b> <code>{group_name}</code>\n"
         f"🆔 <b>آیدی تلگرام:</b> {tg_id_display}\n\n"
@@ -363,11 +391,12 @@ async def _render_sub_dashboard(
         res_users = res_rec.get("users_count", 1)
         res_inv = res_rec.get("invoice_id")
         inv_str = f" (فاکتور: <code>{res_inv}</code>)" if res_inv else ""
+        res_vol_str = await format_volume_label(res_gb, with_fair_policy=True)
         text += (
             f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 <b>بسته تمدید رزرو شده:</b>\n"
             f"   • ⏱ مدت زمان: {res_dur} روز\n"
-            f"   • 📊 حجم ترافیک: {format_size_gb(res_gb)}\n"
+            f"   • 📊 حجم ترافیک: {res_vol_str}\n"
             f"   • 👥 سقف کاربر: {to_persian_digits(res_users)} کاربر{inv_str}\n"
             f"   • 💡 <i>این بسته پس از انقضای فعلی به صورت خودکار فعال می‌شود.</i>"
         )
@@ -2656,12 +2685,17 @@ async def admin_user_create_sub_dur_save(
         sub_id = client.get("subId", "") if client else ""
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
+        vol_label = await format_volume_label(gb_val, with_fair_policy=True)
+        is_sub_unlimited = await is_unlimited_volume(gb_val)
+        plan_line = "📦 نوع اشتراک: ♾️ نامحدود\n" if is_sub_unlimited else ""
+
         await _clear_fsm_keep_nav(state)
         await message.answer(
             f"🎉 <b>اشتراک جدید با موفقیت ایجاد شد!</b>\n\n"
             f"👤 کاربر: <code>{tg_id}</code>\n"
             f"🏷 نام سرویس: <code>{email}</code>\n"
-            f"📊 حجم: {format_size_gb(gb_val)}\n"
+            f"{plan_line}"
+            f"📊 حجم: {vol_label}\n"
             f"⏱ مدت: {to_persian_digits(dur_val)} روز\n\n"
             f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_link}</code>",
             parse_mode="HTML",

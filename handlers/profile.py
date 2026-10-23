@@ -21,10 +21,10 @@ from keyboards.inline_kb import (
 )
 from keyboards.reply_kb import BTN_PROFILE
 from services import xui_api
+from services.pricing import format_volume_label
 from utils.formatting import (
     format_datetime,
     format_price,
-    format_size_gb,
     to_persian_digits,
 )
 
@@ -140,7 +140,7 @@ def _format_status_badge(status: str) -> str:
     return status
 
 
-def _format_invoice_details(inv: dict[str, Any]) -> str:
+async def _format_invoice_details(inv: dict[str, Any]) -> str:
     inv_id = inv["id"]
     status_str = _format_status_badge(inv.get("status", ""))
     amount = inv.get("amount", 0)
@@ -154,19 +154,20 @@ def _format_invoice_details(inv: dict[str, Any]) -> str:
     pm_str = "کیف پول 👛" if payment_method == "wallet" else "کارت به کارت 💳"
     date_str = format_datetime(created_at)
 
+    vol_str = await format_volume_label(gb, with_fair_policy=True)
     if target_email == "TOPUP" or (dur == 0 and gb == 0):
         item_type = "💰 <b>شارژ مستقیم کیف پول</b>"
     elif target_email:
         item_type = (
             f"🔄 <b>تمدید اشتراک</b>\n"
             f"   🏷 سرویس: <code>{target_email}</code>\n"
-            f"   ⏱ مدت: {dur} روز | 👥 کاربر: {to_persian_digits(users)} | 📊 حجم: {format_size_gb(gb)}"
+            f"   ⏱ مدت: {dur} روز | 👥 کاربر: {to_persian_digits(users)} | 📊 حجم: {vol_str}"
         )
     else:
         item_type = (
             f"🚀 <b>خرید اشتراک جدید</b>\n"
             f"   ⏱ مدت اعتبار: {dur} روز\n"
-            f"   📊 حجم اختصاصی: {format_size_gb(gb)}\n"
+            f"   📊 حجم اختصاصی: {vol_str}\n"
             f"   👥 ظرفیت همزمان: {to_persian_digits(users)} کاربر"
         )
 
@@ -222,7 +223,7 @@ async def profile_orders_callback(callback: types.CallbackQuery) -> None:
         f"📄 <i>صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}</i>\n\n"
     )
     for inv in invoices:
-        text += _format_invoice_details(inv) + "\n"
+        text += await _format_invoice_details(inv) + "\n"
 
     await callback.message.edit_text(
         text,

@@ -44,6 +44,7 @@ from services.pricing import (
     format_volume_label,
     get_price_breakdown,
     get_pricing_config,
+    is_unlimited_volume,
 )
 from utils.formatting import (
     format_detailed_traffic,
@@ -1323,7 +1324,25 @@ async def _build_admin_invoice_notification_text(
                 used_traffic = client_full.get("usedTraffic", 0) if client_full else 0
                 remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
 
-                if total_bytes > 0:
+                total_gb_int = (
+                    int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
+                )
+                is_sub_unlimited = (total_bytes == 0) or (
+                    await is_unlimited_volume(total_gb_int)
+                )
+
+                if is_sub_unlimited:
+                    if total_bytes > 0:
+                        usage_str = f"{format_detailed_traffic(used_traffic)} / ♾️ نامحدود (سقف {format_size_persian_gb(total_bytes)})"
+                        remaining_str = (
+                            f"{format_detailed_traffic(remaining)} (سقف منصفانه)"
+                        )
+                    else:
+                        usage_str = (
+                            f"{format_detailed_traffic(used_traffic)} / ♾️ نامحدود"
+                        )
+                        remaining_str = "♾️ نامحدود"
+                elif total_bytes > 0:
                     usage_str = f"{format_detailed_traffic(used_traffic)} / {format_size_persian_gb(total_bytes)}"
                     remaining_str = format_detailed_traffic(remaining)
                 else:
@@ -1351,10 +1370,15 @@ async def _build_admin_invoice_notification_text(
                 else:
                     status_str = "🔴 غیرفعال"
 
+                sub_type_line = (
+                    "📦 <b>نوع اشتراک فعلی:</b> ♾️ نامحدود\n" if is_sub_unlimited else ""
+                )
+
                 client_info_text = (
                     f"📋 <b>وضعیت فعلی اشتراک (جهت تمدید):</b>\n"
                     f"🏷 <b>نام سرویس:</b> <code>{target_email}</code>\n"
                     f"⚡️ <b>وضعیت:</b> {status_str}\n"
+                    f"{sub_type_line}"
                     f"👥 <b>ظرفیت کاربر:</b> {users_str}\n"
                     f"📊 <b>میزان مصرف:</b> {usage_str}\n"
                     f"🔋 <b>ترافیک باقیمانده:</b> {remaining_str}\n"

@@ -23,11 +23,11 @@ from db.models import (
 from services.renewal_service import (
     process_renewal_purchase,
 )
+from services.pricing import format_volume_label, is_unlimited_volume
 from keyboards.inline_kb import sub_config_links_keyboard
 from services import xui_api
 from utils.formatting import (
     format_price,
-    format_size_gb,
     to_persian_digits,
 )
 from utils.helpers import gb_to_bytes, generate_email, generate_qr, _build_sub_link
@@ -116,14 +116,19 @@ async def approve_invoice(
             )
             action_msg = "اشتراک شما با موفقیت تمدید و فعال گردید"
 
+            vol_label = await format_volume_label(gb, with_fair_policy=True)
+            is_unlimited = await is_unlimited_volume(gb)
+            plan_line = "📦 <b>نوع بسته:</b> ♾️ نامحدود\n" if is_unlimited else ""
+
             if renewal_ok and is_reserved:
                 user_text = (
                     f"{prefix_msg}بسته تمدید شما با موفقیت رزرو گردید!</b>\n\n"
                     f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
                     f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                    f"{plan_line}"
                     f"⏱ <b>مدت اعتبار بسته:</b> {to_persian_digits(duration)} روز\n"
                     f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users_count)} کاربر\n"
-                    f"📊 <b>حجم ترافیک بسته:</b> {format_size_gb(gb)}\n"
+                    f"📊 <b>حجم ترافیک بسته:</b> {vol_label}\n"
                     f"💳 <b>روش پرداخت:</b> کارت به کارت\n\n"
                     f"💡 <i>این بسته رزرو شد و پس از پایان اعتبار زمانی یا حجمی اشتراک فعلی، به‌صورت کاملاً خودکار فعال می‌شود. در صورت نیاز می‌توانید آن را در بخش مدیریت اشتراک زودتر فعال کنید.</i>"
                 )
@@ -143,9 +148,10 @@ async def approve_invoice(
                 user_text = (
                     f"{prefix_msg}بسته تمدید شما با موفقیت فعال گردید!</b>\n\n"
                     f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+                    f"{plan_line}"
                     f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز\n"
                     f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users_count)} کاربر\n"
-                    f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(gb)}\n"
+                    f"📊 <b>حجم ترافیک جدید:</b> {vol_label}\n"
                     f"💳 <b>روش پرداخت:</b> کارت به کارت\n\n"
                     f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
                     f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
@@ -191,13 +197,18 @@ async def approve_invoice(
         sub_id = client.get("subId", "") if client else ""
         sub_link = f"{SUB_BASE_URL}/{sub_id}" if sub_id else "نامشخص"
 
+        vol_label = await format_volume_label(gb, with_fair_policy=True)
+        is_unlimited = await is_unlimited_volume(gb)
+        plan_line = "📦 نوع اشتراک: ♾️ نامحدود\n" if is_unlimited else ""
+
         user_text = (
             f"{prefix_msg}{action_msg}!</b>\n\n"
             f"🆔 فاکتور: <code>{invoice_id}</code>\n"
             f"📦 نام سرویس: {email}\n"
+            f"{plan_line}"
             f"⏱ مدت: {duration} روز\n"
             f"👤 تعداد کاربر: {to_persian_digits(users_count)} کاربر\n"
-            f"📊 حجم: {format_size_gb(gb)}\n\n"
+            f"📊 حجم: {vol_label}\n\n"
             f"🔗 لینک اشتراک:\n<code>{sub_link}</code>"
         )
         if final_attachment:
