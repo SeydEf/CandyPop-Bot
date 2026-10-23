@@ -355,17 +355,23 @@ def format_volume_button_text(plan: dict[str, Any], data_price: int) -> str:
 
 
 async def is_unlimited_volume(gb: int) -> bool:
-    if gb != 300:
-        return False
     vol_plans = await get_volume_plans()
-    return any(p.get("gb") == 300 and p.get("is_unlimited") for p in vol_plans)
+    return any(p.get("gb") == gb and p.get("is_unlimited") for p in vol_plans)
 
 
-async def format_volume_label(gb: int, with_real_gb: bool = False) -> str:
-    from utils.formatting import format_size_gb
+async def format_volume_label(
+    gb: int,
+    with_real_gb: bool = False,
+    with_fair_policy: bool = False,
+) -> str:
+    from utils.formatting import format_size_gb, to_persian_digits
 
     if await is_unlimited_volume(gb):
-        return "♾️ نامحدود (۳۰۰ گیگ)" if with_real_gb else "♾️ نامحدود"
+        if with_fair_policy:
+            return f"♾️ نامحدود (سیاست مصرف منصفانه {to_persian_digits(gb)} گیگابایت)"
+        if with_real_gb:
+            return f"♾️ نامحدود ({to_persian_digits(gb)} گیگ)"
+        return "♾️ نامحدود"
     return format_size_gb(gb)
 
 

@@ -818,7 +818,7 @@ async def _build_renewal_invoice(
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
     )
 
     if total_discount > 0:
@@ -1335,7 +1335,7 @@ async def renew_wallet_payment(
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n\n"
+        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
         f"💎 <b>مبلغ فاکتور:</b> {format_price(price)}\n"
         f"💰 <b>موجودی فعلی شما:</b> {format_price(balance)}\n"
         f"📉 <b>موجودی پس از پرداخت:</b> {format_price(after_balance)}\n\n"
@@ -1789,7 +1789,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
         f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
         f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb)} ({format_price(bd['data_price'])})\n"
+        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n"
         f"{disc_info}"
         f"💎 <b>مبلغ نهایی جهت واریز:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
