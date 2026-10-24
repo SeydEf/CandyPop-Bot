@@ -21,6 +21,8 @@ DEFAULT_VOLUME_TIERS: list[tuple[int, int]] = [
     (100, 4_000),
 ]
 DEFAULT_FALLBACK_GB_RATE = 3_500
+DEFAULT_CUSTOM_VOLUME_MIN_GB = 10
+DEFAULT_CUSTOM_VOLUME_MAX_GB = 150
 
 DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
     {
@@ -205,6 +207,26 @@ async def load_pricing_config() -> dict[str, Any]:
     tiers_enabled_str = await get_setting("pricing_volume_tiers_enabled", "1")
     volume_tiers_enabled = tiers_enabled_str != "0"
 
+    custom_vol_min_str = await get_setting("pricing_custom_volume_min_gb")
+    try:
+        custom_vol_min = (
+            int(custom_vol_min_str)
+            if custom_vol_min_str
+            else DEFAULT_CUSTOM_VOLUME_MIN_GB
+        )
+    except (ValueError, TypeError):
+        custom_vol_min = DEFAULT_CUSTOM_VOLUME_MIN_GB
+
+    custom_vol_max_str = await get_setting("pricing_custom_volume_max_gb")
+    try:
+        custom_vol_max = (
+            int(custom_vol_max_str)
+            if custom_vol_max_str
+            else DEFAULT_CUSTOM_VOLUME_MAX_GB
+        )
+    except (ValueError, TypeError):
+        custom_vol_max = DEFAULT_CUSTOM_VOLUME_MAX_GB
+
     _pricing_cache = {
         "base_gb_rate": base_rate,
         "user_surcharge": user_surcharge,
@@ -217,6 +239,8 @@ async def load_pricing_config() -> dict[str, Any]:
         "custom_volume_enabled": custom_vol_enabled,
         "custom_volume_buy_enabled": custom_vol_buy_enabled,
         "custom_volume_renew_enabled": custom_vol_renew_enabled,
+        "custom_volume_min_gb": custom_vol_min,
+        "custom_volume_max_gb": custom_vol_max,
         "custom_duration_enabled": custom_dur_enabled,
         "custom_duration_buy_enabled": custom_dur_buy_enabled,
         "custom_duration_renew_enabled": custom_dur_renew_enabled,
@@ -437,6 +461,23 @@ async def set_custom_volume_renew_enabled(enabled: bool) -> None:
     invalidate_pricing_cache()
 
 
+async def get_custom_volume_range() -> tuple[int, int]:
+    config = await get_pricing_config()
+    min_gb = config.get("custom_volume_min_gb", DEFAULT_CUSTOM_VOLUME_MIN_GB)
+    max_gb = config.get("custom_volume_max_gb", DEFAULT_CUSTOM_VOLUME_MAX_GB)
+    return min_gb, max_gb
+
+
+async def set_custom_volume_min_gb(min_gb: int) -> None:
+    await set_setting("pricing_custom_volume_min_gb", str(min_gb))
+    invalidate_pricing_cache()
+
+
+async def set_custom_volume_max_gb(max_gb: int) -> None:
+    await set_setting("pricing_custom_volume_max_gb", str(max_gb))
+    invalidate_pricing_cache()
+
+
 async def is_custom_duration_enabled() -> bool:
     config = await get_pricing_config()
     return bool(config.get("custom_duration_enabled", True))
@@ -556,6 +597,8 @@ async def reset_pricing_config_to_defaults() -> None:
     await set_setting("pricing_duration_plans", json.dumps(DEFAULT_DURATION_PLANS))
     await set_setting("pricing_custom_volume_enabled", "1")
     await set_setting("pricing_custom_duration_enabled", "1")
+    await set_setting("pricing_custom_volume_min_gb", str(DEFAULT_CUSTOM_VOLUME_MIN_GB))
+    await set_setting("pricing_custom_volume_max_gb", str(DEFAULT_CUSTOM_VOLUME_MAX_GB))
     invalidate_pricing_cache()
 
 

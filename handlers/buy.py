@@ -187,10 +187,15 @@ async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) ->
             ]
         ]
     )
+    from services.pricing import get_custom_volume_range
+
+    min_gb, max_gb = await get_custom_volume_range()
+
     await callback.message.edit_text(
         "✍️ <b>ورود حجم دلخواه:</b>\n\n"
         "میزان حجم مورد نظر را به گیگابایت (عدد لاتین یا فارسی) ارسال کنید.\n"
-        "🔸 <b>حداقل حجم:</b> <code>10</code> گیگابایت\n"
+        f"🔸 <b>حداقل حجم:</b> <code>{to_persian_digits(min_gb)}</code> گیگابایت\n"
+        f"🔸 <b>حداکثر حجم:</b> <code>{to_persian_digits(max_gb)}</code> گیگابایت\n"
         "🔸 <b>مثال:</b> <code>25</code>\n\n"
         "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
         reply_markup=cancel_kb,
@@ -224,24 +229,31 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
                 ]
             ]
         )
-        if gb < 10:
+        from services.pricing import get_custom_volume_range
+
+        min_gb, max_gb = await get_custom_volume_range()
+
+        if gb < min_gb:
             await message.answer(
-                "⚠️ <b>حداقل حجم قابل سفارش ۱۰ گیگابایت است.</b>\n"
-                "لطفاً عددی معادل ۱۰ گیگابایت یا بیشتر وارد کنید.\n\n"
+                f"⚠️ <b>حداقل حجم قابل سفارش {to_persian_digits(min_gb)} گیگابایت است.</b>\n"
+                f"لطفاً عددی معادل {to_persian_digits(min_gb)} گیگابایت یا بیشتر وارد کنید.\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
             return
-        if gb > 150:
+        if gb > max_gb:
             await message.answer(
-                "⚠️ <b>حداکثر حجم قابل سفارش ۱۵۰ گیگابایت است.</b>\n\n"
+                f"⚠️ <b>حداکثر حجم قابل سفارش {to_persian_digits(max_gb)} گیگابایت است.</b>\n\n"
                 "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
                 reply_markup=cancel_kb,
                 parse_mode="HTML",
             )
             return
     except (ValueError, TypeError):
+        from services.pricing import get_custom_volume_range
+
+        min_gb, _ = await get_custom_volume_range()
         cancel_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -252,7 +264,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             ]
         )
         await message.answer(
-            "⚠️ لطفاً فقط یک عدد معتبر ارسال کنید (حداقل ۱۰ گیگابایت).\n🔸 مثال: <code>25</code>\n\n"
+            f"⚠️ لطفاً فقط یک عدد معتبر ارسال کنید (حداقل {to_persian_digits(min_gb)} گیگابایت).\n🔸 مثال: <code>25</code>\n\n"
             "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
             reply_markup=cancel_kb,
             parse_mode="HTML",

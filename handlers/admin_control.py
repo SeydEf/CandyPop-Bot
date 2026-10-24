@@ -52,6 +52,8 @@ class AdminControlStates(StatesGroup):
     waiting_vol_plan_edit_gb = State()
     waiting_vol_plan_edit_price = State()
     waiting_vol_plan_edit_text = State()
+    waiting_custom_volume_min = State()
+    waiting_custom_volume_max = State()
     waiting_dur_plan_add_days = State()
     waiting_dur_plan_add_surcharge = State()
     waiting_dur_plan_edit_days = State()
@@ -1613,6 +1615,7 @@ async def admin_dur_plan_add_surcharge_received(
 async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     from services.pricing import (
         calculate_data_price,
+        get_custom_volume_range,
         get_volume_plans,
         is_custom_volume_buy_enabled,
         is_custom_volume_renew_enabled,
@@ -1621,6 +1624,7 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     vol_plans = await get_volume_plans()
     custom_buy_enabled = await is_custom_volume_buy_enabled()
     custom_renew_enabled = await is_custom_volume_renew_enabled()
+    min_gb, max_gb = await get_custom_volume_range()
     custom_buy_str = "🟢 فعال" if custom_buy_enabled else "🔴 غیرفعال"
     custom_renew_str = "🟢 فعال" if custom_renew_enabled else "🔴 غیرفعال"
 
@@ -1673,7 +1677,8 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
     text = (
         "📦 <b>مدیریت پلن‌های حجم اشتراک</b>\n\n"
         f"🔘 <b>حجم دلخواه خریدار (خرید جدید):</b> <b>{custom_buy_str}</b>\n"
-        f"🔘 <b>حجم دلخواه خریدار (تمدید اشتراک):</b> <b>{custom_renew_str}</b>\n\n"
+        f"🔘 <b>حجم دلخواه خریدار (تمدید اشتراک):</b> <b>{custom_renew_str}</b>\n"
+        f"📏 <b>محدوده حجم دلخواه:</b> از <b>{to_persian_digits(min_gb)}</b> تا <b>{to_persian_digits(max_gb)} گیگابایت</b>\n\n"
         f"📋 <b>لیست پلن‌های تعریف‌شده:</b>\n{list_desc}\n\n"
         "💡 <i>برای جابجایی جایگاه (بالا/پایین)، ویرایش حجم، تغییر قیمت (دستی یا خودکار)، فعال/غیرفعال‌سازی (خرید/تمدید)، شخصی‌سازی متن یا حذف، روی پلن مورد نظر کلیک کنید:</i>"
     )
@@ -1725,6 +1730,18 @@ async def _build_volume_plans_panel() -> tuple[str, InlineKeyboardMarkup]:
             InlineKeyboardButton(
                 text=custom_renew_btn,
                 callback_data="admin_vol_plan_toggle_custom_renew",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"✏️ حداقل حجم ({to_persian_digits(min_gb)} گیگ)",
+                callback_data="admin_vol_custom_edit_min",
+            ),
+            InlineKeyboardButton(
+                text=f"✏️ حداکثر حجم ({to_persian_digits(max_gb)} گیگ)",
+                callback_data="admin_vol_custom_edit_max",
             ),
         ]
     )
@@ -2072,6 +2089,214 @@ async def admin_vol_plan_toggle_custom_renew(callback: types.CallbackQuery) -> N
     if isinstance(callback.message, types.Message):
         await safe_edit_text(callback.message, text, reply_markup=keyboard)
     await callback.answer("✅ وضعیت حجم دلخواه تمدید تغییر یافت.")
+
+
+@router.callback_query(F.data == "admin_vol_custom_edit_min")
+async def admin_vol_custom_edit_min_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_custom_volume_min)
+
+    from services.pricing import get_custom_volume_range
+
+    min_gb, max_gb = await get_custom_volume_range()
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
+            ]
+        ]
+    )
+    prompt_txt = (
+        "✏️ <b>تنظیم حداقل حجم دلخواه (خرید و تمدید):</b>\n\n"
+        "حداقل حجم مجاز را به <b>گیگابایت (GB)</b> ارسال کنید:\n"
+        f"🔸 <b>حداقل فعلی:</b> <code>{to_persian_digits(min_gb)}</code> گیگابایت\n"
+        f"🔸 <b>سقف حداکثر فعلی:</b> <code>{to_persian_digits(max_gb)}</code> گیگابایت\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message,
+            prompt_txt,
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_custom_volume_min, F.text)
+async def admin_vol_custom_edit_min_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_volume_plans_panel()
+        await message.answer(
+            "❌ عملیات تنظیم حداقل حجم لغو شد.\n\n" + text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_custom_volume_range, set_custom_volume_min_gb
+
+    min_gb, max_gb = await get_custom_volume_range()
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
+            ]
+        ]
+    )
+
+    try:
+        raw = persian_to_english_digits(message.text.strip())
+        clean = raw.replace(",", "").replace("،", "").replace(" ", "")
+        val = int(clean)
+        if val < 1:
+            await message.answer(
+                "⚠️ حداقل حجم دلخواه باید حداقل ۱ گیگابایت باشد.\nلطفاً عدد معتبری ارسال کنید:",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+        if val > max_gb:
+            await message.answer(
+                f"⚠️ حداقل حجم نمی‌تواند بیشتر از حداکثر حجم فعلی ({to_persian_digits(max_gb)} گیگابایت) باشد.\nلطفاً عدد کمتری وارد کنید:",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+    except (ValueError, TypeError):
+        await message.answer(
+            "⚠️ لطفاً یک عدد معتبر به عنوان حداقل حجم (GB) ارسال کنید:",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await set_custom_volume_min_gb(val)
+    await state.clear()
+    text, keyboard = await _build_volume_plans_panel()
+    await message.answer(
+        f"✅ حداقل حجم دلخواه با موفقیت به <b>{to_persian_digits(val)} گیگابایت</b> تغییر یافت.\n\n"
+        + text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_vol_custom_edit_max")
+async def admin_vol_custom_edit_max_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_custom_volume_max)
+
+    from services.pricing import get_custom_volume_range
+
+    min_gb, max_gb = await get_custom_volume_range()
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
+            ]
+        ]
+    )
+    prompt_txt = (
+        "✏️ <b>تنظیم حداکثر حجم دلخواه (خرید و تمدید):</b>\n\n"
+        "حداکثر حجم مجاز را به <b>گیگابایت (GB)</b> ارسال کنید:\n"
+        f"🔸 <b>کف حداقل فعلی:</b> <code>{to_persian_digits(min_gb)}</code> گیگابایت\n"
+        f"🔸 <b>حداکثر فعلی:</b> <code>{to_persian_digits(max_gb)}</code> گیگابایت\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message,
+            prompt_txt,
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_custom_volume_max, F.text)
+async def admin_vol_custom_edit_max_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_volume_plans_panel()
+        await message.answer(
+            "❌ عملیات تنظیم حداکثر حجم لغو شد.\n\n" + text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from services.pricing import get_custom_volume_range, set_custom_volume_max_gb
+
+    min_gb, max_gb = await get_custom_volume_range()
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_volume_plans_menu",
+                )
+            ]
+        ]
+    )
+
+    try:
+        raw = persian_to_english_digits(message.text.strip())
+        clean = raw.replace(",", "").replace("،", "").replace(" ", "")
+        val = int(clean)
+        if val < min_gb:
+            await message.answer(
+                f"⚠️ حداکثر حجم نمی‌تواند کمتر از حداقل حجم فعلی ({to_persian_digits(min_gb)} گیگابایت) باشد.\nلطفاً عدد بیشتری وارد کنید:",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+        if val > 10000:
+            await message.answer(
+                "⚠️ مقدار وارد شده بیش از حد مجاز (سقف ۱۰,۰۰۰ گیگابایت) است.\nلطفاً عدد معتبری ارسال کنید:",
+                reply_markup=cancel_kb,
+                parse_mode="HTML",
+            )
+            return
+    except (ValueError, TypeError):
+        await message.answer(
+            "⚠️ لطفاً یک عدد معتبر به عنوان حداکثر حجم (GB) ارسال کنید:",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await set_custom_volume_max_gb(val)
+    await state.clear()
+    text, keyboard = await _build_volume_plans_panel()
+    await message.answer(
+        f"✅ حداکثر حجم دلخواه با موفقیت به <b>{to_persian_digits(val)} گیگابایت</b> تغییر یافت.\n\n"
+        + text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data == "admin_vol_plan_toggle_custom")
