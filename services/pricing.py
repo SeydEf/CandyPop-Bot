@@ -604,30 +604,16 @@ async def get_volume_plan_duration_override(
             k = str(duration_days)
             if k in durations:
                 entry = durations[k]
-                if entry.get("price_type") == "manual" and entry.get("price", 0) > 0:
+                if entry.get("price_type") == "manual":
                     return entry
     return None
 
 
-async def get_volume_plan_duration_info(gb: int, duration_days: int) -> dict[str, Any]:
-    data_price = await calculate_data_price(gb)
-    dur_surcharge = await calculate_duration_surcharge(duration_days)
-    default_total = data_price + dur_surcharge
-
+async def get_volume_plan_duration_surcharge(gb: int, duration_days: int) -> int:
     override = await get_volume_plan_duration_override(gb, duration_days)
-    if override:
-        return {
-            "price_type": "manual",
-            "price": int(override["price"]),
-            "default_total": default_total,
-            "effective_total": int(override["price"]),
-        }
-    return {
-        "price_type": "auto",
-        "price": 0,
-        "default_total": default_total,
-        "effective_total": default_total,
-    }
+    if override and override.get("price_type") == "manual":
+        return max(0, int(override.get("price", 0)))
+    return await calculate_duration_surcharge(duration_days)
 
 
 async def set_volume_plan_duration_price(
@@ -816,12 +802,8 @@ async def calculate_total_price(gb: int, duration_days: int, users_count: int) -
     extra_users = max(0, users_count - 1)
     users_total_surcharge = extra_users * config["user_surcharge"]
 
-    override = await get_volume_plan_duration_override(gb, duration_days)
-    if override:
-        return int(override["price"]) + users_total_surcharge
-
     data_price = await calculate_data_price(gb)
-    dur_surcharge = await calculate_duration_surcharge(duration_days)
+    dur_surcharge = await get_volume_plan_duration_surcharge(gb, duration_days)
 
     return data_price + dur_surcharge + users_total_surcharge
 
@@ -833,20 +815,8 @@ async def get_price_breakdown(
     extra_users = max(0, users_count - 1)
     user_surcharge = extra_users * config["user_surcharge"]
 
-    override = await get_volume_plan_duration_override(gb, duration_days)
-    if override:
-        base_pkg_price = int(override["price"])
-        total_price = base_pkg_price + user_surcharge
-        return {
-            "data_price": base_pkg_price,
-            "duration_surcharge": 0,
-            "user_surcharge": user_surcharge,
-            "total_price": total_price,
-            "is_custom_duration_price": True,
-        }
-
     data_price = await calculate_data_price(gb)
-    dur_surcharge = await calculate_duration_surcharge(duration_days)
+    dur_surcharge = await get_volume_plan_duration_surcharge(gb, duration_days)
     total_price = data_price + dur_surcharge + user_surcharge
 
     return {

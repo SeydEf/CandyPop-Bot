@@ -1900,8 +1900,6 @@ async def _build_volume_plan_durations_panel(
     idx: int,
 ) -> tuple[str, InlineKeyboardMarkup] | None:
     from services.pricing import (
-        calculate_data_price,
-        calculate_duration_surcharge,
         get_duration_plans,
         get_volume_plans,
     )
@@ -1924,10 +1922,10 @@ async def _build_volume_plan_durations_panel(
 
     text = (
         f"⏱ <b>تنظیم مدت‌های مجاز و قیمت‌ها برای: {vol_title}</b>\n\n"
-        "در این بخش می‌توانید وضعیت دسترسی و قیمت هر پلن زمانی را مشخص کنید:\n"
+        "در این بخش می‌توانید وضعیت دسترسی و هزینه مازاد هر پلن زمانی را مشخص کنید:\n"
         "🛒 = وضعیت در خرید جدید\n"
         "🔄 = وضعیت در تمدید اشتراک\n"
-        "💰 = قیمت ثابت پلن برای این حجم (یا پیش‌فرض سیستم)\n\n"
+        "💰 = هزینه مازاد مدت‌زمان (که به قیمت حجم افزوده می‌شود)\n\n"
         "💡 <i>نکته: حداقل یک گزینه باید برای خرید و یک گزینه برای تمدید فعال بماند.</i>"
     )
 
@@ -1951,12 +1949,18 @@ async def _build_volume_plan_durations_panel(
 
         price_type = d_conf.get("price_type", "auto")
         price_val = d_conf.get("price", 0)
-        if price_type == "manual" and price_val > 0:
-            price_display = f"دستی ({format_price(price_val)})"
+        default_sur = d.get("surcharge", 0)
+
+        if price_type == "manual":
+            if price_val > 0:
+                price_display = f"دستی (+{format_price(price_val)})"
+            else:
+                price_display = "دستی (بدون هزینه)"
         else:
-            data_p = await calculate_data_price(gb)
-            dur_s = await calculate_duration_surcharge(days)
-            price_display = f"خودکار ({format_price(data_p + dur_s)})"
+            if default_sur > 0:
+                price_display = f"خودکار (+{format_price(default_sur)})"
+            else:
+                price_display = "خودکار (بدون هزینه)"
 
         rows.append(
             [
@@ -1973,7 +1977,7 @@ async def _build_volume_plan_durations_panel(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"💰 قیمت {dur_title}: {price_display}",
+                    text=f"💰 هزینه {dur_title}: {price_display}",
                     callback_data=f"admin_vol_dur_price_{idx}_{key}",
                 )
             ]
@@ -2112,8 +2116,6 @@ async def admin_vol_dur_price_menu(
     days = int(key)
 
     from services.pricing import (
-        calculate_data_price,
-        calculate_duration_surcharge,
         get_duration_plans,
         get_volume_plans,
     )
@@ -2134,8 +2136,10 @@ async def admin_vol_dur_price_menu(
 
     dur_plans = await get_duration_plans()
     dur_title = f"{to_persian_digits(days)} روزه"
+    default_sur = 0
     for d in dur_plans:
         if d.get("days") == days:
+            default_sur = d.get("surcharge", 0)
             dur_title = d.get("button_text") or (
                 "۱ ساله"
                 if days == 365 or (days % 30 == 0 and days // 30 == 12)
@@ -2148,35 +2152,46 @@ async def admin_vol_dur_price_menu(
             break
 
     cur_conf = p.get("durations", {}).get(key, {})
-    is_manual = cur_conf.get("price_type") == "manual" and cur_conf.get("price", 0) > 0
+    is_manual = cur_conf.get("price_type") == "manual"
+    price_val = cur_conf.get("price", 0)
 
-    data_p = await calculate_data_price(gb)
-    dur_s = await calculate_duration_surcharge(days)
-    default_price = data_p + dur_s
+    if is_manual:
+        cur_price_str = (
+            f"<b>دستی:</b> <code>+{format_price(price_val)}</code>"
+            if price_val > 0
+            else "<b>دستی:</b> <code>بدون هزینه (۰ تومان)</code>"
+        )
+    else:
+        cur_price_str = (
+            f"<b>خودکار بر اساس تعرفه پلن‌های زمانی:</b> <code>+{format_price(default_sur)}</code>"
+            if default_sur > 0
+            else "<b>خودکار بر اساس تعرفه پلن‌های زمانی:</b> <code>بدون هزینه (۰ تومان)</code>"
+        )
 
-    cur_price_str = (
-        f"<b>دستی:</b> <code>{format_price(cur_conf['price'])}</code>"
-        if is_manual
-        else f"<b>خودکار بر اساس تعرفه پیش‌فرض:</b> <code>{format_price(default_price)}</code>"
+    default_price_str = (
+        f"<code>+{format_price(default_sur)}</code>"
+        if default_sur > 0
+        else "<code>بدون هزینه (۰ تومان)</code>"
     )
 
     text = (
-        f"💰 <b>تنظیم قیمت مدت‌زمان {dur_title} برای پلن {vol_title}</b>\n\n"
-        f"💵 <b>وضعیت فعلی قیمت:</b> {cur_price_str}\n"
-        f"💡 <b>مبلغ پیش‌فرض سیستم (حجم + مدت):</b> <code>{format_price(default_price)}</code>\n\n"
-        "می‌توانید یک قیمت مشخص و قطعی برای این مدت‌زمان وارد کنید یا آن را روی حالت محاسبه خودکار (پیش‌فرض سیستم) قرار دهید:"
+        f"💰 <b>تنظیم هزینه مازاد مدت‌زمان {dur_title} برای پلن {vol_title}</b>\n\n"
+        f"💵 <b>وضعیت فعلی:</b> {cur_price_str}\n"
+        f"💡 <b>مبلغ پیش‌فرض پلن‌های زمانی:</b> {default_price_str}\n\n"
+        "این مبلغ در زمان خرید یا تمدید، به قیمت اصلی حجم اضافه خواهد شد.\n"
+        "می‌توانید هزینه مازاد مشخصی را برای این پلن تعیین کنید یا آن را روی حالت خودکار (پیش‌فرض پلن‌های زمانی) قرار دهید:"
     )
 
     rows = [
         [
             InlineKeyboardButton(
-                text="✏️ تعیین قیمت دستی (تومان)",
+                text="✏️ تعیین هزینه دستی (تومان)",
                 callback_data=f"admin_vol_dur_set_manual_{idx}_{key}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🔄 بازنشانی به محاسبه خودکار (پیش‌فرض)",
+                text="🔄 بازنشانی به خودکار (پیش‌فرض پلن‌های زمانی)",
                 callback_data=f"admin_vol_dur_set_auto_{idx}_{key}",
             )
         ],
@@ -2212,7 +2227,7 @@ async def admin_vol_dur_set_auto(callback: types.CallbackQuery) -> None:
     if res and isinstance(callback.message, types.Message):
         text, markup = res
         await safe_edit_text(callback.message, text, reply_markup=markup)
-    await callback.answer("✅ قیمت به حالت محاسبه خودکار بازنشانی شد.")
+    await callback.answer("✅ هزینه به حالت خودکار بازنشانی شد.")
 
 
 @router.callback_query(F.data.regexp(r"^admin_vol_dur_set_manual_\d+_\d+$"))
@@ -2253,9 +2268,9 @@ async def admin_vol_dur_set_manual_prompt(
     if isinstance(callback.message, types.Message):
         await safe_edit_text(
             callback.message,
-            f"✍️ <b>قیمت دستی مدت‌زمان {dur_title} را به تومان وارد کنید:</b>\n\n"
-            "این قیمت برای ۱ کاربر در نظر گرفته می‌شود و در صورت انتخاب بیش از ۱ کاربر، هزینه کاربر مازاد به آن افزوده خواهد شد.\n\n"
-            "مثال: <code>180000</code>\n\n"
+            f"✍️ <b>هزینه مازاد مدت‌زمان {dur_title} را به تومان وارد کنید:</b>\n\n"
+            "این مبلغ به قیمت پایه حجم اضافه خواهد شد (برای بدون هزینه بودن، عدد <code>0</code> را ارسال کنید).\n\n"
+            "مثال: <code>50000</code>\n\n"
             "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
             reply_markup=cancel_kb,
             parse_mode="HTML",
@@ -2284,7 +2299,7 @@ async def admin_vol_plan_dur_price_save(
             .replace(" ", "")
         )
         val = int(clean)
-        if val <= 0:
+        if val < 0:
             raise ValueError
     except ValueError:
         cancel_kb = InlineKeyboardMarkup(
@@ -2298,7 +2313,7 @@ async def admin_vol_plan_dur_price_save(
             ]
         )
         await message.answer(
-            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            "❌ لطفاً یک مبلغ معتبر (۰ یا بیشتر) به تومان وارد کنید.\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
             reply_markup=cancel_kb,
             parse_mode="HTML",
         )
@@ -2312,8 +2327,9 @@ async def admin_vol_plan_dur_price_save(
     res = await _build_volume_plan_durations_panel(idx)
     if res:
         text, keyboard = res
+        val_str = f"+{format_price(val)}" if val > 0 else "بدون هزینه (۰ تومان)"
         await message.answer(
-            f"✅ قیمت این مدت‌زمان با موفقیت به <b>{format_price(val)}</b> تنظیم شد.\n\n{text}",
+            f"✅ هزینه مازاد این مدت‌زمان با موفقیت به <b>{val_str}</b> تنظیم شد.\n\n{text}",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
