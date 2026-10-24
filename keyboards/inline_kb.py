@@ -100,7 +100,9 @@ def format_duration_button_text(item: dict[str, Any]) -> str:
 async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
+        is_custom_duration_allowed_for_volume,
         is_custom_duration_buy_enabled,
+        is_duration_allowed_for_volume,
     )
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -110,6 +112,8 @@ async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
         if not item.get("enabled_buy", True):
             continue
         days = item.get("days", 0)
+        if not await is_duration_allowed_for_volume(gb, days, for_renew=False):
+            continue
         label = format_duration_button_text(item)
         rows.append(
             [
@@ -119,7 +123,10 @@ async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
             ]
         )
 
-    if await is_custom_duration_buy_enabled():
+    if (
+        await is_custom_duration_buy_enabled()
+        and await is_custom_duration_allowed_for_volume(gb, for_renew=False)
+    ):
         rows.append(
             [
                 InlineKeyboardButton(
@@ -419,7 +426,9 @@ def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarku
 async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
+        is_custom_duration_allowed_for_volume,
         is_custom_duration_renew_enabled,
+        is_duration_allowed_for_volume,
     )
 
     dur_plans = await get_duration_plans()
@@ -428,12 +437,17 @@ async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboar
         if not item.get("enabled_renew", True):
             continue
         days = item.get("days", 0)
+        if not await is_duration_allowed_for_volume(gb, days, for_renew=True):
+            continue
         label = format_duration_button_text(item)
         rows.append(
             [InlineKeyboardButton(text=label, callback_data=f"renew_dur_{days}")]
         )
 
-    if await is_custom_duration_renew_enabled():
+    if (
+        await is_custom_duration_renew_enabled()
+        and await is_custom_duration_allowed_for_volume(gb, for_renew=True)
+    ):
         rows.append(
             [
                 InlineKeyboardButton(

@@ -44,6 +44,8 @@ from services.pricing import (
     format_volume_label,
     get_price_breakdown,
     get_pricing_config,
+    is_custom_duration_allowed_for_volume,
+    is_duration_allowed_for_volume,
     is_unlimited_volume,
 )
 from utils.formatting import (
@@ -451,6 +453,11 @@ async def buy_custom_duration_prompt(
     parts = callback.data.split("_")
     gb = int(parts[3])
     users = int(parts[4])
+    if not await is_custom_duration_allowed_for_volume(gb, for_renew=False):
+        await callback.answer(
+            "⚠️ مدت زمان دلخواه برای این پلن فعال نیست.", show_alert=True
+        )
+        return
     await state.set_state(BuyStates.waiting_custom_days)
     await state.update_data(custom_dur_gb=gb, custom_dur_users=users)
     cancel_kb = InlineKeyboardMarkup(
@@ -555,6 +562,10 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
     gb = int(parts[2])
     users = int(parts[3])
     duration = int(parts[4])
+
+    if not await is_duration_allowed_for_volume(gb, duration, for_renew=False):
+        await callback.answer("⚠️ این مدت زمان برای این پلن فعال نیست.", show_alert=True)
+        return
 
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]

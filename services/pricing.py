@@ -92,6 +92,19 @@ async def get_pricing_config() -> dict[str, Any]:
     return await load_pricing_config()
 
 
+def _clean_durations_dict(raw: Any) -> dict[str, dict[str, bool]]:
+    if not isinstance(raw, dict):
+        return {}
+    res: dict[str, dict[str, bool]] = {}
+    for k, v in raw.items():
+        if isinstance(v, dict):
+            res[str(k)] = {
+                "enabled_buy": bool(v.get("enabled_buy", True)),
+                "enabled_renew": bool(v.get("enabled_renew", True)),
+            }
+    return res
+
+
 async def load_pricing_config() -> dict[str, Any]:
     global _pricing_cache
 
@@ -148,6 +161,7 @@ async def load_pricing_config() -> dict[str, Any]:
                     "enabled_buy": bool(p.get("enabled_buy", True)),
                     "enabled_renew": bool(p.get("enabled_renew", True)),
                     "is_unlimited": bool(p.get("is_unlimited", False)),
+                    "durations": _clean_durations_dict(p.get("durations")),
                 }
                 for p in raw_vol_plans
                 if int(p.get("gb", 0)) > 0
@@ -349,6 +363,7 @@ async def set_volume_plans(plans: list[dict[str, Any]]) -> None:
             "enabled_buy": bool(p.get("enabled_buy", True)),
             "enabled_renew": bool(p.get("enabled_renew", True)),
             "is_unlimited": bool(p.get("is_unlimited", False)),
+            "durations": _clean_durations_dict(p.get("durations")),
         }
         for p in plans
         if int(p.get("gb", 0)) > 0
@@ -476,6 +491,98 @@ async def set_custom_volume_min_gb(min_gb: int) -> None:
 async def set_custom_volume_max_gb(max_gb: int) -> None:
     await set_setting("pricing_custom_volume_max_gb", str(max_gb))
     invalidate_pricing_cache()
+
+
+async def is_duration_allowed_for_volume(
+    gb: int, days: int, for_renew: bool = False
+) -> bool:
+    vol_plans = await get_volume_plans()
+    for p in vol_plans:
+        if p.get("gb") == gb:
+            durations = p.get("durations", {})
+            k = str(days)
+            if k in durations:
+                return bool(
+                    durations[k].get(
+                        "enabled_renew" if for_renew else "enabled_buy", True
+                    )
+                )
+            return True
+    return True
+
+
+async def is_custom_duration_allowed_for_volume(
+    gb: int, for_renew: bool = False
+) -> bool:
+    vol_plans = await get_volume_plans()
+    for p in vol_plans:
+        if p.get("gb") == gb:
+            durations = p.get("durations", {})
+            if "custom" in durations:
+                return bool(
+                    durations["custom"].get(
+                        "enabled_renew" if for_renew else "enabled_buy", True
+                    )
+                )
+            return True
+    return True
+
+
+async def toggle_volume_plan_duration(
+    plan_idx: int, duration_key: str, mode: str
+) -> tuple[bool, str]:
+    vol_plans = await get_volume_plans()
+    if not (0 <= plan_idx < len(vol_plans)):
+        return False, "not_found"
+
+    plan = vol_plans[plan_idx]
+    durations = dict(plan.get("durations", {}))
+    cur_entry = dict(
+        durations.get(duration_key, {"enabled_buy": True, "enabled_renew": True})
+    )
+
+    target_key = "enabled_buy" if mode == "buy" else "enabled_renew"
+    cur_val = cur_entry.get(target_key, True)
+
+    if cur_val:
+        dur_plans = await get_duration_plans()
+        all_keys = [str(d.get("days", 0)) for d in dur_plans] + ["custom"]
+        active_count = 0
+        for k in all_keys:
+            d_val = durations.get(k, {}).get(target_key, True)
+            if d_val:
+                active_count += 1
+        if active_count <= 1:
+            return False, "last_active"
+
+    new_val = not cur_val
+    cur_entry[target_key] = new_val
+    durations[duration_key] = cur_entry
+
+    vol_plans[plan_idx]["durations"] = durations
+    await set_volume_plans(vol_plans)
+    return True, "ok"
+
+
+async def reset_volume_plan_durations(plan_idx: int) -> None:
+    vol_plans = await get_volume_plans()
+    if not (0 <= plan_idx < len(vol_plans)):
+        return
+    vol_plans[plan_idx]["durations"] = {}
+    await set_volume_plans(vol_plans)
+
+
+async def enable_all_volume_plan_durations(plan_idx: int) -> None:
+    dur_plans = await get_duration_plans()
+    vol_plans = await get_volume_plans()
+    if not (0 <= plan_idx < len(vol_plans)):
+        return
+    durations = {}
+    for d in dur_plans:
+        durations[str(d.get("days", 0))] = {"enabled_buy": True, "enabled_renew": True}
+    durations["custom"] = {"enabled_buy": True, "enabled_renew": True}
+    vol_plans[plan_idx]["durations"] = durations
+    await set_volume_plans(vol_plans)
 
 
 async def is_custom_duration_enabled() -> bool:

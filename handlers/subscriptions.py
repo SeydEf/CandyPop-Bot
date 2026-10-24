@@ -45,6 +45,8 @@ from services import xui_api
 from services.pricing import (
     format_volume_label,
     get_price_breakdown,
+    is_custom_duration_allowed_for_volume,
+    is_duration_allowed_for_volume,
     is_unlimited_volume,
 )
 from utils.formatting import (
@@ -980,6 +982,13 @@ async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) 
 async def renew_custom_duration_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
+    data = await state.get_data()
+    gb = data.get("gb", 30)
+    if not await is_custom_duration_allowed_for_volume(gb, for_renew=True):
+        await callback.answer(
+            "⚠️ مدت زمان دلخواه برای این پلن در تمدید فعال نیست.", show_alert=True
+        )
+        return
     await state.set_state(SubStates.waiting_custom_days)
     cancel_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1099,12 +1108,17 @@ async def renew_select_duration(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     duration = int(callback.data.split("_")[-1])
-    await state.update_data(duration=duration)
-
     data = await state.get_data()
     gb = data.get("gb", 30)
     users = data.get("users", 1)
 
+    if not await is_duration_allowed_for_volume(gb, duration, for_renew=True):
+        await callback.answer(
+            "⚠️ این مدت زمان برای این پلن در تمدید در دسترس نیست.", show_alert=True
+        )
+        return
+
+    await state.update_data(duration=duration)
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]
 

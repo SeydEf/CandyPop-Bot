@@ -1879,12 +1879,191 @@ async def _build_volume_plan_details(
     rows.append(
         [
             InlineKeyboardButton(
+                text="⏱ تنظیم مدت‌های مجاز (خرید / تمدید)",
+                callback_data=f"admin_vol_plan_durations_{idx}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
                 text="🔙 بازگشت به لیست پلن‌ها",
                 callback_data="admin_volume_plans_menu",
             )
         ]
     )
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _build_volume_plan_durations_panel(
+    idx: int,
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    from services.pricing import get_duration_plans, get_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        return None
+
+    p = vol_plans[idx]
+    gb = p.get("gb", 0)
+    is_unlimited = p.get("is_unlimited", False)
+    vol_title = (
+        f"♾️ نامحدود ({to_persian_digits(gb)} گیگابایت)"
+        if is_unlimited
+        else f"{to_persian_digits(gb)} گیگابایت"
+    )
+
+    dur_plans = await get_duration_plans()
+    plan_durations = p.get("durations", {})
+
+    text = (
+        f"⏱ <b>تنظیم مدت‌های مجاز برای: {vol_title}</b>\n\n"
+        "در این بخش می‌توانید مشخص کنید هنگام انتخاب این حجم، کدام پلن‌های زمانی یا مدت‌زمان دلخواه فعال باشند:\n"
+        "🛒 = وضعیت در خرید جدید\n"
+        "🔄 = وضعیت در تمدید اشتراک\n\n"
+        "💡 <i>نکته: حداقل یک گزینه باید برای خرید و یک گزینه برای تمدید فعال بماند.</i>"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for d in dur_plans:
+        days = d.get("days", 0)
+        key = str(days)
+        dur_title = d.get("button_text") or f"{to_persian_digits(days)} روزه"
+        d_conf = plan_durations.get(key, {"enabled_buy": True, "enabled_renew": True})
+        buy_on = d_conf.get("enabled_buy", True)
+        renew_on = d_conf.get("enabled_renew", True)
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🛒 {dur_title}: {'🟢' if buy_on else '🔴'}",
+                    callback_data=f"admin_vol_dur_toggle_{idx}_{key}_buy",
+                ),
+                InlineKeyboardButton(
+                    text=f"🔄 {dur_title}: {'🟢' if renew_on else '🔴'}",
+                    callback_data=f"admin_vol_dur_toggle_{idx}_{key}_renew",
+                ),
+            ]
+        )
+
+    # Custom duration toggle
+    c_conf = plan_durations.get("custom", {"enabled_buy": True, "enabled_renew": True})
+    c_buy_on = c_conf.get("enabled_buy", True)
+    c_renew_on = c_conf.get("enabled_renew", True)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"🛒 مدت دلخواه: {'🟢' if c_buy_on else '🔴'}",
+                callback_data=f"admin_vol_dur_toggle_{idx}_custom_buy",
+            ),
+            InlineKeyboardButton(
+                text=f"🔄 مدت دلخواه: {'🟢' if c_renew_on else '🔴'}",
+                callback_data=f"admin_vol_dur_toggle_{idx}_custom_renew",
+            ),
+        ]
+    )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🟢 فعال‌سازی همه",
+                callback_data=f"admin_vol_dur_enable_all_{idx}",
+            ),
+            InlineKeyboardButton(
+                text="🔄 بازنشانی",
+                callback_data=f"admin_vol_dur_reset_{idx}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به جزئیات پلن",
+                callback_data=f"admin_vol_plan_view_{idx}",
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_durations_\d+$"))
+async def admin_vol_plan_durations_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    res = await _build_volume_plan_durations_panel(idx)
+    if not res:
+        await callback.answer("پلن یافت نشد!", show_alert=True)
+        return
+    text, markup = res
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_dur_toggle_\d+_[^_]+_(buy|renew)$"))
+async def admin_vol_dur_toggle(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    parts = (callback.data or "").split("_")
+    idx = int(parts[4])
+    key = parts[5]
+    mode = parts[6]
+
+    from services.pricing import toggle_volume_plan_duration
+
+    ok, reason = await toggle_volume_plan_duration(idx, key, mode)
+    if not ok:
+        if reason == "last_active":
+            mode_fa = "خرید" if mode == "buy" else "تمدید"
+            await callback.answer(
+                f"⚠️ حداقل یک مدت زمان باید برای {mode_fa} فعال باشد.",
+                show_alert=True,
+            )
+        else:
+            await callback.answer("خطا در تغییر وضعیت!", show_alert=True)
+        return
+
+    res = await _build_volume_plan_durations_panel(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_dur_enable_all_\d+$"))
+async def admin_vol_dur_enable_all(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import enable_all_volume_plan_durations
+
+    await enable_all_volume_plan_durations(idx)
+    res = await _build_volume_plan_durations_panel(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer("همه مدت‌ها فعال شدند.")
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_dur_reset_\d+$"))
+async def admin_vol_dur_reset(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int((callback.data or "").split("_")[-1])
+    from services.pricing import reset_volume_plan_durations
+
+    await reset_volume_plan_durations(idx)
+    res = await _build_volume_plan_durations_panel(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, markup = res
+        await safe_edit_text(callback.message, text, reply_markup=markup)
+    await callback.answer("تنظیمات مدت‌ها بازنشانی شد.")
 
 
 @router.callback_query(F.data == "admin_volume_plans_menu")
