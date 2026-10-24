@@ -92,15 +92,17 @@ async def get_pricing_config() -> dict[str, Any]:
     return await load_pricing_config()
 
 
-def _clean_durations_dict(raw: Any) -> dict[str, dict[str, bool]]:
+def _clean_durations_dict(raw: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(raw, dict):
         return {}
-    res: dict[str, dict[str, bool]] = {}
+    res: dict[str, dict[str, Any]] = {}
     for k, v in raw.items():
         if isinstance(v, dict):
             res[str(k)] = {
                 "enabled_buy": bool(v.get("enabled_buy", True)),
                 "enabled_renew": bool(v.get("enabled_renew", True)),
+                "price_type": "manual" if v.get("price_type") == "manual" else "auto",
+                "price": max(0, int(v.get("price", 0))),
             }
     return res
 
@@ -577,12 +579,85 @@ async def enable_all_volume_plan_durations(plan_idx: int) -> None:
     vol_plans = await get_volume_plans()
     if not (0 <= plan_idx < len(vol_plans)):
         return
-    durations = {}
+    durations = dict(vol_plans[plan_idx].get("durations", {}))
     for d in dur_plans:
-        durations[str(d.get("days", 0))] = {"enabled_buy": True, "enabled_renew": True}
-    durations["custom"] = {"enabled_buy": True, "enabled_renew": True}
+        k = str(d.get("days", 0))
+        cur = dict(durations.get(k, {}))
+        cur["enabled_buy"] = True
+        cur["enabled_renew"] = True
+        durations[k] = cur
+    c_cur = dict(durations.get("custom", {}))
+    c_cur["enabled_buy"] = True
+    c_cur["enabled_renew"] = True
+    durations["custom"] = c_cur
     vol_plans[plan_idx]["durations"] = durations
     await set_volume_plans(vol_plans)
+
+
+async def get_volume_plan_duration_override(
+    gb: int, duration_days: int
+) -> dict[str, Any] | None:
+    vol_plans = await get_volume_plans()
+    for p in vol_plans:
+        if p.get("gb") == gb:
+            durations = p.get("durations", {})
+            k = str(duration_days)
+            if k in durations:
+                entry = durations[k]
+                if entry.get("price_type") == "manual" and entry.get("price", 0) > 0:
+                    return entry
+    return None
+
+
+async def get_volume_plan_duration_info(gb: int, duration_days: int) -> dict[str, Any]:
+    data_price = await calculate_data_price(gb)
+    dur_surcharge = await calculate_duration_surcharge(duration_days)
+    default_total = data_price + dur_surcharge
+
+    override = await get_volume_plan_duration_override(gb, duration_days)
+    if override:
+        return {
+            "price_type": "manual",
+            "price": int(override["price"]),
+            "default_total": default_total,
+            "effective_total": int(override["price"]),
+        }
+    return {
+        "price_type": "auto",
+        "price": 0,
+        "default_total": default_total,
+        "effective_total": default_total,
+    }
+
+
+async def set_volume_plan_duration_price(
+    plan_idx: int, duration_key: str, price_type: str, price: int = 0
+) -> bool:
+    vol_plans = await get_volume_plans()
+    if not (0 <= plan_idx < len(vol_plans)):
+        return False
+
+    plan = vol_plans[plan_idx]
+    durations = dict(plan.get("durations", {}))
+    cur_entry = dict(
+        durations.get(
+            duration_key,
+            {
+                "enabled_buy": True,
+                "enabled_renew": True,
+                "price_type": "auto",
+                "price": 0,
+            },
+        )
+    )
+
+    cur_entry["price_type"] = "manual" if price_type == "manual" else "auto"
+    cur_entry["price"] = max(0, price) if price_type == "manual" else 0
+    durations[duration_key] = cur_entry
+
+    vol_plans[plan_idx]["durations"] = durations
+    await set_volume_plans(vol_plans)
+    return True
 
 
 async def is_custom_duration_enabled() -> bool:
@@ -738,13 +813,15 @@ async def calculate_data_price(gb: int) -> int:
 
 async def calculate_total_price(gb: int, duration_days: int, users_count: int) -> int:
     config = await get_pricing_config()
+    extra_users = max(0, users_count - 1)
+    users_total_surcharge = extra_users * config["user_surcharge"]
+
+    override = await get_volume_plan_duration_override(gb, duration_days)
+    if override:
+        return int(override["price"]) + users_total_surcharge
 
     data_price = await calculate_data_price(gb)
     dur_surcharge = await calculate_duration_surcharge(duration_days)
-
-    user_surcharge: int = config["user_surcharge"]
-    extra_users = max(0, users_count - 1)
-    users_total_surcharge = extra_users * user_surcharge
 
     return data_price + dur_surcharge + users_total_surcharge
 
@@ -753,11 +830,23 @@ async def get_price_breakdown(
     gb: int, duration_days: int, users_count: int
 ) -> dict[str, Any]:
     config = await get_pricing_config()
+    extra_users = max(0, users_count - 1)
+    user_surcharge = extra_users * config["user_surcharge"]
+
+    override = await get_volume_plan_duration_override(gb, duration_days)
+    if override:
+        base_pkg_price = int(override["price"])
+        total_price = base_pkg_price + user_surcharge
+        return {
+            "data_price": base_pkg_price,
+            "duration_surcharge": 0,
+            "user_surcharge": user_surcharge,
+            "total_price": total_price,
+            "is_custom_duration_price": True,
+        }
 
     data_price = await calculate_data_price(gb)
     dur_surcharge = await calculate_duration_surcharge(duration_days)
-    extra_users = max(0, users_count - 1)
-    user_surcharge = extra_users * config["user_surcharge"]
     total_price = data_price + dur_surcharge + user_surcharge
 
     return {

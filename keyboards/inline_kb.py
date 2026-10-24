@@ -82,15 +82,22 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     )
 
 
-def format_duration_button_text(item: dict[str, Any]) -> str:
+def format_duration_button_text(
+    item: dict[str, Any], override_price: int | None = None
+) -> str:
     days = item.get("days", 0)
     surch = item.get("surcharge", 0)
-    if days == 365 or (days % 30 == 0 and days // 30 == 12):
+    if item.get("button_text"):
+        dur_title = item["button_text"]
+    elif days == 365 or (days % 30 == 0 and days // 30 == 12):
         dur_title = "۱ ساله"
     elif days % 30 == 0 and days // 30 > 0:
         dur_title = f"{to_persian_digits(days // 30)} ماهه"
     else:
         dur_title = f"{to_persian_digits(days)} روزه"
+
+    if override_price is not None and override_price > 0:
+        return f"⏱ {dur_title} ({format_price(override_price)})"
 
     if surch > 0:
         return f"⏱ {dur_title} (+{format_price(surch)})"
@@ -100,6 +107,7 @@ def format_duration_button_text(item: dict[str, Any]) -> str:
 async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
+        get_volume_plan_duration_override,
         is_custom_duration_allowed_for_volume,
         is_custom_duration_buy_enabled,
         is_duration_allowed_for_volume,
@@ -114,7 +122,9 @@ async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
         days = item.get("days", 0)
         if not await is_duration_allowed_for_volume(gb, days, for_renew=False):
             continue
-        label = format_duration_button_text(item)
+        override = await get_volume_plan_duration_override(gb, days)
+        override_price = override["price"] if override else None
+        label = format_duration_button_text(item, override_price=override_price)
         rows.append(
             [
                 InlineKeyboardButton(
@@ -426,6 +436,7 @@ def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarku
 async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
+        get_volume_plan_duration_override,
         is_custom_duration_allowed_for_volume,
         is_custom_duration_renew_enabled,
         is_duration_allowed_for_volume,
@@ -439,7 +450,9 @@ async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboar
         days = item.get("days", 0)
         if not await is_duration_allowed_for_volume(gb, days, for_renew=True):
             continue
-        label = format_duration_button_text(item)
+        override = await get_volume_plan_duration_override(gb, days)
+        override_price = override["price"] if override else None
+        label = format_duration_button_text(item, override_price=override_price)
         rows.append(
             [InlineKeyboardButton(text=label, callback_data=f"renew_dur_{days}")]
         )
