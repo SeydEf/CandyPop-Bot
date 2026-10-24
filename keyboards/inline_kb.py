@@ -82,10 +82,24 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     )
 
 
+def format_duration_button_text(item: dict[str, Any]) -> str:
+    days = item.get("days", 0)
+    surch = item.get("surcharge", 0)
+    if days == 365 or (days % 30 == 0 and days // 30 == 12):
+        dur_title = "۱ ساله"
+    elif days % 30 == 0 and days // 30 > 0:
+        dur_title = f"{to_persian_digits(days // 30)} ماهه"
+    else:
+        dur_title = f"{to_persian_digits(days)} روزه"
+
+    if surch > 0:
+        return f"⏱ {dur_title} (+{format_price(surch)})"
+    return f"⏱ {dur_title} (بدون هزینه)"
+
+
 async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
-        get_price_breakdown,
         is_custom_duration_buy_enabled,
     )
 
@@ -96,18 +110,7 @@ async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
         if not item.get("enabled_buy", True):
             continue
         days = item.get("days", 0)
-        bd = await get_price_breakdown(gb, days, users)
-        total_price = bd["total_price"]
-        months = days // 30
-        if days % 30 == 0 and months > 0:
-            if months == 12:
-                dur_label = "۱ ساله"
-            else:
-                dur_label = f"{to_persian_digits(months)} ماهه"
-        else:
-            dur_label = f"{to_persian_digits(days)} روزه"
-
-        label = f"⏱ {dur_label} | {format_price(total_price)}"
+        label = format_duration_button_text(item)
         rows.append(
             [
                 InlineKeyboardButton(
@@ -416,7 +419,6 @@ def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarku
 async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
-        get_price_breakdown,
         is_custom_duration_renew_enabled,
     )
 
@@ -426,18 +428,7 @@ async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboar
         if not item.get("enabled_renew", True):
             continue
         days = item.get("days", 0)
-        bd = await get_price_breakdown(gb, days, users)
-        total_price = bd["total_price"]
-        months = days // 30
-        if days % 30 == 0 and months > 0:
-            if months == 12:
-                dur_label = "۱ ساله"
-            else:
-                dur_label = f"{to_persian_digits(months)} ماهه"
-        else:
-            dur_label = f"{to_persian_digits(days)} روزه"
-
-        label = f"⏱ {dur_label} | {format_price(total_price)}"
+        label = format_duration_button_text(item)
         rows.append(
             [InlineKeyboardButton(text=label, callback_data=f"renew_dur_{days}")]
         )
