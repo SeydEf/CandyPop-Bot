@@ -970,7 +970,7 @@ async def renew_users_confirm(callback: types.CallbackQuery, state: FSMContext) 
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=await renew_duration_keyboard(),
+        reply_markup=await renew_duration_keyboard(gb, users),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1155,7 +1155,7 @@ async def renew_back_to_duration(
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=await renew_duration_keyboard(),
+        reply_markup=await renew_duration_keyboard(gb, users),
         parse_mode="HTML",
     )
     await callback.answer()
