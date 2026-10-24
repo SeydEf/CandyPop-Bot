@@ -72,10 +72,8 @@ class BuyStates(StatesGroup):
 
 async def _get_volume_step_text() -> str:
     return (
-        "🚀 <b>گام ۱ از ۳: انتخاب حجم ترافیک اشتراک</b>\n\n"
-        "میزان حجم مورد نیاز خود را انتخاب کنید:\n\n"
-        "💡 <i>برای اطلاع از نحوه محاسبه قیمت‌ها، می‌توانید بخش تعرفه‌ها را از منوی اصلی ببینید.</i>\n\n"
-        "حجم مورد نظر را از گزینه‌های زیر انتخاب کنید یا حجم دلخواه را بفرستید:"
+        "🚀 <b>گام ۱ از ۳: انتخاب حجم ترافیک</b>\n\n"
+        "حجم مورد نظر خود را از گزینه‌های زیر انتخاب کرده یا حجم دلخواه ارسال نمایید:"
     )
 
 
@@ -142,21 +140,25 @@ async def _get_users_step_text(gb: int, users: int = 1) -> str:
     extra_users = max(0, users - 1)
     users_surcharge_total = extra_users * user_surcharge_unit
     running_total = data_price + users_surcharge_total
+    vol_label = await format_volume_label(gb)
 
-    surcharge_text = (
-        f" (+{format_price(users_surcharge_total)})"
-        if users_surcharge_total > 0
-        else " (بدون هزینه اضافه)"
-    )
+    breakdown_lines = [f"• هزینه حجم: {format_price(data_price)}"]
+    if users_surcharge_total > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(users_surcharge_total)}"
+        )
+    breakdown_str = "\n".join(breakdown_lines)
 
     return (
-        f"📋 <b>مشخصات و قیمت مراحل قبلی:</b>\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} <i>({format_price(data_price)})</i>\n\n"
-        f"👤 <b>گام ۲ از ۳: انتخاب تعداد کاربر همزمان (ظرفیت اتصال)</b>\n\n"
-        f"چه تعداد کاربر یا دستگاه به‌صورت همزمان از این سرویس استفاده خواهند کرد؟\n"
-        f"💡 <i>به ازای هر کاربر اضافه، مبلغ +{format_price(user_surcharge_unit)} به اشتراک افزوده می‌شود.</i>\n\n"
-        f"👥 <b>تعداد کاربر انتخابی:</b> {to_persian_digits(users)} کاربر{surcharge_text}\n"
-        f"💵 <b>مجموع قیمت تا این مرحله:</b> <b>{format_price(running_total)}</b>"
+        f"👥 <b>گام ۲ از ۳: ظرفیت کاربر همزمان</b>\n\n"
+        f"📦 <b>مشخصات انتخابی:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💵 <b>جمع تا این مرحله:</b> <b>{format_price(running_total)}</b>\n\n"
+        f"💡 <i>به ازای هر کاربر اضافه، مبلغ +{format_price(user_surcharge_unit)} به اشتراک افزوده می‌شود.</i>"
     )
 
 
@@ -322,52 +324,80 @@ async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) ->
 
 
 async def _get_duration_step_text(gb: int, users: int) -> str:
-    from services.pricing import calculate_data_price, get_duration_plans
+    from services.pricing import calculate_data_price
 
     config = await get_pricing_config()
     data_price = await calculate_data_price(gb)
     extra_users = max(0, users - 1)
     users_surcharge_total = extra_users * config["user_surcharge"]
     base_sum = data_price + users_surcharge_total
+    vol_label = await format_volume_label(gb)
 
-    dur_plans = await get_duration_plans()
-    dur_lines = []
-    for item in dur_plans:
-        if not item.get("enabled_buy", True):
-            continue
-        days = item.get("days", 0)
-        surch = item.get("surcharge", 0)
-        total_price = base_sum + surch
-        surch_desc = f"+{format_price(surch)}" if surch > 0 else "بدون هزینه اضافه"
-        months = days // 30
-        if days % 30 == 0 and months > 0:
-            dur_title = (
-                f"{to_persian_digits(months)} ماهه ({to_persian_digits(days)} روز)"
-            )
-        else:
-            dur_title = f"{to_persian_digits(days)} روز"
-        dur_lines.append(
-            f"🔹 <b>{dur_title}:</b> {surch_desc} — <b>قیمت نهایی: {format_price(total_price)}</b>"
+    breakdown_lines = [f"• هزینه حجم: {format_price(data_price)}"]
+    if users_surcharge_total > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(users_surcharge_total)}"
         )
-
-    dur_section = (
-        "\n".join(dur_lines) if dur_lines else "<i>هیچ مدتی برای خرید فعال نیست.</i>"
-    )
-
-    user_surcharge_str = (
-        f" (+{format_price(users_surcharge_total)})"
-        if users_surcharge_total > 0
-        else " (بدون هزینه اضافه)"
-    )
+    breakdown_str = "\n".join(breakdown_lines)
 
     return (
-        f"📋 <b>مشخصات و قیمت مراحل قبلی:</b>\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb)} <i>({format_price(data_price)})</i>\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر<i>{user_surcharge_str}</i>\n"
-        f"💵 <b>مجموع قیمت پایه (حجم + کاربر):</b> <b>{format_price(base_sum)}</b>\n\n"
-        f"⏱ <b>گام ۳ از ۳: انتخاب مدت‌زمان اعتبار</b>\n\n"
-        f"مدت اعتبار سرویس خود را انتخاب کنید:\n\n"
-        f"{dur_section}"
+        f"⏱ <b>گام ۳ از ۳: انتخاب مدت اعتبار</b>\n\n"
+        f"📦 <b>مشخصات انتخابی:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n\n"
+        f"💳 <b>ریز محاسبات پایه:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💵 <b>مجموع پایه:</b> <b>{format_price(base_sum)}</b>\n\n"
+        f"👇 مدت اعتبار مورد نظر خود را از دکمه‌های زیر انتخاب کنید:"
+    )
+
+
+async def _build_pre_invoice_text(
+    gb: int,
+    duration: int,
+    users: int,
+    final_price: int,
+    original_price: int | None = None,
+    discount_code: str | None = None,
+    discount_label: str = "",
+    discount_amount: int = 0,
+    title: str = "📋 <b>پیش‌فاکتور خرید اشتراک</b>",
+) -> str:
+    bd = await get_price_breakdown(gb, duration, users)
+    vol_label = await format_volume_label(gb, with_fair_policy=True)
+    extra_users = max(0, users - 1)
+
+    breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
+    if bd["user_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+        )
+    if bd["duration_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
+        )
+    if discount_amount > 0:
+        lbl = (
+            f" ({discount_code} | {discount_label})"
+            if discount_code and discount_label
+            else (f" ({discount_code})" if discount_code else "")
+        )
+        breakdown_lines.append(f"• تخفیف{lbl}: -{format_price(discount_amount)}")
+
+    breakdown_str = "\n".join(breakdown_lines)
+
+    return (
+        f"{title}\n\n"
+        f"📦 <b>مشخصات سرویس:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
+        f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
+        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
 
 
@@ -494,22 +524,8 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
     bd = await get_price_breakdown(gb, days, users)
     price = bd["total_price"]
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    text = (
-        f"📋 <b>پیش‌فاکتور خرید اشتراک جدید</b>\n\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"⏱ <b>مدت زمان:</b> {days} روز{dur_str}\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+    text = await _build_pre_invoice_text(
+        gb=gb, duration=days, users=users, final_price=price
     )
     card_cfg = await get_card_config()
     await message.answer(
@@ -531,22 +547,8 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
     bd = await get_price_breakdown(gb, duration, users)
     price = bd["total_price"]
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    text = (
-        f"📋 <b>پیش‌فاکتور خرید اشتراک جدید</b>\n\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(price)}\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+    text = await _build_pre_invoice_text(
+        gb=gb, duration=duration, users=users, final_price=price
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -582,25 +584,33 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
 
     bd = await get_price_breakdown(gb, duration, users)
     after_balance = balance - price
+    vol_label = await format_volume_label(gb, with_fair_policy=True)
+    extra_users = max(0, users - 1)
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
+    breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
+    if bd["user_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+        )
+    if bd["duration_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
+        )
+
+    breakdown_str = "\n".join(breakdown_lines)
 
     text = (
-        f"👛 <b>پرداخت آنی از کیف پول</b>\n\n"
-        f"🛍 <b>جزئیات سفارش:</b>\n"
-        f"⏱ مدت زمان: {duration} روز{dur_str}\n"
-        f"👥 تعداد کاربر: {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 حجم ترافیک: {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n"
-        f"💎 مبلغ کل: <b>{format_price(price)}</b>\n\n"
-        f"💳 موجودی فعلی حساب: {format_price(balance)}\n"
-        f"📉 موجودی پس از پرداخت: {format_price(after_balance)}\n\n"
+        f"👛 <b>تأیید پرداخت از کیف پول</b>\n\n"
+        f"📦 <b>مشخصات سرویس:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
+        f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💎 <b>مبلغ کسر از کیف پول:</b> <b>{format_price(price)}</b>\n"
+        f"💰 <b>موجودی فعلی حساب:</b> {format_price(balance)}\n"
+        f"📉 <b>موجودی پس از پرداخت:</b> {format_price(after_balance)}\n\n"
         f"آیا از ثبت سفارش و دریافت سرویس اطمینان دارید؟"
     )
     await callback.message.edit_text(
@@ -817,24 +827,8 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
 
     if message.text.strip() == "/cancel":
         await state.clear()
-        bd = await get_price_breakdown(gb, duration, users)
-        dur_str = (
-            f" (+{format_price(bd['duration_surcharge'])})"
-            if bd["duration_surcharge"] > 0
-            else ""
-        )
-        user_str = (
-            f" (+{format_price(bd['user_surcharge'])})"
-            if bd["user_surcharge"] > 0
-            else ""
-        )
-        text = (
-            f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
-            f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
-            f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-            f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
-            f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-            f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+        text = await _build_pre_invoice_text(
+            gb=gb, duration=duration, users=users, final_price=original_price
         )
         card_cfg = await get_card_config()
         await message.answer(
@@ -901,26 +895,16 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         price=final_price,
     )
 
-    bd = await get_price_breakdown(gb, duration, users)
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    text = (
-        f"🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n\n"
-        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
-        f"💵 مبلغ اولیه: <s>{format_price(original_price)}</s>\n"
-        f"🏷️ کد تخفیف: <code>{clean_code}</code> (<b>{disc_label}</b>)\n"
-        f"🎁 سود شما از این خرید: -{format_price(discount_amount)}\n\n"
-        f"💎 <b>مبلغ نهایی و قابل پرداخت:</b> {format_price(final_price)}\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+    text = await _build_pre_invoice_text(
+        gb=gb,
+        duration=duration,
+        users=users,
+        final_price=final_price,
+        original_price=original_price,
+        discount_code=clean_code,
+        discount_label=disc_label,
+        discount_amount=discount_amount,
+        title="🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n📋 <b>پیش‌فاکتور خرید اشتراک</b>",
     )
     card_cfg = await get_card_config()
     await message.answer(
@@ -949,22 +933,8 @@ async def buy_discount_cancel(callback: types.CallbackQuery, state: FSMContext) 
     bd = await get_price_breakdown(gb, duration, users)
     original_price = bd["total_price"]
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    text = (
-        f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
-        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+    text = await _build_pre_invoice_text(
+        gb=gb, duration=duration, users=users, final_price=original_price
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -993,22 +963,8 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
     bd = await get_price_breakdown(gb, duration, users)
     original_price = bd["total_price"]
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
-    text = (
-        f"📋 <b>پیش‌فاکتور سفارش شما</b>\n\n"
-        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-        f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
+    text = await _build_pre_invoice_text(
+        gb=gb, duration=duration, users=users, final_price=original_price
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -1067,14 +1023,25 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     invoice_id = invoice["id"]
 
     bd = await get_price_breakdown(gb, duration, users)
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
+    extra_users = max(0, users - 1)
+    vol_label = await format_volume_label(gb, with_fair_policy=True)
+
+    breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
+    if bd["user_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+        )
+    if bd["duration_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
+        )
+    if discount_code and original_price > payable_amount:
+        discount_amount = original_price - payable_amount
+        breakdown_lines.append(
+            f"• تخفیف ({discount_code}): -{format_price(discount_amount)}"
+        )
+
+    breakdown_str = "\n".join(breakdown_lines)
 
     card_config = await get_card_config()
     card_number = card_config["card_number"]
@@ -1085,25 +1052,20 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     receipt_cfg = await get_receipt_config()
     expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
 
-    disc_info = ""
-    if discount_code:
-        disc_info = (
-            f"💵 <b>مبلغ اولیه:</b> <s>{format_price(original_price)}</s>\n"
-            f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
-        )
-
     text = (
-        f"💳 <b>سفارش شماره {invoice_id} ثبت شد!</b>\n\n"
-        f"📋 <b>جزئیات سفارش شما:</b>\n"
-        f"⏱ <b>مدت اعتبار:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n"
-        f"{disc_info}"
+        f"💳 <b>سفارش شماره {invoice_id} ثبت شد</b>\n\n"
+        f"📦 <b>مشخصات سرویس:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
+        f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
         f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(payable_amount)}</b>\n\n"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت: {to_persian_digits(expiry_minutes)} دقیقه</b>\n\n"
-        f"✨ <i>پس از انتقال وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا اشتراک شما بررسی و فعال شود.</i>"
+        f"✨ <i>پس از انتقال وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
     )
 
     await callback.message.edit_text(

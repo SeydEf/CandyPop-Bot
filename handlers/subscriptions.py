@@ -51,7 +51,6 @@ from utils.formatting import (
     format_detailed_traffic,
     format_price,
     format_remaining_days,
-    format_size_gb,
     format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
@@ -169,8 +168,8 @@ async def _build_dashboard_info(
 
     if is_unlimited:
         if total_bytes > 0:
-            usage_text = f"{format_detailed_traffic(used_traffic)} / ♾️ نامحدود (سقف منصفانه {format_size_persian_gb(total_bytes)})"
-            remaining_text = f"{format_detailed_traffic(remaining)} (از سقف منصفانه)"
+            usage_text = f"{format_detailed_traffic(used_traffic)} / {format_size_persian_gb(total_bytes)}"
+            remaining_text = f"{format_detailed_traffic(remaining)}"
         else:
             usage_text = f"{format_detailed_traffic(used_traffic)} / ♾️ نامحدود"
             remaining_text = "♾️ نامحدود"
@@ -202,7 +201,11 @@ async def _build_dashboard_info(
     else:
         status_text = "🔴 غیرفعال"
 
-    plan_type_line = "📦 <b>نوع اشتراک:</b> ♾️ نامحدود\n" if is_unlimited else ""
+    plan_type_line = (
+        f"📦 <b>نوع اشتراک:</b> ♾️ نامحدود (سقف منصفانه {format_size_persian_gb(total_bytes)})\n"
+        if is_unlimited
+        else ""
+    )
 
     text = (
         f"<b>داشبورد مدیریت اشتراک</b>\n\n"
@@ -715,21 +718,17 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
     reserve_enabled = bool(reserve_cfg.get("enabled", True))
 
     action_title = (
-        "📦 <b>رزرو اشتراک اختصاصی</b>"
-        if reserve_enabled
-        else "🔄 <b>تمدید اشتراک اختصاصی</b>"
+        "📦 <b>رزرو اشتراک</b>" if reserve_enabled else "🔄 <b>تمدید اشتراک</b>"
     )
-    prompt_desc = (
-        "💡 آیا مایلید با مشخصات قبلی رزرو شود یا مشخصات (مدت، حجم و تعداد کاربر) را تغییر می‌دهید؟"
-        if reserve_enabled
-        else "💡 آیا مایلید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم و تعداد کاربر) را تغییر می‌دهید؟"
-    )
+    prompt_desc = "💡 مایلید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم، تعداد کاربر) را تغییر می‌دهید؟"
+
+    vol_label = await format_volume_label(current_gb)
 
     text = (
         f"{action_title}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{client.get('email', email)}</code>\n"
-        f"📊 <b>حجم فعلی:</b> {format_size_gb(current_gb)}\n"
-        f"👥 <b>ظرفیت کاربر فعلی:</b> {to_persian_digits(current_users)} کاربر\n\n"
+        f"📊 <b>حجم فعلی:</b> <b>{vol_label}</b>\n"
+        f"👥 <b>ظرفیت اتصال فعلی:</b> <b>{to_persian_digits(current_users)} کاربر</b>\n\n"
         f"{prompt_desc}"
     )
     await callback.message.edit_text(
@@ -760,15 +759,6 @@ async def _build_renewal_invoice(
     if not original_price:
         original_price = bd["total_price"]
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
-
     reserve_cfg = await get_reserve_renewal_config()
     reserve_enabled = bool(reserve_cfg.get("enabled", True))
     is_change_plan = data.get("is_change_plan", False)
@@ -794,18 +784,11 @@ async def _build_renewal_invoice(
     default_discount_amount = 0
     coupon_discount_amount = 0
     coupon_code_str = None
-    coupon_detail = ""
 
     if coupon_dc and allow_coupon:
         coupon_code_str = coupon_dc.get("code")
         c_amt, _ = calculate_discount_amount(coupon_dc, original_price)
         coupon_discount_amount = c_amt
-        rules = coupon_dc.get("rules") or {}
-        if rules.get("discount_type") == "fixed":
-            coupon_detail = f"{format_price(rules.get('amount', 0))} نقدی"
-        else:
-            pct = rules.get("amount") or coupon_dc.get("discount_percent", 0)
-            coupon_detail = f"{to_persian_digits(pct)}٪"
 
     if default_enabled:
         default_discount_amount = int(original_price * (default_percent / 100.0))
@@ -831,29 +814,42 @@ async def _build_renewal_invoice(
 
     final_price = max(0, original_price - total_discount)
 
+    vol_label = await format_volume_label(gb, with_fair_policy=True)
+    extra_users = max(0, users - 1)
+
+    breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
+    if bd["user_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+        )
+    if bd["duration_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
+        )
+    if default_discount_amount > 0:
+        breakdown_lines.append(
+            f"• تخفیف تمدید ({to_persian_digits(default_percent)}٪): -{format_price(default_discount_amount)}"
+        )
+    if coupon_code_str and coupon_discount_amount > 0:
+        breakdown_lines.append(
+            f"• کد تخفیف ({coupon_code_str}): -{format_price(coupon_discount_amount)}"
+        )
+
+    breakdown_str = "\n".join(breakdown_lines)
+
     text = (
         f"{title}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت زمان:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
+        f"📦 <b>مشخصات تمدید:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
+        f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
+        f"💳 روش پرداخت را انتخاب کنید:"
     )
-
-    if total_discount > 0:
-        text += f"💵 <b>مبلغ پایه:</b> <s>{format_price(original_price)}</s>\n"
-        if default_discount_amount > 0:
-            text += f"🎁 <b>تخفیف ویژه تمدید ({to_persian_digits(default_percent)}٪):</b> <code>-{format_price(default_discount_amount)}</code>\n"
-        if coupon_code_str:
-            text += f"🏷️ <b>کد تخفیف (<code>{coupon_code_str}</code> - {coupon_detail}):</b> <code>-{format_price(coupon_discount_amount)}</code>\n"
-        if default_discount_amount > 0 and coupon_code_str and stack_discounts:
-            text += f"📉 <b>مجموع سود شما:</b> <b>{format_price(total_discount)}</b>\n"
-        text += (
-            f"\n💎 <b>مبلغ کل قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
-        )
-    else:
-        text += f"💎 <b>مبلغ کل قابل پرداخت:</b> {format_price(original_price)}\n\n"
-
-    text += "💳 لطفاً روش پرداخت مورد نظر خود را انتخاب کنید:"
 
     pricing_info = {
         "original_price": original_price,
@@ -1322,40 +1318,54 @@ async def renew_wallet_payment(
         return
 
     bd = await get_price_breakdown(gb, duration, users)
+    extra_users = max(0, users - 1)
+    vol_label = await format_volume_label(gb, with_fair_policy=True)
     after_balance = balance - price
 
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
+    original_price = data.get("original_price", price)
+    discount_code = data.get("discount_code")
+
+    breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
+    if bd["user_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+        )
+    if bd["duration_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
+        )
+    if original_price > price:
+        discount_amount = original_price - price
+        disc_label = f"کد {discount_code}" if discount_code else "تخفیف تمدید"
+        breakdown_lines.append(
+            f"• تخفیف ({disc_label}): -{format_price(discount_amount)}"
+        )
+
+    breakdown_str = "\n".join(breakdown_lines)
 
     from db.models import get_reserve_renewal_config
 
     reserve_cfg = await get_reserve_renewal_config()
     reserve_enabled = bool(reserve_cfg.get("enabled", True))
     wallet_header = (
-        "👛 <b>تایید پرداخت رزرو اشتراک از کیف پول</b>"
+        "👛 <b>تأیید پرداخت رزرو اشتراک از کیف پول</b>"
         if reserve_enabled
-        else "👛 <b>تایید پرداخت تمدید از کیف پول</b>"
+        else "👛 <b>تأیید پرداخت تمدید از کیف پول</b>"
     )
-    wallet_question = (
-        "آیا برای کسر از کیف پول و رزرو بسته اشتراک مطمئن هستید؟"
-        if reserve_enabled
-        else "آیا برای کسر از کیف پول و تمدید فوری سرویس مطمئن هستید؟"
-    )
+    wallet_question = "آیا از کسر از کیف پول و ثبت سفارش اطمینان دارید؟"
 
     text = (
         f"{wallet_header}\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n\n"
-        f"💎 <b>مبلغ فاکتور:</b> {format_price(price)}\n"
-        f"💰 <b>موجودی فعلی شما:</b> {format_price(balance)}\n"
+        f"📦 <b>مشخصات تمدید:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
+        f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💎 <b>مبلغ کسر از کیف پول:</b> <b>{format_price(price)}</b>\n"
+        f"💰 <b>موجودی فعلی حساب:</b> {format_price(balance)}\n"
         f"📉 <b>موجودی پس از پرداخت:</b> {format_price(after_balance)}\n\n"
         f"{wallet_question}"
     )
@@ -1771,50 +1781,55 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
     await state.clear()
 
     bd = await get_price_breakdown(gb, duration, users)
-    dur_str = (
-        f" (+{format_price(bd['duration_surcharge'])})"
-        if bd["duration_surcharge"] > 0
-        else ""
-    )
-    user_str = (
-        f" (+{format_price(bd['user_surcharge'])})" if bd["user_surcharge"] > 0 else ""
-    )
+    extra_users = max(0, users - 1)
+    vol_label = await format_volume_label(gb, with_fair_policy=True)
+
+    breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
+    if bd["user_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+        )
+    if bd["duration_surcharge"] > 0:
+        breakdown_lines.append(
+            f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
+        )
+    if original_price > payable_amount:
+        discount_amount = original_price - payable_amount
+        disc_label = f"کد {discount_code}" if discount_code else "تخفیف تمدید"
+        breakdown_lines.append(
+            f"• تخفیف ({disc_label}): -{format_price(discount_amount)}"
+        )
+
+    breakdown_str = "\n".join(breakdown_lines)
 
     card_config = await get_card_config()
     card_number = card_config["card_number"]
     card_holder = card_config["card_holder"]
 
-    disc_info = ""
-    if original_price > payable_amount:
-        disc_info = f"💵 <b>مبلغ پایه:</b> <s>{format_price(original_price)}</s>\n"
-        if discount_code:
-            disc_info += f"🏷️ <b>کد تخفیف:</b> <code>{discount_code}</code>\n"
-        else:
-            disc_info += "🎁 <b>تخفیف ویژه تمدید اشتراک</b>\n"
-
     from db.models import get_receipt_config, get_reserve_renewal_config
 
     reserve_cfg = await get_reserve_renewal_config()
     reserve_enabled = bool(reserve_cfg.get("enabled", True))
-    inv_type = "رزرو اشتراک" if reserve_enabled else "تمدید اشتراک"
+    inv_title = "سفارش رزرو اشتراک" if reserve_enabled else "سفارش تمدید اشتراک"
 
     receipt_cfg = await get_receipt_config()
     expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
 
     text = (
-        f"💳 <b>فاکتور پرداخت کارت به کارت ({inv_type})</b>\n\n"
-        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        f"💳 <b>{inv_title} (شماره {invoice_id}) ثبت شد</b>\n\n"
         f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
-        f"⏱ <b>مدت اعتبار جدید:</b> {duration} روز{dur_str}\n"
-        f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users)} کاربر{user_str}\n"
-        f"📊 <b>حجم ترافیک جدید:</b> {await format_volume_label(gb, with_fair_policy=True)} ({format_price(bd['data_price'])})\n"
-        f"{disc_info}"
-        f"💎 <b>مبلغ نهایی جهت واریز:</b> <b>{format_price(payable_amount)}</b>\n\n"
-        f"💳 <b>شماره کارت مقصد:</b>\n"
-        f"<code>{card_number}</code>\n"
+        f"📦 <b>مشخصات تمدید:</b>\n"
+        f"• حجم ترافیک: <b>{vol_label}</b>\n"
+        f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
+        f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(payable_amount)}</b>\n\n"
+        f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
-        f"⏳ <b>مهلت پرداخت:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
-        f"📌 <i>پس از واریز دقیق مبلغ، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
+        f"⏳ <b>مهلت پرداخت: {to_persian_digits(expiry_minutes)} دقیقه</b>\n\n"
+        f"✨ <i>پس از انتقال وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
     )
 
     await callback.message.edit_text(
