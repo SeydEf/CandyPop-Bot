@@ -231,7 +231,7 @@ def card_payment_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ پرداخت کردم",
+                    text="✅ ارسال رسید پرداختی",
                     callback_data=f"paid_{invoice_id}",
                 ),
             ],
