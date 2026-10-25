@@ -262,7 +262,7 @@ async def start_bank_sms_server(bot: Bot) -> None:
 
     cfg = await get_bank_sms_config()
     host = cfg.get("host", "0.0.0.0")
-    port = cfg.get("port", 8080)
+    port = cfg.get("port", 24318)
 
     app = web.Application()
     app.router.add_post("/api/v1/payments/bank-sms-webhook", handle_bank_sms_webhook)
