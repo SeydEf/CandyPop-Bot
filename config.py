@@ -46,3 +46,10 @@ CUSTOM_PRICE_DEFAULT_PER_GB: int = 3_800
 DURATION_OPTIONS: list[int] = [30, 60, 90]
 
 DB_PATH: str = os.getenv("DB_PATH", "data/candypop.db")
+
+BANK_SMS_WEBHOOK_HOST: str = os.getenv("BANK_SMS_WEBHOOK_HOST", "0.0.0.0")
+BANK_SMS_WEBHOOK_PORT: int = int(os.getenv("BANK_SMS_WEBHOOK_PORT", "8080"))
+BANK_SMS_WEBHOOK_SECRET: str = os.getenv(
+    "BANK_SMS_WEBHOOK_SECRET", "candypop_secret_token_123456"
+)
+BANK_SMS_WEBHOOK_URL: str = os.getenv("BANK_SMS_WEBHOOK_URL", "")

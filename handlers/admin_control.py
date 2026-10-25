@@ -81,6 +81,7 @@ class AdminControlStates(StatesGroup):
 
     waiting_card_number = State()
     waiting_card_holder = State()
+    waiting_bank_sms_custom_url = State()
 
     waiting_alert_gb = State()
     waiting_alert_days = State()
@@ -8165,6 +8166,12 @@ async def admin_card_menu(callback: types.CallbackQuery, state: FSMContext) -> N
             ],
             [
                 InlineKeyboardButton(
+                    text="⚡️ تأیید خودکار پیامک بانکی",
+                    callback_data="admin_bank_sms_menu",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔢 تغییر شماره کارت",
                     callback_data="admin_card_edit_number",
                 )
@@ -8336,6 +8343,284 @@ async def admin_card_edit_holder_save(
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+
+async def _build_bank_sms_panel() -> tuple[str, InlineKeyboardMarkup]:
+    import config
+    from db.models import get_bank_sms_config, get_bank_sms_stats
+
+    cfg = await get_bank_sms_config()
+    stats = await get_bank_sms_stats()
+
+    auto_approve_enabled = cfg.get("auto_approve_enabled", True)
+    random_suffix_enabled = cfg.get("random_suffix_enabled", True)
+    api_key = cfg.get("api_key", config.BANK_SMS_WEBHOOK_SECRET)
+    custom_url = cfg.get("custom_webhook_url", config.BANK_SMS_WEBHOOK_URL)
+    webhook_host = config.BANK_SMS_WEBHOOK_HOST
+    webhook_port = config.BANK_SMS_WEBHOOK_PORT
+
+    auto_approve_str = "🟢 فعال" if auto_approve_enabled else "🔴 غیرفعال"
+    random_suffix_str = "🟢 فعال" if random_suffix_enabled else "🔴 غیرفعال"
+
+    display_url = (
+        custom_url.strip()
+        if custom_url.strip()
+        else f"http://[IP-یا-دامنه-سرور]:{webhook_port}/api/v1/payments/bank-sms-webhook"
+    )
+
+    text = (
+        f"⚡️ <b>تنظیمات وب‌هوک و تأیید خودکار پیامک بانکی</b>\n\n"
+        f"🔘 <b>تأیید و تحویل خودکار:</b> {auto_approve_str}\n"
+        f"🔢 <b>افزودن شناسه رندوم ۳ رقمی:</b> {random_suffix_str}\n"
+        f"<i>(با افزودن مبلغ ۱ تا ۹۹۹ تومان به انتهای مبالغ کارت به کارت، تشخیص دقیق هر فاکتور تضمین می‌شود)</i>\n\n"
+        f"🌐 <b>آدرس وب‌هوک (Endpoint URL):</b>\n"
+        f"<code>{display_url}</code>\n\n"
+        f"🔑 <b>کلید امنیتی (X-Api-Key):</b>\n"
+        f"<code>{api_key}</code>\n\n"
+        f"⚙️ <b>سرور وب‌هوک داخلی:</b> میزبان <code>{webhook_host}</code> | پورت <code>{webhook_port}</code>\n\n"
+        f"📊 <b>آمار تراکنش‌های دریافتی:</b>\n"
+        f"• کل پیامک‌های دریافتی: <b>{to_persian_digits(stats['total'])}</b>\n"
+        f"• تأیید موفق و فعال‌شده: <b>{to_persian_digits(stats['success_count'])}</b>\n"
+        f"• نامطابق با فاکتورها: <b>{to_persian_digits(stats['unmatched_count'])}</b>\n"
+        f"• پیامک تکراری: <b>{to_persian_digits(stats['duplicate_count'])}</b>"
+    )
+
+    toggle_approve_text = (
+        "🔴 غیرفعال‌سازی تأیید خودکار"
+        if auto_approve_enabled
+        else "🟢 فعال‌سازی تأیید خودکار"
+    )
+    toggle_suffix_text = (
+        "🔴 غیرفعال‌سازی مبلغ رندوم"
+        if random_suffix_enabled
+        else "🟢 فعال‌سازی مبلغ رندوم"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_approve_text,
+                    callback_data="admin_bank_sms_toggle_approve",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=toggle_suffix_text,
+                    callback_data="admin_bank_sms_toggle_suffix",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔑 تولید کلید امنیتی جدید (API Key)",
+                    callback_data="admin_bank_sms_gen_key",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🌐 تنظیم آدرس دامنه وب‌هوک",
+                    callback_data="admin_bank_sms_set_url",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📋 گزارش آخرین تراکنش‌ها",
+                    callback_data="admin_bank_sms_logs",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات کارت",
+                    callback_data="admin_card_menu",
+                )
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_bank_sms_menu")
+async def admin_bank_sms_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+    await state.clear()
+    text, keyboard = await _build_bank_sms_panel()
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "admin_bank_sms_toggle_approve")
+async def admin_bank_sms_toggle_approve(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+    from db.models import get_bank_sms_config, set_bank_sms_config
+
+    cfg = await get_bank_sms_config()
+    current = cfg.get("auto_approve_enabled", True)
+    new_val = not current
+    await set_bank_sms_config("auto_approve_enabled", "1" if new_val else "0")
+    status_str = "فعال" if new_val else "غیرفعال"
+    await callback.answer(f"✅ تأیید خودکار {status_str} شد.")
+    await admin_bank_sms_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_bank_sms_toggle_suffix")
+async def admin_bank_sms_toggle_suffix(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+    from db.models import get_bank_sms_config, set_bank_sms_config
+
+    cfg = await get_bank_sms_config()
+    current = cfg.get("random_suffix_enabled", True)
+    new_val = not current
+    await set_bank_sms_config("random_suffix_enabled", "1" if new_val else "0")
+    status_str = "فعال" if new_val else "غیرفعال"
+    await callback.answer(f"✅ افزودن شناسه رندوم {status_str} شد.")
+    await admin_bank_sms_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_bank_sms_gen_key")
+async def admin_bank_sms_gen_key(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+    import secrets
+    from db.models import set_bank_sms_config
+
+    new_key = secrets.token_hex(16)
+    await set_bank_sms_config("api_key", new_key)
+    await callback.answer("✅ کلید امنیتی جدید ایجاد شد.", show_alert=True)
+    await admin_bank_sms_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_bank_sms_set_url")
+async def admin_bank_sms_set_url_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+    await state.set_state(AdminControlStates.waiting_bank_sms_custom_url)
+    text = (
+        "🌐 <b>تنظیم آدرس اختصاصی وب‌هوک</b>\n\n"
+        "لطفاً آدرس کامل سرور یا دامنه را وارد کنید:\n"
+        "مثال:\n"
+        "<code>https://api.yourdomain.com/api/v1/payments/bank-sms-webhook</code>\n\n"
+        "💡 <i>برای بازنشانی به آدرس پیش‌فرض، کلمه <code>reset</code> یا <code>حذف</code> را ارسال کنید.</i>\n"
+        "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_bank_sms_menu",
+                )
+            ]
+        ]
+    )
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_bank_sms_custom_url, F.text)
+async def admin_bank_sms_set_url_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ عملیات لغو شد.")
+        return
+
+    text_input = message.text.strip()
+    from db.models import set_bank_sms_config
+
+    if text_input.lower() in ("reset", "حذف", "پاک", "پیش‌فرض", "پیشفرض"):
+        await set_bank_sms_config("custom_webhook_url", "")
+        await state.clear()
+        await message.answer("✅ آدرس سفارشی وب‌هوک حذف و به حالت پیش‌فرض بازگردانده شد.")
+    else:
+        if not text_input.startswith("http://") and not text_input.startswith(
+            "https://"
+        ):
+            text_input = f"http://{text_input}"
+        await set_bank_sms_config("custom_webhook_url", text_input)
+        await state.clear()
+        await message.answer(
+            f"✅ آدرس وب‌هوک با موفقیت تنظیم شد:\n<code>{text_input}</code>"
+        )
+
+    panel_text, keyboard = await _build_bank_sms_panel()
+    await message.answer(panel_text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_bank_sms_logs")
+async def admin_bank_sms_logs(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+
+    from db.models import get_recent_bank_sms_transactions
+
+    txs = await get_recent_bank_sms_transactions(limit=10)
+    if not txs:
+        await callback.answer("ℹ️ هیچ تراکنشی تاکنون ثبت نشده است.", show_alert=True)
+        return
+
+    status_labels = {
+        "success": "🟢 تأیید و فعال شد",
+        "unmatched": "⚠️ نامطابق با فاکتور",
+        "already_processed": "🔄 تکراری (نادیده‌گرفته شد)",
+    }
+
+    lines = ["📋 <b>گزارش ۱۰ تراکنش پیامکی اخیر:</b>\n"]
+    for t in txs:
+        st_text = status_labels.get(t["status"], t["status"])
+        amt_str = format_price(t["amount_toman"])
+        rec_time = (
+            format_datetime(t["created_at"])
+            if t.get("created_at")
+            else (t.get("received_at") or "-")
+        )
+        inv_str = (
+            f"| فاکتور: <code>{t['invoice_id']}</code>" if t.get("invoice_id") else ""
+        )
+        lines.append(
+            f"🔹 <b>{amt_str}</b> ({st_text}) {inv_str}\n"
+            f"   • تاریخ: {rec_time} | بانک: {t.get('sender') or 'نامشخص'}\n"
+        )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات وب‌هوک",
+                    callback_data="admin_bank_sms_menu",
+                )
+            ]
+        ]
+    )
+
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message, "\n".join(lines), reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
 
 
 async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarkup]:

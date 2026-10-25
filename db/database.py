@@ -127,6 +127,25 @@ async def init_db() -> None:
             created_at    TEXT NOT NULL DEFAULT (datetime('now')),
             invoice_id    TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS bank_sms_transactions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            fingerprint     TEXT UNIQUE NOT NULL,
+            amount_toman    INTEGER NOT NULL,
+            amount_rial     INTEGER NOT NULL,
+            sender          TEXT,
+            account_number  TEXT,
+            balance_rial    INTEGER,
+            timestamp_str   TEXT,
+            raw_sms         TEXT,
+            received_at     TEXT,
+            invoice_id      TEXT REFERENCES invoices(id),
+            status          TEXT NOT NULL,
+            created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_bank_sms_fingerprint ON bank_sms_transactions(fingerprint);
+        CREATE INDEX IF NOT EXISTS idx_bank_sms_amount ON bank_sms_transactions(amount_toman);
     """)
 
     try:

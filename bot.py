@@ -74,8 +74,22 @@ async def on_startup(bot: Bot) -> None:
     asyncio.create_task(start_inbound_monitor_scheduler(bot))
     asyncio.create_task(start_backup_scheduler(bot))
 
+    try:
+        from services.bank_sms_server import start_bank_sms_server
+
+        await start_bank_sms_server(bot)
+    except Exception as e:
+        logger.error("Failed to start Bank SMS server: %s", e)
+
 
 async def on_shutdown(bot: Bot) -> None:
+    try:
+        from services.bank_sms_server import stop_bank_sms_server
+
+        await stop_bank_sms_server()
+    except Exception as e:
+        logger.error("Error stopping Bank SMS server: %s", e)
+
     await close_db()
     await close_client()
     logger.info("Bot shut down gracefully.")

@@ -2678,3 +2678,184 @@ async def increment_discount_usage(code: str, tg_id: int | None = None) -> None:
             (clean_code, tg_id),
         )
     await db.commit()
+
+
+# =====================================================================
+# Bank SMS Auto-Verification Models & Queries
+# =====================================================================
+
+
+async def get_bank_sms_config() -> dict[str, Any]:
+    from config import (
+        BANK_SMS_WEBHOOK_HOST,
+        BANK_SMS_WEBHOOK_PORT,
+        BANK_SMS_WEBHOOK_SECRET,
+        BANK_SMS_WEBHOOK_URL,
+    )
+
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT key, value FROM settings WHERE key LIKE 'bank_sms_%'"
+    )
+    rows = await cursor.fetchall()
+    s_map = {r["key"]: r["value"] for r in rows}
+
+    enabled = s_map.get("bank_sms_enabled", "1") == "1"
+    random_suffix = s_map.get("bank_sms_random_suffix_enabled", "1") == "1"
+    secret_key = s_map.get("bank_sms_secret_key", BANK_SMS_WEBHOOK_SECRET)
+    custom_url = s_map.get("bank_sms_custom_url", BANK_SMS_WEBHOOK_URL)
+    port = int(s_map.get("bank_sms_port", str(BANK_SMS_WEBHOOK_PORT)))
+    host = s_map.get("bank_sms_host", BANK_SMS_WEBHOOK_HOST)
+
+    return {
+        "enabled": enabled,
+        "auto_approve_enabled": enabled,
+        "random_suffix_enabled": random_suffix,
+        "secret_key": secret_key,
+        "api_key": secret_key,
+        "custom_url": custom_url,
+        "custom_webhook_url": custom_url,
+        "port": port,
+        "host": host,
+    }
+
+
+async def set_bank_sms_config(key: str, value: str) -> None:
+    if key in ("auto_approve_enabled", "enabled"):
+        await set_setting("bank_sms_enabled", str(value))
+    elif key in ("api_key", "secret_key"):
+        await set_setting("bank_sms_secret_key", str(value))
+    elif key in ("custom_url", "custom_webhook_url"):
+        await set_setting("bank_sms_custom_url", str(value))
+    else:
+        await set_setting(f"bank_sms_{key}", str(value))
+
+
+async def generate_unique_card_amount(base_amount: int) -> int:
+    cfg = await get_bank_sms_config()
+    if not cfg.get("random_suffix_enabled", True):
+        return base_amount
+
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT amount FROM invoices
+           WHERE status IN ('pending', 'under_review')
+             AND expires_at > datetime('now')
+             AND payment_method = 'card'"""
+    )
+    rows = await cursor.fetchall()
+    existing_amounts = {r["amount"] for r in rows}
+
+    available_deltas = [
+        d for d in range(1, 1000) if (base_amount + d) not in existing_amounts
+    ]
+    if available_deltas:
+        return base_amount + random.choice(available_deltas)
+
+    return base_amount + random.randint(1, 999)
+
+
+async def find_pending_card_invoice_by_amount(
+    amount_toman: int,
+) -> dict[str, Any] | None:
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT * FROM invoices
+           WHERE amount = ?
+             AND status IN ('pending', 'under_review')
+             AND expires_at > datetime('now')
+             AND payment_method = 'card'
+           ORDER BY CASE WHEN status = 'under_review' THEN 0 ELSE 1 END, created_at ASC
+           LIMIT 1""",
+        (amount_toman,),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def is_sms_fingerprint_processed(fingerprint: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT 1 FROM bank_sms_transactions WHERE fingerprint = ? LIMIT 1",
+        (fingerprint,),
+    )
+    row = await cursor.fetchone()
+    return row is not None
+
+
+async def record_bank_sms_transaction(
+    fingerprint: str,
+    amount_toman: int,
+    amount_rial: int,
+    sender: str | None,
+    account_number: str | None,
+    balance_rial: int | None,
+    timestamp_str: str | None,
+    raw_sms: str | None,
+    received_at: str | None,
+    status: str,
+    invoice_id: str | None = None,
+) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        """INSERT INTO bank_sms_transactions (
+               fingerprint, amount_toman, amount_rial, sender,
+               account_number, balance_rial, timestamp_str, raw_sms,
+               received_at, invoice_id, status
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            fingerprint,
+            amount_toman,
+            amount_rial,
+            sender,
+            account_number,
+            balance_rial,
+            timestamp_str,
+            raw_sms,
+            received_at,
+            invoice_id,
+            status,
+        ),
+    )
+    await db.commit()
+    return cursor.lastrowid or 0
+
+
+async def get_recent_bank_sms_transactions(limit: int = 10) -> list[dict[str, Any]]:
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT t.*, i.tg_id, u.username, u.full_name
+           FROM bank_sms_transactions t
+           LEFT JOIN invoices i ON t.invoice_id = i.id
+           LEFT JOIN users u ON i.tg_id = u.tg_id
+           ORDER BY t.id DESC LIMIT ?""",
+        (limit,),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_bank_sms_stats() -> dict[str, int]:
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT
+             COUNT(*) as total,
+             COUNT(CASE WHEN status = 'success' THEN 1 END) as success_count,
+             COUNT(CASE WHEN status = 'unmatched' THEN 1 END) as unmatched_count,
+             COUNT(CASE WHEN status = 'already_processed' THEN 1 END) as duplicate_count
+           FROM bank_sms_transactions"""
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return {
+            "total": 0,
+            "success_count": 0,
+            "unmatched_count": 0,
+            "duplicate_count": 0,
+        }
+    return {
+        "total": row["total"] or 0,
+        "success_count": row["success_count"] or 0,
+        "unmatched_count": row["unmatched_count"] or 0,
+        "duplicate_count": row["duplicate_count"] or 0,
+    }

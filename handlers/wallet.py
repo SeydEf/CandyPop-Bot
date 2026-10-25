@@ -89,14 +89,20 @@ async def wallet_deposit_preset(
         await callback.answer("مبلغ نامعتبر است.", show_alert=True)
         return
 
+    from db.models import generate_unique_card_amount
+
+    card_amount = await generate_unique_card_amount(amount)
+    unique_delta = card_amount - amount
+
     tg_id = callback.from_user.id
     invoice = await create_invoice(
         tg_id=tg_id,
-        amount=amount,
+        amount=card_amount,
         duration_days=0,
         data_gb=0,
         users_count=0,
         target_email="TOPUP",
+        original_amount=amount,
     )
     invoice_id = invoice["id"]
 
@@ -107,20 +113,32 @@ async def wallet_deposit_preset(
     receipt_cfg = await get_receipt_config()
     expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
 
+    breakdown_lines = [f"• شارژ انتخابی: {format_price(amount)}"]
+    if unique_delta > 0:
+        breakdown_lines.append(
+            f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
+        )
+    breakdown_str = "\n".join(breakdown_lines)
+
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
-        f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(amount)}</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(card_amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
+        f"⚠️ <b>مبلغ دقیق واریزی:</b> <code>{card_amount}</code> تومان\n"
+        f"<i>(لطفاً دقیقاً همین مبلغ شامل چند رقم آخر را انتقال دهید تا کیف پول فوراً و خودکار شارژ شود.)</i>\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
-        f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا حساب شما شارژ شود.</i>"
+        f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
     )
 
     await callback.message.edit_text(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, card_number, amount),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, card_amount),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -243,13 +261,19 @@ async def wallet_deposit_custom_input(
     tg_id = message.from_user.id
     await state.clear()
 
+    from db.models import generate_unique_card_amount
+
+    card_amount = await generate_unique_card_amount(amount)
+    unique_delta = card_amount - amount
+
     invoice = await create_invoice(
         tg_id=tg_id,
-        amount=amount,
+        amount=card_amount,
         duration_days=0,
         data_gb=0,
         users_count=0,
         target_email="TOPUP",
+        original_amount=amount,
     )
     invoice_id = invoice["id"]
     card_config = await get_card_config()
@@ -259,19 +283,31 @@ async def wallet_deposit_custom_input(
     receipt_cfg = await get_receipt_config()
     expiry_minutes = receipt_cfg.get("expiry_minutes", INVOICE_EXPIRY_MINUTES)
 
+    breakdown_lines = [f"• شارژ انتخابی: {format_price(amount)}"]
+    if unique_delta > 0:
+        breakdown_lines.append(
+            f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
+        )
+    breakdown_str = "\n".join(breakdown_lines)
+
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
-        f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(amount)}</b>\n\n"
+        f"💳 <b>ریز محاسبات:</b>\n"
+        f"{breakdown_str}\n"
+        f"──────────────\n"
+        f"💰 <b>مبلغ قابل واریز:</b> <b>{format_price(card_amount)}</b>\n\n"
         f"💳 <b>شماره کارت مقصد:</b>\n"
         f"<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
+        f"⚠️ <b>مبلغ دقیق واریزی:</b> <code>{card_amount}</code> تومان\n"
+        f"<i>(لطفاً دقیقاً همین مبلغ شامل چند رقم آخر را انتقال دهید تا کیف پول فوراً و خودکار شارژ شود.)</i>\n\n"
         f"⏳ <b>مهلت پرداخت:</b> {to_persian_digits(expiry_minutes)} دقیقه\n\n"
-        f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید تا حساب شما شارژ شود.</i>"
+        f"📌 <i>پس از واریز وجه، روی دکمه «✅ پرداخت کردم» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
     )
 
     await message.answer(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, card_number, amount),
+        reply_markup=card_payment_keyboard(invoice_id, card_number, card_amount),
         parse_mode="HTML",
     )
