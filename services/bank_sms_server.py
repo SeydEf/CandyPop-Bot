@@ -45,7 +45,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             status=503,
         )
 
-    # 1. Authentication
     api_key_header = request.headers.get("X-Api-Key") or request.headers.get(
         "x-api-key"
     )
@@ -56,7 +55,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             status=401,
         )
 
-    # 2. Parse & Validate JSON
     try:
         data: dict[str, Any] = await request.json()
     except Exception as e:
@@ -97,7 +95,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
     raw_sms = data.get("raw_sms")
     received_at = data.get("received_at")
 
-    # 3. Idempotency Check
     if await is_sms_fingerprint_processed(fingerprint):
         logger.info("Bank SMS already processed: %s", fingerprint)
         return web.json_response(
@@ -109,7 +106,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             status=200,
         )
 
-    # 4. Find matching pending card invoice
     invoice = await find_pending_card_invoice_by_amount(amount_toman)
     if not invoice:
         logger.info(
@@ -138,7 +134,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             status=422,
         )
 
-    # 5. Matching invoice found -> approve it!
     invoice_id = invoice["id"]
     tg_id = invoice["tg_id"]
 
@@ -170,7 +165,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             status=500,
         )
 
-    # Update admin notification message if it already existed in review queue
     review_msg_id = invoice.get("message_id")
     if review_msg_id:
         try:
@@ -208,7 +202,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                 "Could not update review message for auto-approved invoice: %s", e
             )
 
-    # Send telegram notification log to admins
     try:
         sender_disp = html.escape(str(account_number or sender or "نامشخص"))
         time_disp = html.escape(str(timestamp_str or "نامشخص"))

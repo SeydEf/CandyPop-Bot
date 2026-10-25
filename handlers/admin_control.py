@@ -1984,7 +1984,6 @@ async def _build_volume_plan_durations_panel(
             ]
         )
 
-    # Custom duration toggle
     c_conf = plan_durations.get("custom", {"enabled_buy": True, "enabled_renew": True})
     c_buy_on = c_conf.get("enabled_buy", True)
     c_renew_on = c_conf.get("enabled_renew", True)
@@ -6425,9 +6424,6 @@ async def admin_disc_r_exp_custom_save(
     )
 
 
-# ---------------------------------------------------------
-# ساب‌پنل تنظیمات تخفیف پیش‌فرض تمدید اشتراک
-# ---------------------------------------------------------
 async def _build_renewal_discount_menu_content() -> tuple[str, InlineKeyboardMarkup]:
     from db.models import get_renewal_discount_config
 
@@ -13460,11 +13456,6 @@ async def admin_reserve_renewal_reset(
         "✅ تنظیمات تمدید رزرو به مقادیر پیش‌فرض بازنشانی شد.",
         show_alert=True,
     )
-
-
-# ---------------------------------------------------------
-# Database Backup Management Handlers
-# ---------------------------------------------------------
 
 
 async def _build_backup_menu_content(
