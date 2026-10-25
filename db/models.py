@@ -2680,11 +2680,6 @@ async def increment_discount_usage(code: str, tg_id: int | None = None) -> None:
     await db.commit()
 
 
-# =====================================================================
-# Bank SMS Auto-Verification Models & Queries
-# =====================================================================
-
-
 async def get_bank_sms_config() -> dict[str, Any]:
     from config import (
         BANK_SMS_WEBHOOK_HOST,
