@@ -101,7 +101,9 @@ def format_duration_button_text(
     return f"⏱ {dur_title} (بدون هزینه)"
 
 
-async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
+async def duration_keyboard(
+    gb: int, users: int, skip_users_step: bool = False
+) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
         get_volume_plan_duration_surcharge,
@@ -142,12 +144,20 @@ async def duration_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
             ]
         )
 
+    if skip_users_step:
+        back_btn = InlineKeyboardButton(
+            text="🔙 بازگشت به انتخاب حجم",
+            callback_data="buy_back_volume",
+        )
+    else:
+        back_btn = InlineKeyboardButton(
+            text="🔙 بازگشت به انتخاب کاربر",
+            callback_data=f"buy_back_users_{gb}_{users}",
+        )
+
     rows.append(
         [
-            InlineKeyboardButton(
-                text="🔙 بازگشت به انتخاب کاربر",
-                callback_data=f"buy_back_users_{gb}_{users}",
-            ),
+            back_btn,
             InlineKeyboardButton(text="❌ انصراف از خرید", callback_data="buy_cancel"),
         ]
     )
@@ -429,7 +439,9 @@ def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarku
     )
 
 
-async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboardMarkup:
+async def renew_duration_keyboard(
+    gb: int = 30, users: int = 1, skip_users_step: bool = False
+) -> InlineKeyboardMarkup:
     from services.pricing import (
         get_duration_plans,
         get_volume_plan_duration_surcharge,
@@ -464,9 +476,18 @@ async def renew_duration_keyboard(gb: int = 30, users: int = 1) -> InlineKeyboar
             ]
         )
 
+    if skip_users_step:
+        back_btn = InlineKeyboardButton(
+            text="🔙 بازگشت به انتخاب حجم", callback_data="renew_change"
+        )
+    else:
+        back_btn = InlineKeyboardButton(
+            text="🔙 بازگشت", callback_data="renew_back_to_users"
+        )
+
     rows.append(
         [
-            InlineKeyboardButton(text="🔙 بازگشت", callback_data="renew_back_to_users"),
+            back_btn,
             InlineKeyboardButton(text="❌ انصراف", callback_data="sub_view_current"),
         ]
     )

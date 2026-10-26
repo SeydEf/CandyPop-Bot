@@ -1163,13 +1163,18 @@ async def renew_back_to_duration(
     gb = data.get("gb", 30)
     users = data.get("users", 1)
 
+    from services.pricing import resolve_plan_user_config
+
+    user_cfg = await resolve_plan_user_config(gb)
+    skip = not user_cfg["allow_selection"]
+
     from handlers.buy import _get_duration_step_text
     from keyboards.inline_kb import renew_duration_keyboard
 
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=await renew_duration_keyboard(gb, users),
+        reply_markup=await renew_duration_keyboard(gb, users, skip_users_step=skip),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1180,8 +1185,32 @@ async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) 
     data = await state.get_data()
     email = data.get("renew_email", "")
     gb = data.get("gb", 30)
-    users = data.get("users", 1)
 
+    from services.pricing import resolve_plan_user_config
+
+    user_cfg = await resolve_plan_user_config(gb)
+    if not user_cfg["allow_selection"]:
+        from keyboards.inline_kb import renew_volume_keyboard
+        from db.models import get_reserve_renewal_config
+
+        reserve_cfg = await get_reserve_renewal_config()
+        reserve_enabled = bool(reserve_cfg.get("enabled", True))
+        change_plan_title = (
+            f"📦 <b>تغییر مشخصات و رزرو سرویس «{email}»</b>"
+            if reserve_enabled
+            else f"🔄 <b>تغییر پلن و تمدید سرویس «{email}»</b>"
+        )
+        await callback.message.edit_text(
+            f"{change_plan_title}\n\n"
+            f"<b>گام ۱ از ۳: انتخاب حجم ترافیک جدید</b>\n\n"
+            f"لطفاً میزان ترافیک مورد نظر خود را برای این سرویس انتخاب کنید:",
+            reply_markup=await renew_volume_keyboard(duration=30, users=1),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    users = data.get("users", 1)
     from handlers.buy import _get_users_step_text
 
     text = await _get_users_step_text(gb, users)
@@ -1286,16 +1315,33 @@ async def renew_custom_volume_input(message: types.Message, state: FSMContext) -
     await state.update_data(gb=gb)
     data = await state.get_data()
     email = data.get("renew_email", "")
-    users = data.get("users", 1)
 
-    from handlers.buy import _get_users_step_text
+    from services.pricing import resolve_plan_user_config
 
-    text = await _get_users_step_text(gb, users)
-    await message.answer(
-        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=renew_users_keyboard(gb, users),
-        parse_mode="HTML",
-    )
+    user_cfg = await resolve_plan_user_config(gb)
+
+    if not user_cfg["allow_selection"]:
+        users = user_cfg["users"]
+        await state.update_data(users=users)
+        from handlers.buy import _get_duration_step_text
+        from keyboards.inline_kb import renew_duration_keyboard
+
+        text = await _get_duration_step_text(gb, users)
+        await message.answer(
+            f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+            reply_markup=await renew_duration_keyboard(gb, users, skip_users_step=True),
+            parse_mode="HTML",
+        )
+    else:
+        users = data.get("users", 1)
+        from handlers.buy import _get_users_step_text
+
+        text = await _get_users_step_text(gb, users)
+        await message.answer(
+            f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+            reply_markup=renew_users_keyboard(gb, users),
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.startswith("renew_vol_"))
@@ -1304,16 +1350,33 @@ async def renew_select_volume(callback: types.CallbackQuery, state: FSMContext) 
     await state.update_data(gb=gb)
     data = await state.get_data()
     email = data.get("renew_email", "")
-    users = data.get("users", 1)
 
-    from handlers.buy import _get_users_step_text
+    from services.pricing import resolve_plan_user_config
 
-    text = await _get_users_step_text(gb, users)
-    await callback.message.edit_text(
-        f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-        reply_markup=renew_users_keyboard(gb, users),
-        parse_mode="HTML",
-    )
+    user_cfg = await resolve_plan_user_config(gb)
+
+    if not user_cfg["allow_selection"]:
+        users = user_cfg["users"]
+        await state.update_data(users=users)
+        from handlers.buy import _get_duration_step_text
+        from keyboards.inline_kb import renew_duration_keyboard
+
+        text = await _get_duration_step_text(gb, users)
+        await callback.message.edit_text(
+            f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+            reply_markup=await renew_duration_keyboard(gb, users, skip_users_step=True),
+            parse_mode="HTML",
+        )
+    else:
+        users = data.get("users", 1)
+        from handlers.buy import _get_users_step_text
+
+        text = await _get_users_step_text(gb, users)
+        await callback.message.edit_text(
+            f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+            reply_markup=renew_users_keyboard(gb, users),
+            parse_mode="HTML",
+        )
     await callback.answer()
 
 

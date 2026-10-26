@@ -167,13 +167,26 @@ async def _get_users_step_text(gb: int, users: int = 1) -> str:
 @router.callback_query(F.data.regexp(r"^buy_vol_\d+$"))
 async def buy_select_volume(callback: types.CallbackQuery) -> None:
     gb = int(callback.data.split("_")[-1])
-    users = 1
-    text = await _get_users_step_text(gb, users)
-    await callback.message.edit_text(
-        text,
-        reply_markup=users_keyboard(gb, users),
-        parse_mode="HTML",
-    )
+    from services.pricing import resolve_plan_user_config
+
+    user_cfg = await resolve_plan_user_config(gb)
+
+    if not user_cfg["allow_selection"]:
+        users = user_cfg["users"]
+        text = await _get_duration_step_text(gb, users)
+        await callback.message.edit_text(
+            text,
+            reply_markup=await duration_keyboard(gb, users, skip_users_step=True),
+            parse_mode="HTML",
+        )
+    else:
+        users = 1
+        text = await _get_users_step_text(gb, users)
+        await callback.message.edit_text(
+            text,
+            reply_markup=users_keyboard(gb, users),
+            parse_mode="HTML",
+        )
     await callback.answer()
 
 
@@ -277,25 +290,53 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
     data = await state.get_data()
     renew_email = data.get("renew_email")
 
+    from services.pricing import resolve_plan_user_config
+
+    user_cfg = await resolve_plan_user_config(gb)
+
     if renew_email:
         email = renew_email
-        users = data.get("users", 1)
-        text = await _get_users_step_text(gb, users)
-        from keyboards.inline_kb import renew_users_keyboard
+        if not user_cfg["allow_selection"]:
+            users = user_cfg["users"]
+            await state.update_data(users=users)
+            from keyboards.inline_kb import renew_duration_keyboard
 
-        await message.answer(
-            f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
-            reply_markup=renew_users_keyboard(gb, users),
-            parse_mode="HTML",
-        )
+            text = await _get_duration_step_text(gb, users)
+            await message.answer(
+                f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+                reply_markup=await renew_duration_keyboard(
+                    gb, users, skip_users_step=True
+                ),
+                parse_mode="HTML",
+            )
+        else:
+            users = data.get("users", 1)
+            text = await _get_users_step_text(gb, users)
+            from keyboards.inline_kb import renew_users_keyboard
+
+            await message.answer(
+                f"🔄 <b>تغییر پلن سرویس «{email}»</b>\n\n{text}",
+                reply_markup=renew_users_keyboard(gb, users),
+                parse_mode="HTML",
+            )
     else:
-        users = 1
-        text = await _get_users_step_text(gb, users)
-        await message.answer(
-            text,
-            reply_markup=users_keyboard(gb, users),
-            parse_mode="HTML",
-        )
+        if not user_cfg["allow_selection"]:
+            users = user_cfg["users"]
+            await state.update_data(users=users)
+            text = await _get_duration_step_text(gb, users)
+            await message.answer(
+                text,
+                reply_markup=await duration_keyboard(gb, users, skip_users_step=True),
+                parse_mode="HTML",
+            )
+        else:
+            users = 1
+            text = await _get_users_step_text(gb, users)
+            await message.answer(
+                text,
+                reply_markup=users_keyboard(gb, users),
+                parse_mode="HTML",
+            )
 
 
 @router.callback_query(F.data.regexp(r"^buy_users_step_\d+_\d+$"))
@@ -328,6 +369,21 @@ async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) ->
     parts = callback.data.split("_")
     gb = int(parts[3])
     users = int(parts[4])
+
+    from services.pricing import resolve_plan_user_config
+
+    user_cfg = await resolve_plan_user_config(gb)
+    if not user_cfg["allow_selection"]:
+        from keyboards.inline_kb import volume_keyboard
+
+        await callback.message.edit_text(
+            "📦 <b>گام ۱ از ۲: انتخاب حجم ترافیک</b>\n\nلطفاً یکی از پلن‌های حجمی زیر را انتخاب کنید:",
+            reply_markup=await volume_keyboard(),
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
     text = await _get_users_step_text(gb, users)
     await callback.message.edit_text(
         text,
@@ -338,24 +394,40 @@ async def buy_back_to_users(callback: types.CallbackQuery, state: FSMContext) ->
 
 
 async def _get_duration_step_text(gb: int, users: int) -> str:
-    from services.pricing import calculate_data_price
+    from services.pricing import calculate_data_price, resolve_plan_user_config
 
     config = await get_pricing_config()
+    user_cfg = await resolve_plan_user_config(gb)
     data_price = await calculate_data_price(gb)
-    extra_users = max(0, users - 1)
-    users_surcharge_total = extra_users * config["user_surcharge"]
+    if not user_cfg["allow_selection"] and user_cfg.get("is_manual_surcharge"):
+        users_surcharge_total = user_cfg["user_surcharge"]
+    else:
+        extra_users = max(0, users - 1)
+        users_surcharge_total = extra_users * config["user_surcharge"]
     base_sum = data_price + users_surcharge_total
     vol_label = await format_volume_label(gb)
 
+    step_title = (
+        "⏱ <b>گام ۲ از ۲: انتخاب مدت اعتبار</b>"
+        if not user_cfg["allow_selection"]
+        else "⏱ <b>گام ۳ از ۳: انتخاب مدت اعتبار</b>"
+    )
+
     breakdown_lines = [f"• هزینه حجم: {format_price(data_price)}"]
     if users_surcharge_total > 0:
-        breakdown_lines.append(
-            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(users_surcharge_total)}"
-        )
+        extra_users = max(0, users - 1)
+        if extra_users > 0:
+            breakdown_lines.append(
+                f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(users_surcharge_total)}"
+            )
+        else:
+            breakdown_lines.append(
+                f"• هزینه ظرفیت اتصال ({to_persian_digits(users)} کاربر): +{format_price(users_surcharge_total)}"
+            )
     breakdown_str = "\n".join(breakdown_lines)
 
     return (
-        f"⏱ <b>گام ۳ از ۳: انتخاب مدت اعتبار</b>\n\n"
+        f"{step_title}\n\n"
         f"📦 <b>مشخصات انتخابی:</b>\n"
         f"• حجم ترافیک: <b>{vol_label}</b>\n"
         f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n\n"
@@ -384,9 +456,14 @@ async def _build_pre_invoice_text(
 
     breakdown_lines = [f"• هزینه حجم: {format_price(bd['data_price'])}"]
     if bd["user_surcharge"] > 0:
-        breakdown_lines.append(
-            f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
-        )
+        if extra_users > 0:
+            breakdown_lines.append(
+                f"• کاربر اضافه ({to_persian_digits(extra_users)} کاربر): +{format_price(bd['user_surcharge'])}"
+            )
+        else:
+            breakdown_lines.append(
+                f"• هزینه ظرفیت اتصال ({to_persian_digits(users)} کاربر): +{format_price(bd['user_surcharge'])}"
+            )
     if bd["duration_surcharge"] > 0:
         breakdown_lines.append(
             f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
@@ -437,10 +514,14 @@ async def buy_back_to_duration(
     parts = callback.data.split("_")
     gb = int(parts[3])
     users = int(parts[4])
+    from services.pricing import resolve_plan_user_config
+
+    user_cfg = await resolve_plan_user_config(gb)
+    skip = not user_cfg["allow_selection"]
     text = await _get_duration_step_text(gb, users)
     await callback.message.edit_text(
         text,
-        reply_markup=await duration_keyboard(gb, users),
+        reply_markup=await duration_keyboard(gb, users, skip_users_step=skip),
         parse_mode="HTML",
     )
     await callback.answer()

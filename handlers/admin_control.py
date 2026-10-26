@@ -53,6 +53,10 @@ class AdminControlStates(StatesGroup):
     waiting_vol_plan_edit_price = State()
     waiting_vol_plan_edit_text = State()
     waiting_vol_plan_dur_price = State()
+    waiting_user_sel_fixed_users = State()
+    waiting_user_sel_manual_surcharge = State()
+    waiting_vol_plan_fixed_users = State()
+    waiting_vol_plan_manual_surcharge = State()
     waiting_custom_volume_min = State()
     waiting_custom_volume_max = State()
     waiting_dur_plan_add_days = State()
@@ -429,6 +433,12 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="👤 تغییر هزینه کاربر اضافه",
                     callback_data="admin_price_user",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 تنظیمات انتخاب کاربر همزمان",
+                    callback_data="admin_pricing_user_sel_menu",
                 ),
             ],
             [
@@ -887,6 +897,302 @@ async def admin_price_user_save(message: types.Message, state: FSMContext) -> No
         )
         await message.answer(
             "❌ لطفاً یک عدد صحیح معتبر وارد کنید. مثال: <code>50000</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+
+
+async def _build_user_selection_panel() -> tuple[str, InlineKeyboardMarkup]:
+    from services.pricing import get_pricing_config, get_user_selection_config
+
+    cfg = await get_user_selection_config()
+    pricing_cfg = await get_pricing_config()
+    enabled = bool(cfg.get("enabled", True))
+    fixed_users = max(1, int(cfg.get("fixed_users", 1)))
+    price_type = str(cfg.get("price_type", "auto"))
+    manual_surch = max(0, int(cfg.get("manual_surcharge", 0)))
+    user_rate = pricing_cfg.get("user_surcharge", 50000)
+
+    status_str = (
+        "🟢 فعال (انتخاب آزاد توسط خریدار)" if enabled else "🔴 غیرفعال (ظرفیت ثابت)"
+    )
+
+    if price_type == "manual":
+        cost_desc = f"دستی ({format_price(manual_surch)})"
+    else:
+        auto_calc = max(0, fixed_users - 1) * user_rate
+        cost_desc = f"تعرفه سیستم ({format_price(auto_calc)})"
+
+    text = (
+        "👥 <b>تنظیمات سراسری انتخاب کاربر همزمان</b>\n\n"
+        "در این بخش می‌توانید مشخص کنید آیا خریداران در فرایند خرید و تمدید اشتراک، "
+        "امکان انتخاب تعداد کاربر همزمان را داشته باشند یا خیر.\n\n"
+        f"⚙️ <b>وضعیت کلی:</b> <b>{status_str}</b>\n"
+        f"👤 <b>تعداد کاربر ثابت (در صورت غیرفعال بودن):</b> <b>{to_persian_digits(fixed_users)} کاربر</b>\n"
+        f"💰 <b>نحوه محاسبه هزینه کاربر ثابت:</b> <b>{cost_desc}</b>\n\n"
+        "💡 <i>نکته: در بخش مدیریت پلن‌های حجم می‌توانید برای هر پلن، رفتار اختصاصی یا ارث‌بری از این بخش را تعیین کنید.</i>"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=f"وضعیت: {'🟢 فعال' if enabled else '🔴 غیرفعال'}",
+                callback_data="admin_user_sel_toggle",
+            )
+        ]
+    ]
+
+    if not enabled:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"👤 ظرفیت ثابت: {to_persian_digits(fixed_users)} کاربر",
+                    callback_data="admin_user_sel_edit_users",
+                ),
+                InlineKeyboardButton(
+                    text=f"💰 هزینه: {'تعرفه سیستم' if price_type == 'auto' else 'دستی'}",
+                    callback_data="admin_user_sel_toggle_price_type",
+                ),
+            ]
+        )
+        if price_type == "manual":
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"✏️ تعیین مبلغ دستی ({format_price(manual_surch)})",
+                        callback_data="admin_user_sel_edit_manual_price",
+                    )
+                ]
+            )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به قیمت و مالی",
+                callback_data="admin_cancel_to_pricing",
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin_pricing_user_sel_menu")
+async def admin_pricing_user_sel_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    text, kb = await _build_user_selection_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_user_sel_toggle")
+async def admin_user_sel_toggle_handler(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import get_user_selection_config, set_user_selection_config
+
+    cfg = await get_user_selection_config()
+    cfg["enabled"] = not cfg.get("enabled", True)
+    await set_user_selection_config(cfg)
+    text, kb = await _build_user_selection_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    status_label = "فعال" if cfg["enabled"] else "غیرفعال"
+    await callback.answer(f"✅ انتخاب کاربر {status_label} شد.")
+
+
+@router.callback_query(F.data == "admin_user_sel_toggle_price_type")
+async def admin_user_sel_toggle_price_type_handler(
+    callback: types.CallbackQuery,
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    from services.pricing import get_user_selection_config, set_user_selection_config
+
+    cfg = await get_user_selection_config()
+    cur = cfg.get("price_type", "auto")
+    cfg["price_type"] = "manual" if cur == "auto" else "auto"
+    await set_user_selection_config(cfg)
+    text, kb = await _build_user_selection_panel()
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    new_type_str = "دستی" if cfg["price_type"] == "manual" else "تعرفه سیستم"
+    await callback.answer(f"✅ نوع هزینه: {new_type_str}")
+
+
+@router.callback_query(F.data == "admin_user_sel_edit_users")
+async def admin_user_sel_edit_users_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_user_sel_fixed_users)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_pricing_user_sel_menu",
+                )
+            ]
+        ]
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message,
+            "👤 <b>تعداد کاربر ثابت را وارد کنید:</b>\n\n"
+            "یک عدد صحیح بزرگتر یا مساوی ۱ ارسال نمایید (مثلاً <code>2</code>):\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_user_sel_fixed_users, F.text)
+async def admin_user_sel_fixed_users_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, kb = await _build_user_selection_panel()
+        await message.answer(
+            "❌ عملیات لغو شد.\n\n" + text, reply_markup=kb, parse_mode="HTML"
+        )
+        return
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val < 1:
+            raise ValueError
+        from services.pricing import (
+            get_user_selection_config,
+            set_user_selection_config,
+        )
+
+        cfg = await get_user_selection_config()
+        cfg["fixed_users"] = val
+        await set_user_selection_config(cfg)
+        await state.clear()
+        text, kb = await _build_user_selection_panel()
+        await message.answer(
+            f"✅ تعداد کاربر ثابت به <b>{to_persian_digits(val)} کاربر</b> تنظیم شد.\n\n{text}",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_pricing_user_sel_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (حداقل ۱) وارد کنید. مثال: <code>2</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data == "admin_user_sel_edit_manual_price")
+async def admin_user_sel_edit_manual_price_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.set_state(AdminControlStates.waiting_user_sel_manual_surcharge)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_pricing_user_sel_menu",
+                )
+            ]
+        ]
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message,
+            "💰 <b>مبلغ هزینه دستی کاربر ثابت را به تومان وارد کنید:</b>\n\n"
+            "این مبلغ در صورت غیرفعال بودن انتخاب کاربر به هزینه اشتراک اضافه می‌شود (عدد ۰ یعنی بدون هزینه اضافه).\n"
+            "مثال: <code>30000</code>\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_user_sel_manual_surcharge, F.text)
+async def admin_user_sel_manual_surcharge_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        text, kb = await _build_user_selection_panel()
+        await message.answer(
+            "❌ عملیات لغو شد.\n\n" + text, reply_markup=kb, parse_mode="HTML"
+        )
+        return
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+        from services.pricing import (
+            get_user_selection_config,
+            set_user_selection_config,
+        )
+
+        cfg = await get_user_selection_config()
+        cfg["manual_surcharge"] = val
+        await set_user_selection_config(cfg)
+        await state.clear()
+        text, kb = await _build_user_selection_panel()
+        await message.answer(
+            f"✅ مبلغ هزینه دستی کاربر به <b>{format_price(val)}</b> تنظیم شد.\n\n{text}",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_pricing_user_sel_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید (عدد بزرگتر یا مساوی ۰). مثال: <code>30000</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
             reply_markup=err_kb,
             parse_mode="HTML",
         )
@@ -1802,6 +2108,27 @@ async def _build_volume_plan_details(
         else f"{to_persian_digits(gb)} گیگابایت"
     )
 
+    u_cfg = p.get("user_config", {})
+    mode = str(u_cfg.get("mode", "inherit"))
+    p_users = max(1, int(u_cfg.get("fixed_users", 1)))
+    p_ptype = str(u_cfg.get("price_type", "inherit"))
+    p_manual = max(0, int(u_cfg.get("manual_surcharge", 0)))
+
+    if mode == "inherit":
+        user_sel_status_str = "🔄 ارث‌بری از تنظیمات سراسری"
+    elif mode == "enabled":
+        user_sel_status_str = "🟢 اجباراً فعال (انتخاب آزاد)"
+    else:
+        if p_ptype == "inherit":
+            cost_str = "هزینه: ارث‌بری"
+        elif p_ptype == "manual":
+            cost_str = f"هزینه دستی: {format_price(p_manual)}"
+        else:
+            cost_str = "هزینه: تعرفه سیستم"
+        user_sel_status_str = (
+            f"🔴 اجباراً غیرفعال ({to_persian_digits(p_users)} کاربر - {cost_str})"
+        )
+
     text = (
         f"📦 <b>جزئیات پلن حجم: {vol_title}</b>\n\n"
         f"📍 <b>موقعیت در لیست:</b> جایگاه {to_persian_digits(idx + 1)} از {to_persian_digits(len(vol_plans))}\n"
@@ -1810,7 +2137,8 @@ async def _build_volume_plan_details(
         f"💵 <b>مبلغ موثر:</b> <code>{format_price(cur_price)}</code>\n"
         f"📝 <b>متن دکمه کیبورد:</b> {btn_text_display}\n"
         f"🛒 <b>وضعیت در خرید جدید:</b> <b>{buy_status_str}</b>\n"
-        f"🔄 <b>وضعیت در تمدید اشتراک:</b> <b>{renew_status_str}</b>\n\n"
+        f"🔄 <b>وضعیت در تمدید اشتراک:</b> <b>{renew_status_str}</b>\n"
+        f"👥 <b>وضعیت انتخاب کاربر:</b> <b>{user_sel_status_str}</b>\n\n"
         "عملیات مورد نظر را انتخاب کنید:"
     )
 
@@ -1883,6 +2211,14 @@ async def _build_volume_plan_details(
             InlineKeyboardButton(
                 text="⏱ تنظیم مدت‌های مجاز (خرید / تمدید)",
                 callback_data=f"admin_vol_plan_durations_{idx}",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="👥 تنظیم انتخاب کاربر",
+                callback_data=f"admin_vol_plan_user_cfg_{idx}",
             )
         ]
     )
@@ -2331,6 +2667,415 @@ async def admin_vol_plan_dur_price_save(
         await message.answer(
             f"✅ هزینه مازاد این مدت‌زمان با موفقیت به <b>{val_str}</b> تنظیم شد.\n\n{text}",
             reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+async def _build_volume_plan_user_cfg_panel(
+    idx: int,
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    from services.pricing import (
+        get_pricing_config,
+        get_user_selection_config,
+        get_volume_plans,
+    )
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        return None
+
+    p = vol_plans[idx]
+    gb = p.get("gb", 0)
+    is_unlimited = bool(p.get("is_unlimited", False))
+    vol_title = (
+        f"♾️ نامحدود ({to_persian_digits(gb)} گیگابایت)"
+        if is_unlimited
+        else f"{to_persian_digits(gb)} گیگابایت"
+    )
+
+    u_cfg = p.get("user_config", {})
+    mode = str(u_cfg.get("mode", "inherit"))
+    p_users = max(1, int(u_cfg.get("fixed_users", 1)))
+    p_ptype = str(u_cfg.get("price_type", "inherit"))
+    p_manual = max(0, int(u_cfg.get("manual_surcharge", 0)))
+
+    global_cfg = await get_user_selection_config()
+    pricing_cfg = await get_pricing_config()
+    global_enabled = bool(global_cfg.get("enabled", True))
+    global_fixed = max(1, int(global_cfg.get("fixed_users", 1)))
+    global_ptype = str(global_cfg.get("price_type", "auto"))
+    global_manual = max(0, int(global_cfg.get("manual_surcharge", 0)))
+    user_rate = pricing_cfg.get("user_surcharge", 50000)
+
+    if global_ptype == "manual":
+        global_cost_str = f"دستی ({format_price(global_manual)})"
+    else:
+        global_cost_str = (
+            f"تعرفه سیستم ({format_price(max(0, global_fixed - 1) * user_rate)})"
+        )
+    global_summary = (
+        "🟢 فعال (انتخاب آزاد)"
+        if global_enabled
+        else f"🔴 غیرفعال ({to_persian_digits(global_fixed)} کاربر - {global_cost_str})"
+    )
+
+    if mode == "inherit":
+        mode_title = "🔄 ارث‌بری از سراسری"
+        mode_desc = (
+            f"🔄 <b>ارث‌بری از تنظیمات سراسری</b>\n"
+            f"💡 <i>خروجی موثر سراسری: {global_summary}</i>"
+        )
+    elif mode == "enabled":
+        mode_title = "🟢 اجباراً فعال"
+        mode_desc = (
+            "🟢 <b>اجباراً فعال</b> (خریدار امکان انتخاب آزاد تعداد کاربر را دارد)"
+        )
+    else:
+        mode_title = "🔴 اجباراً غیرفعال"
+        if p_ptype == "inherit":
+            cost_title = "🔄 ارث‌بری از سراسری"
+            effective_cost = global_cost_str
+        elif p_ptype == "manual":
+            cost_title = f"دستی ({format_price(p_manual)})"
+            effective_cost = f"دستی ({format_price(p_manual)})"
+        else:
+            cost_title = "تعرفه عادی سیستم"
+            effective_cost = (
+                f"تعرفه سیستم ({format_price(max(0, p_users - 1) * user_rate)})"
+            )
+        mode_desc = (
+            f"🔴 <b>اجباراً غیرفعال</b> (مرحله انتخاب کاربر رد می‌شود)\n"
+            f"👤 <b>ظرفیت ثابت:</b> <b>{to_persian_digits(p_users)} کاربر</b>\n"
+            f"💰 <b>نوع محاسبه هزینه:</b> <b>{cost_title}</b> (موثر: {effective_cost})"
+        )
+
+    text = (
+        f"👥 <b>تنظیمات انتخاب کاربر همزمان - پلن {vol_title}</b>\n\n"
+        "در این بخش می‌توانید رفتار انتخاب تعداد کاربر را به صورت اختصاصی برای این پلن تعیین کنید.\n\n"
+        f"⚙️ <b>وضعیت این پلن:</b>\n{mode_desc}\n\n"
+        "عملیات مورد نظر را انتخاب کنید:"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=f"حالت: {mode_title}",
+                callback_data=f"admin_vol_plan_ucfg_mode_{idx}",
+            )
+        ]
+    ]
+
+    if mode == "disabled":
+        if p_ptype == "inherit":
+            ptype_btn_label = "نوع هزینه: 🔄 ارث‌بری"
+        elif p_ptype == "manual":
+            ptype_btn_label = "نوع هزینه: ✏️ دستی"
+        else:
+            ptype_btn_label = "نوع هزینه: ⚙️ تعرفه سیستم"
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"👤 ظرفیت: {to_persian_digits(p_users)} کاربر",
+                    callback_data=f"admin_vol_plan_ucfg_users_{idx}",
+                ),
+                InlineKeyboardButton(
+                    text=ptype_btn_label,
+                    callback_data=f"admin_vol_plan_ucfg_ptype_{idx}",
+                ),
+            ]
+        )
+        if p_ptype == "manual":
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"✏️ تعیین مبلغ دستی ({format_price(p_manual)})",
+                        callback_data=f"admin_vol_plan_ucfg_manual_{idx}",
+                    )
+                ]
+            )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به مشخصات پلن",
+                callback_data=f"admin_vol_plan_view_{idx}",
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_user_cfg_\d+$"))
+async def admin_vol_plan_user_cfg_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    await state.clear()
+    idx = int(callback.data.split("_")[-1])
+    res = await _build_volume_plan_user_cfg_panel(idx)
+    if not res:
+        await callback.answer("❌ پلن مورد نظر یافت نشد.", show_alert=True)
+        return
+    text, kb = res
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_ucfg_mode_\d+$"))
+async def admin_vol_plan_ucfg_mode_cycle(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("❌ پلن مورد نظر یافت نشد.", show_alert=True)
+        return
+
+    cur_cfg = dict(vol_plans[idx].get("user_config", {}))
+    cur_mode = cur_cfg.get("mode", "inherit")
+    mode_cycle = {"inherit": "enabled", "enabled": "disabled", "disabled": "inherit"}
+    next_mode = mode_cycle.get(cur_mode, "inherit")
+    cur_cfg["mode"] = next_mode
+    vol_plans[idx]["user_config"] = cur_cfg
+    await set_volume_plans(vol_plans)
+
+    res = await _build_volume_plan_user_cfg_panel(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, kb = res
+        await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_ucfg_ptype_\d+$"))
+async def admin_vol_plan_ucfg_ptype_cycle(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    from services.pricing import get_volume_plans, set_volume_plans
+
+    vol_plans = await get_volume_plans()
+    if not (0 <= idx < len(vol_plans)):
+        await callback.answer("❌ پلن مورد نظر یافت نشد.", show_alert=True)
+        return
+
+    cur_cfg = dict(vol_plans[idx].get("user_config", {}))
+    cur_ptype = cur_cfg.get("price_type", "inherit")
+    ptype_cycle = {"inherit": "auto", "auto": "manual", "manual": "inherit"}
+    next_ptype = ptype_cycle.get(cur_ptype, "inherit")
+    cur_cfg["price_type"] = next_ptype
+    vol_plans[idx]["user_config"] = cur_cfg
+    await set_volume_plans(vol_plans)
+
+    res = await _build_volume_plan_user_cfg_panel(idx)
+    if res and isinstance(callback.message, types.Message):
+        text, kb = res
+        await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_ucfg_users_\d+$"))
+async def admin_vol_plan_ucfg_users_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    await state.set_state(AdminControlStates.waiting_vol_plan_fixed_users)
+    await state.update_data(edit_vol_idx=idx)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_vol_plan_user_cfg_{idx}",
+                )
+            ]
+        ]
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message,
+            "👤 <b>تعداد کاربر ثابت این پلن را وارد کنید:</b>\n\n"
+            "یک عدد صحیح بزرگتر یا مساوی ۱ ارسال نمایید (مثلاً <code>2</code>):\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_vol_plan_fixed_users, F.text)
+async def admin_vol_plan_fixed_users_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
+    data = await state.get_data()
+    idx = data.get("edit_vol_idx", 0)
+
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        res = await _build_volume_plan_user_cfg_panel(idx)
+        if res:
+            text, kb = res
+            await message.answer(
+                "❌ عملیات لغو شد.\n\n" + text, reply_markup=kb, parse_mode="HTML"
+            )
+        return
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val < 1:
+            raise ValueError
+        from services.pricing import get_volume_plans, set_volume_plans
+
+        vol_plans = await get_volume_plans()
+        if not (0 <= idx < len(vol_plans)):
+            await state.clear()
+            return
+
+        cur_cfg = dict(vol_plans[idx].get("user_config", {}))
+        cur_cfg["fixed_users"] = val
+        vol_plans[idx]["user_config"] = cur_cfg
+        await set_volume_plans(vol_plans)
+        await state.clear()
+
+        res = await _build_volume_plan_user_cfg_panel(idx)
+        if res:
+            text, kb = res
+            await message.answer(
+                f"✅ تعداد کاربر ثابت این پلن به <b>{to_persian_digits(val)} کاربر</b> تنظیم شد.\n\n{text}",
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_vol_plan_user_cfg_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (حداقل ۱) وارد کنید. مثال: <code>2</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.regexp(r"^admin_vol_plan_ucfg_manual_\d+$"))
+async def admin_vol_plan_ucfg_manual_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "pricing"):
+        return
+    idx = int(callback.data.split("_")[-1])
+    await state.set_state(AdminControlStates.waiting_vol_plan_manual_surcharge)
+    await state.update_data(edit_vol_idx=idx)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_vol_plan_user_cfg_{idx}",
+                )
+            ]
+        ]
+    )
+    if isinstance(callback.message, types.Message):
+        await safe_edit_text(
+            callback.message,
+            "💰 <b>مبلغ هزینه دستی کاربر این پلن را به تومان وارد کنید:</b>\n\n"
+            "این مبلغ در صورت غیرفعال بودن انتخاب کاربر به هزینه اشتراک اضافه می‌شود (عدد ۰ یعنی بدون هزینه اضافه).\n"
+            "مثال: <code>30000</code>\n\n"
+            "💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_vol_plan_manual_surcharge, F.text)
+async def admin_vol_plan_manual_surcharge_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not await _require_permission(message, "pricing"):
+        return
+    data = await state.get_data()
+    idx = data.get("edit_vol_idx", 0)
+
+    if not message.text or message.text.strip() == "/cancel":
+        await state.clear()
+        res = await _build_volume_plan_user_cfg_panel(idx)
+        if res:
+            text, kb = res
+            await message.answer(
+                "❌ عملیات لغو شد.\n\n" + text, reply_markup=kb, parse_mode="HTML"
+            )
+        return
+
+    try:
+        clean = (
+            persian_to_english_digits(message.text.strip())
+            .replace(",", "")
+            .replace("،", "")
+            .replace(" ", "")
+        )
+        val = int(clean)
+        if val < 0:
+            raise ValueError
+        from services.pricing import get_volume_plans, set_volume_plans
+
+        vol_plans = await get_volume_plans()
+        if not (0 <= idx < len(vol_plans)):
+            await state.clear()
+            return
+
+        cur_cfg = dict(vol_plans[idx].get("user_config", {}))
+        cur_cfg["manual_surcharge"] = val
+        vol_plans[idx]["user_config"] = cur_cfg
+        await set_volume_plans(vol_plans)
+        await state.clear()
+
+        res = await _build_volume_plan_user_cfg_panel(idx)
+        if res:
+            text, kb = res
+            await message.answer(
+                f"✅ مبلغ هزینه دستی کاربر این پلن به <b>{format_price(val)}</b> تنظیم شد.\n\n{text}",
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data=f"admin_vol_plan_user_cfg_{idx}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک مبلغ معتبر به تومان وارد کنید (عدد بزرگتر یا مساوی ۰). مثال: <code>30000</code>\n\n💡 <i>برای انصراف از دکمه زیر استفاده کنید.</i>",
+            reply_markup=err_kb,
             parse_mode="HTML",
         )
 

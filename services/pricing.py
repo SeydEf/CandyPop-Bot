@@ -32,6 +32,12 @@ DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
         "button_text": "",
         "enabled_buy": True,
         "enabled_renew": True,
+        "user_config": {
+            "mode": "inherit",
+            "fixed_users": 1,
+            "price_type": "inherit",
+            "manual_surcharge": 0,
+        },
     },
     {
         "gb": 30,
@@ -40,6 +46,12 @@ DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
         "button_text": "",
         "enabled_buy": True,
         "enabled_renew": True,
+        "user_config": {
+            "mode": "inherit",
+            "fixed_users": 1,
+            "price_type": "inherit",
+            "manual_surcharge": 0,
+        },
     },
     {
         "gb": 50,
@@ -48,6 +60,12 @@ DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
         "button_text": "",
         "enabled_buy": True,
         "enabled_renew": True,
+        "user_config": {
+            "mode": "inherit",
+            "fixed_users": 1,
+            "price_type": "inherit",
+            "manual_surcharge": 0,
+        },
     },
     {
         "gb": 70,
@@ -56,6 +74,12 @@ DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
         "button_text": "",
         "enabled_buy": True,
         "enabled_renew": True,
+        "user_config": {
+            "mode": "inherit",
+            "fixed_users": 1,
+            "price_type": "inherit",
+            "manual_surcharge": 0,
+        },
     },
     {
         "gb": 90,
@@ -64,6 +88,12 @@ DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
         "button_text": "",
         "enabled_buy": True,
         "enabled_renew": True,
+        "user_config": {
+            "mode": "inherit",
+            "fixed_users": 1,
+            "price_type": "inherit",
+            "manual_surcharge": 0,
+        },
     },
     {
         "gb": 100,
@@ -72,6 +102,12 @@ DEFAULT_VOLUME_PLANS: list[dict[str, Any]] = [
         "button_text": "",
         "enabled_buy": True,
         "enabled_renew": True,
+        "user_config": {
+            "mode": "inherit",
+            "fixed_users": 1,
+            "price_type": "inherit",
+            "manual_surcharge": 0,
+        },
     },
 ]
 
@@ -80,6 +116,20 @@ DEFAULT_DURATION_PLANS: list[dict[str, Any]] = [
     {"days": 60, "surcharge": 50_000, "enabled_buy": True, "enabled_renew": True},
     {"days": 90, "surcharge": 100_000, "enabled_buy": True, "enabled_renew": True},
 ]
+
+DEFAULT_USER_SELECTION_CONFIG: dict[str, Any] = {
+    "enabled": True,
+    "fixed_users": 1,
+    "price_type": "auto",
+    "manual_surcharge": 0,
+}
+
+DEFAULT_PLAN_USER_CONFIG: dict[str, Any] = {
+    "mode": "inherit",
+    "fixed_users": 1,
+    "price_type": "inherit",
+    "manual_surcharge": 0,
+}
 
 _pricing_cache: dict[str, Any] | None = None
 
@@ -105,6 +155,54 @@ def _clean_durations_dict(raw: Any) -> dict[str, dict[str, Any]]:
                 "price": max(0, int(v.get("price", 0))),
             }
     return res
+
+
+def _clean_user_selection_config(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_USER_SELECTION_CONFIG)
+    enabled = bool(raw.get("enabled", True))
+    try:
+        fixed_users = max(1, int(raw.get("fixed_users", 1)))
+    except (ValueError, TypeError):
+        fixed_users = 1
+    price_type = str(raw.get("price_type", "auto"))
+    if price_type not in ("auto", "manual"):
+        price_type = "auto"
+    try:
+        manual_surcharge = max(0, int(raw.get("manual_surcharge", 0)))
+    except (ValueError, TypeError):
+        manual_surcharge = 0
+    return {
+        "enabled": enabled,
+        "fixed_users": fixed_users,
+        "price_type": price_type,
+        "manual_surcharge": manual_surcharge,
+    }
+
+
+def _clean_plan_user_config(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_PLAN_USER_CONFIG)
+    mode = str(raw.get("mode", "inherit"))
+    if mode not in ("inherit", "enabled", "disabled"):
+        mode = "inherit"
+    try:
+        fixed_users = max(1, int(raw.get("fixed_users", 1)))
+    except (ValueError, TypeError):
+        fixed_users = 1
+    price_type = str(raw.get("price_type", "inherit"))
+    if price_type not in ("inherit", "auto", "manual"):
+        price_type = "inherit"
+    try:
+        manual_surcharge = max(0, int(raw.get("manual_surcharge", 0)))
+    except (ValueError, TypeError):
+        manual_surcharge = 0
+    return {
+        "mode": mode,
+        "fixed_users": fixed_users,
+        "price_type": price_type,
+        "manual_surcharge": manual_surcharge,
+    }
 
 
 async def load_pricing_config() -> dict[str, Any]:
@@ -164,6 +262,7 @@ async def load_pricing_config() -> dict[str, Any]:
                     "enabled_renew": bool(p.get("enabled_renew", True)),
                     "is_unlimited": bool(p.get("is_unlimited", False)),
                     "durations": _clean_durations_dict(p.get("durations")),
+                    "user_config": _clean_plan_user_config(p.get("user_config")),
                 }
                 for p in raw_vol_plans
                 if int(p.get("gb", 0)) > 0
@@ -243,6 +342,16 @@ async def load_pricing_config() -> dict[str, Any]:
     except (ValueError, TypeError):
         custom_vol_max = DEFAULT_CUSTOM_VOLUME_MAX_GB
 
+    user_sel_str = await get_setting("pricing_user_selection_config")
+    if user_sel_str:
+        try:
+            raw_user_sel = json.loads(user_sel_str)
+            user_sel_cfg = _clean_user_selection_config(raw_user_sel)
+        except Exception:
+            user_sel_cfg = dict(DEFAULT_USER_SELECTION_CONFIG)
+    else:
+        user_sel_cfg = dict(DEFAULT_USER_SELECTION_CONFIG)
+
     _pricing_cache = {
         "base_gb_rate": base_rate,
         "user_surcharge": user_surcharge,
@@ -260,6 +369,7 @@ async def load_pricing_config() -> dict[str, Any]:
         "custom_duration_enabled": custom_dur_enabled,
         "custom_duration_buy_enabled": custom_dur_buy_enabled,
         "custom_duration_renew_enabled": custom_dur_renew_enabled,
+        "user_selection_config": user_sel_cfg,
     }
     return _pricing_cache
 
@@ -366,12 +476,99 @@ async def set_volume_plans(plans: list[dict[str, Any]]) -> None:
             "enabled_renew": bool(p.get("enabled_renew", True)),
             "is_unlimited": bool(p.get("is_unlimited", False)),
             "durations": _clean_durations_dict(p.get("durations")),
+            "user_config": _clean_plan_user_config(p.get("user_config")),
         }
         for p in plans
         if int(p.get("gb", 0)) > 0
     ]
     await set_setting("pricing_volume_plans", json.dumps(cleaned))
     invalidate_pricing_cache()
+
+
+async def get_user_selection_config() -> dict[str, Any]:
+    config = await get_pricing_config()
+    return dict(config.get("user_selection_config", DEFAULT_USER_SELECTION_CONFIG))
+
+
+async def set_user_selection_config(cfg: dict[str, Any]) -> None:
+    cleaned = _clean_user_selection_config(cfg)
+    await set_setting("pricing_user_selection_config", json.dumps(cleaned))
+    invalidate_pricing_cache()
+
+
+async def resolve_plan_user_config(plan_gb: int | None = None) -> dict[str, Any]:
+    global_cfg = await get_user_selection_config()
+    global_enabled = bool(global_cfg.get("enabled", True))
+    global_fixed_users = max(1, int(global_cfg.get("fixed_users", 1)))
+    global_price_type = str(global_cfg.get("price_type", "auto"))
+    global_manual_surch = max(0, int(global_cfg.get("manual_surcharge", 0)))
+
+    plan_found = False
+    mode = "inherit"
+    allow_selection = global_enabled
+    fixed_users = global_fixed_users
+    price_type = global_price_type
+    manual_surch = global_manual_surch
+
+    if plan_gb is not None:
+        vol_plans = await get_volume_plans()
+        for p in vol_plans:
+            if p.get("gb") == plan_gb:
+                plan_found = True
+                u_cfg = p.get("user_config", {})
+                mode = str(u_cfg.get("mode", "inherit"))
+                if mode not in ("inherit", "enabled", "disabled"):
+                    mode = "inherit"
+
+                if mode == "enabled":
+                    allow_selection = True
+                    fixed_users = 1
+                    price_type = "auto"
+                    manual_surch = 0
+                elif mode == "disabled":
+                    allow_selection = False
+                    fixed_users = max(
+                        1, int(u_cfg.get("fixed_users", global_fixed_users))
+                    )
+                    p_ptype = str(u_cfg.get("price_type", "inherit"))
+                    if p_ptype == "manual":
+                        price_type = "manual"
+                        manual_surch = max(0, int(u_cfg.get("manual_surcharge", 0)))
+                    elif p_ptype == "auto":
+                        price_type = "auto"
+                        manual_surch = 0
+                    else:  # inherit
+                        price_type = global_price_type
+                        manual_surch = global_manual_surch
+                else:  # inherit
+                    allow_selection = global_enabled
+                    fixed_users = global_fixed_users
+                    price_type = global_price_type
+                    manual_surch = global_manual_surch
+                break
+
+    if allow_selection:
+        user_surcharge = 0
+        is_manual = False
+    else:
+        if price_type == "manual":
+            user_surcharge = manual_surch
+            is_manual = True
+        else:
+            cfg = await get_pricing_config()
+            user_surcharge = max(0, fixed_users - 1) * cfg.get(
+                "user_surcharge", DEFAULT_USER_SURCHARGE
+            )
+            is_manual = False
+
+    return {
+        "allow_selection": allow_selection,
+        "users": fixed_users if not allow_selection else 1,
+        "user_surcharge": user_surcharge,
+        "is_manual_surcharge": is_manual,
+        "price_type": price_type,
+        "mode": mode if plan_found else "inherit",
+    }
 
 
 def format_volume_button_text(plan: dict[str, Any], data_price: int) -> str:
@@ -767,6 +964,9 @@ async def reset_pricing_config_to_defaults() -> None:
     await set_setting("pricing_custom_duration_enabled", "1")
     await set_setting("pricing_custom_volume_min_gb", str(DEFAULT_CUSTOM_VOLUME_MIN_GB))
     await set_setting("pricing_custom_volume_max_gb", str(DEFAULT_CUSTOM_VOLUME_MAX_GB))
+    await set_setting(
+        "pricing_user_selection_config", json.dumps(DEFAULT_USER_SELECTION_CONFIG)
+    )
     invalidate_pricing_cache()
 
 
@@ -798,22 +998,21 @@ async def calculate_data_price(gb: int) -> int:
 
 
 async def calculate_total_price(gb: int, duration_days: int, users_count: int) -> int:
-    config = await get_pricing_config()
-    extra_users = max(0, users_count - 1)
-    users_total_surcharge = extra_users * config["user_surcharge"]
-
-    data_price = await calculate_data_price(gb)
-    dur_surcharge = await get_volume_plan_duration_surcharge(gb, duration_days)
-
-    return data_price + dur_surcharge + users_total_surcharge
+    breakdown = await get_price_breakdown(gb, duration_days, users_count)
+    return breakdown["total_price"]
 
 
 async def get_price_breakdown(
     gb: int, duration_days: int, users_count: int
 ) -> dict[str, Any]:
     config = await get_pricing_config()
-    extra_users = max(0, users_count - 1)
-    user_surcharge = extra_users * config["user_surcharge"]
+    user_cfg = await resolve_plan_user_config(gb)
+
+    if not user_cfg["allow_selection"] and user_cfg.get("is_manual_surcharge"):
+        user_surcharge = user_cfg["user_surcharge"]
+    else:
+        extra_users = max(0, users_count - 1)
+        user_surcharge = extra_users * config["user_surcharge"]
 
     data_price = await calculate_data_price(gb)
     dur_surcharge = await get_volume_plan_duration_surcharge(gb, duration_days)
