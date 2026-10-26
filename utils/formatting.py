@@ -146,3 +146,16 @@ def format_datetime(
 
 
 format_datetime_iran = format_datetime
+
+
+def format_remaining_time(seconds: int) -> str:
+    if seconds <= 0:
+        return f"{to_persian_digits(0)} ثانیه"
+    minutes = seconds // 60
+    sec = seconds % 60
+    if minutes > 0 and sec > 0:
+        return f"{to_persian_digits(minutes)} دقیقه و {to_persian_digits(sec)} ثانیه"
+    elif minutes > 0:
+        return f"{to_persian_digits(minutes)} دقیقه"
+    else:
+        return f"{to_persian_digits(sec)} ثانیه"

@@ -104,6 +104,8 @@ class AdminControlStates(StatesGroup):
     waiting_receipt_disabled_text = State()
     waiting_receipt_expiry_minutes = State()
     waiting_receipt_unpaid_reminder_text = State()
+    waiting_receipt_delay_minutes = State()
+    waiting_receipt_delay_text = State()
     waiting_disc_fixed_amount = State()
     waiting_disc_min_gb = State()
     waiting_disc_max_gb = State()
@@ -9375,11 +9377,15 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
     custom_text = cfg["disabled_text"]
     reminder_unpaid = cfg.get("reminder_unpaid_enabled", True)
     reminder_text = cfg.get("reminder_unpaid_text", "")
+    delay_enabled = cfg.get("auto_verify_delay_enabled", True)
+    delay_minutes = cfg.get("auto_verify_delay_minutes", 5)
+    delay_text = cfg.get("auto_verify_delay_text", "")
 
     overall_badge = "🟢 فعال" if overall else "🔴 غیرفعال"
     photo_badge = "🟢 مجاز" if photo else "🔴 غیرمجاز"
     text_badge = "🟢 مجاز" if text_en else "🔴 غیرمجاز"
     reminder_badge = "🟢 فعال" if reminder_unpaid else "🔴 غیرفعال"
+    delay_badge = "🟢 فعال" if delay_enabled else "🔴 غیرفعال"
 
     action_titles = {
         "both": "🔄 هر دو (پاپ‌آپ + ویرایش پیام)",
@@ -9398,11 +9404,14 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
         f"📝 <b>ارسال متن و شناسه پیگیری:</b> {text_badge}\n"
         f"⚡️ <b>واکنش هنگام غیرفعال بودن:</b> {action_badge}\n"
         f"⏳ <b>مهلت انقضای فاکتورها:</b> {to_persian_digits(expiry_minutes)} دقیقه\n"
-        f"🔔 <b>راهنمای عدم فشردن دکمه پرداخت:</b> {reminder_badge}\n\n"
+        f"🔔 <b>راهنمای عدم فشردن دکمه پرداخت:</b> {reminder_badge}\n"
+        f"⏱ <b>تأخیر ارسال رسید (تأیید خودکار):</b> {delay_badge} ({to_persian_digits(delay_minutes)} دقیقه)\n\n"
         f"💬 <b>متن پیام هنگام غیرفعال بودن:</b>\n"
         f"<code>{custom_text}</code>\n\n"
         f"💬 <b>متن پیام راهنمای عدم فشردن دکمه:</b>\n"
-        f"<code>{reminder_text}</code>\n"
+        f"<code>{reminder_text}</code>\n\n"
+        f"💬 <b>متن پاپ‌آپ تأخیر تأیید خودکار:</b>\n"
+        f"<code>{delay_text}</code>\n"
     )
 
     overall_btn_text = "🔴 غیرفعال‌سازی کلی" if overall else "🟢 فعال‌سازی کلی"
@@ -9429,6 +9438,26 @@ async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarku
                 InlineKeyboardButton(
                     text=f"🔔 راهنمای دکمه پرداخت: {reminder_badge}",
                     callback_data="admin_toggle_receipt_unpaid_reminder",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⏱ تأخیر تأیید خودکار: {delay_badge}",
+                    callback_data="admin_toggle_receipt_delay",
+                ),
+                InlineKeyboardButton(
+                    text=f"⏳ زمان: {to_persian_digits(delay_minutes)} دقیقه",
+                    callback_data="admin_receipt_config_delay_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ ویرایش پاپ‌آپ تأخیر",
+                    callback_data="admin_edit_receipt_delay_text",
+                ),
+                InlineKeyboardButton(
+                    text="🔄 بازنشانی متن تأخیر",
+                    callback_data="admin_reset_receipt_delay_text",
                 ),
             ],
             [
@@ -9800,6 +9829,315 @@ async def admin_reset_receipt_unpaid_reminder_text(
         parse_mode="HTML",
     )
     await callback.answer("✅ متن راهنما به حالت پیش‌فرض بازنشانی شد.", show_alert=True)
+
+
+@router.callback_query(F.data == "admin_toggle_receipt_delay")
+async def admin_toggle_receipt_delay(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import get_receipt_config, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_receipt_config()
+    new_val = not cfg.get("auto_verify_delay_enabled", True)
+    await set_receipt_config(auto_verify_delay_enabled=new_val)
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    st_msg = (
+        "🟢 تأخیر ارسال رسید (تأیید خودکار) فعال شد."
+        if new_val
+        else "🔴 تأخیر ارسال رسید (تأیید خودکار) غیرفعال شد."
+    )
+    await callback.answer(st_msg, show_alert=False)
+
+
+async def _build_receipt_delay_menu_content() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_receipt_config
+
+    cfg = await get_receipt_config()
+    delay_minutes = cfg.get("auto_verify_delay_minutes", 5)
+
+    text = (
+        "⏱ <b>تنظیم زمان تأخیر تأیید خودکار</b>\n\n"
+        f"زمان تأخیر در حال حاضر <b>{to_persian_digits(delay_minutes)} دقیقه</b> است.\n"
+        "در این بازه زمانی پس از ایجاد فاکتور، با زدن دکمه «پرداخت کردم»، پاپ‌آپ انتظار با زمان باقیمانده به کاربر نمایش داده می‌شود تا در صورت پرداخت، سیستم خودکار تراکنش را ثبت کند.\n\n"
+        "یکی از گزینه‌های سریع زیر را انتخاب کنید یا عدد دلخواه (بین ۱ تا ۶۰ دقیقه) وارد نمایید:"
+    )
+
+    def _mark(m: int) -> str:
+        return (
+            f"🔘 {to_persian_digits(m)} دقیقه"
+            if m == delay_minutes
+            else f"{to_persian_digits(m)} دقیقه"
+        )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=_mark(2),
+                    callback_data="admin_receipt_set_delay:2",
+                ),
+                InlineKeyboardButton(
+                    text=_mark(3),
+                    callback_data="admin_receipt_set_delay:3",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=_mark(5),
+                    callback_data="admin_receipt_set_delay:5",
+                ),
+                InlineKeyboardButton(
+                    text=_mark(10),
+                    callback_data="admin_receipt_set_delay:10",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ وارد کردن عدد دلخواه (دقیقه)",
+                    callback_data="admin_receipt_custom_delay",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به تنظیمات رسید",
+                    callback_data="admin_receipt_config_menu",
+                )
+            ],
+        ]
+    )
+    return text, keyboard
+
+
+@router.callback_query(F.data == "admin_receipt_config_delay_menu")
+async def admin_receipt_config_delay_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+    await state.clear()
+
+    from utils.helpers import safe_edit_text
+
+    text, keyboard = await _build_receipt_delay_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_receipt_set_delay:"))
+async def admin_receipt_set_delay(callback: types.CallbackQuery) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    raw_val = callback.data.split(":")[-1]
+    try:
+        minutes = int(raw_val)
+    except ValueError:
+        await callback.answer("مقدار نامعتبر است.", show_alert=True)
+        return
+
+    from db.models import set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    await set_receipt_config(auto_verify_delay_minutes=minutes)
+
+    text, keyboard = await _build_receipt_delay_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        f"زمان تأخیر تأیید خودکار به {to_persian_digits(minutes)} دقیقه تغییر یافت."
+    )
+
+
+@router.callback_query(F.data == "admin_receipt_custom_delay")
+async def admin_receipt_custom_delay_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_receipt_delay_minutes)
+    from utils.helpers import safe_edit_text
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_receipt_config_delay_menu",
+                )
+            ]
+        ]
+    )
+    text = (
+        "✏️ <b>تنظیم زمان دلخواه تأخیر تأیید خودکار:</b>\n\n"
+        "لطفاً زمان تأخیر را به <b>دقیقه</b> ارسال کنید (حداقل ۱ و حداکثر ۶۰ دقیقه).\n\n"
+        "🔸 مثال: <code>5</code>\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_receipt_delay_minutes, F.text)
+async def admin_recv_receipt_delay_minutes(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.from_user:
+        return
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_receipt_delay_menu_content()
+        await message.answer(
+            f"❌ تنظیم زمان لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from utils.formatting import persian_to_english_digits
+
+    cleaned_str = persian_to_english_digits(message.text.strip())
+    try:
+        minutes = int(cleaned_str)
+        if minutes < 1 or minutes > 60:
+            await message.answer(
+                "⚠️ زمان واردشده نامعتبر است. لطفاً یک عدد بین <b>۱ تا ۶۰ دقیقه</b> ارسال کنید:"
+            )
+            return
+    except ValueError:
+        await message.answer(
+            "⚠️ لطفاً زمان را فقط به صورت عدد انگلیسی یا فارسی (مثلاً <code>5</code>) ارسال کنید:"
+        )
+        return
+
+    from db.models import set_receipt_config
+
+    await set_receipt_config(auto_verify_delay_minutes=minutes)
+    await state.clear()
+
+    text, keyboard = await _build_receipt_delay_menu_content()
+    await message.answer(
+        f"✅ زمان تأخیر تأیید خودکار به <b>{to_persian_digits(minutes)} دقیقه</b> تغییر یافت.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_edit_receipt_delay_text")
+async def admin_edit_receipt_delay_text_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_receipt_delay_text)
+    from utils.helpers import safe_edit_text
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت", callback_data="admin_receipt_config_menu"
+                )
+            ]
+        ]
+    )
+    text = (
+        "✏️ <b>ویرایش متن پاپ‌آپ تأخیر تأیید خودکار:</b>\n\n"
+        "این پیام به صورت پاپ‌آپ (Alert) هنگام فشردن دکمه «پرداخت کردم» در بازه زمانی تأخیر به کاربر نمایش داده می‌شود.\n\n"
+        "💡 <i>می‌توانید از متغیر زیر در متن استفاده کنید:</i>\n"
+        "• <code>{time}</code>: زمان باقیمانده (مانند «۴ دقیقه و ۳۰ ثانیه» یا «۳۰ ثانیه»)\n\n"
+        "لطفاً متن جدید را ارسال فرمایید:\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+    )
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_receipt_delay_text, F.text)
+async def admin_edit_receipt_delay_text_save(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.from_user:
+        return
+
+    if message.text.strip() == "/cancel":
+        await state.clear()
+        text, keyboard = await _build_receipt_config_menu_content()
+        await message.answer(
+            f"❌ ویرایش متن پاپ‌آپ لغو شد.\n\n{text}",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_receipt_config
+
+    new_text = message.text.strip()
+    await set_receipt_config(auto_verify_delay_text=new_text)
+    await state.clear()
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await message.answer(
+        f"✅ متن پاپ‌آپ تأخیر با موفقیت به‌روزرسانی شد.\n\n{text}",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_reset_receipt_delay_text")
+async def admin_reset_receipt_delay_text(
+    callback: types.CallbackQuery,
+) -> None:
+    if not await _require_permission(callback, "receipt_config"):
+        return
+
+    from db.models import DEFAULT_RECEIPT_CONFIG, set_receipt_config
+    from utils.helpers import safe_edit_text
+
+    await set_receipt_config(
+        auto_verify_delay_text=DEFAULT_RECEIPT_CONFIG["auto_verify_delay_text"]
+    )
+
+    text, keyboard = await _build_receipt_config_menu_content()
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer(
+        "✅ متن پاپ‌آپ تأخیر به حالت پیش‌فرض بازنشانی شد.", show_alert=True
+    )
 
 
 async def _build_receipt_expiry_menu_content() -> tuple[str, InlineKeyboardMarkup]:

@@ -264,6 +264,7 @@ async def wallet_deposit_custom_input(
     from db.models import generate_unique_card_amount
 
     card_amount = await generate_unique_card_amount(amount)
+    card_payable_amount = format_price(card_amount)
     unique_delta = card_amount - amount
 
     invoice = await create_invoice(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import logging
 import time
 from typing import Any
@@ -52,6 +53,7 @@ from utils.formatting import (
     format_detailed_traffic,
     format_price,
     format_remaining_days,
+    format_remaining_time,
     format_size_persian_gb,
     persian_to_english_digits,
     to_persian_digits,
@@ -1303,6 +1305,35 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
                 parse_mode="HTML",
             )
         return
+
+    if receipt_cfg.get("auto_verify_delay_enabled", True):
+        created_at_raw = invoice.get("created_at")
+        if created_at_raw:
+            try:
+                created_str = str(created_at_raw)
+                if created_str.endswith("Z"):
+                    created_str = created_str[:-1] + "+00:00"
+                created_dt = datetime.fromisoformat(created_str)
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+
+                now_utc = datetime.now(timezone.utc)
+                elapsed_seconds = (now_utc - created_dt).total_seconds()
+                delay_minutes = receipt_cfg.get("auto_verify_delay_minutes", 5)
+                delay_seconds = delay_minutes * 60
+                remaining_seconds = int(delay_seconds - elapsed_seconds)
+
+                if remaining_seconds > 0:
+                    time_str = format_remaining_time(remaining_seconds)
+                    template = receipt_cfg.get("auto_verify_delay_text") or (
+                        "در انتظار پرداخت توسط شما\n"
+                        "پرداخت به صورت خودکار تایید می‌شود. در صورت تایید نشدن بعد از {time} اقدام به ارسال رسید فرمایید تا توسط مدیریت بررسی و تایید شود."
+                    )
+                    alert_text = template.replace("{time}", time_str)
+                    await callback.answer(alert_text, show_alert=True)
+                    return
+            except Exception as e:
+                logger.error("Error calculating auto verify delay: %s", e)
 
     await state.set_state(BuyStates.waiting_receipt)
     await state.update_data(invoice_id=invoice_id)

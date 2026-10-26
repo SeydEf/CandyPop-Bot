@@ -1148,6 +1148,12 @@ DEFAULT_RECEIPT_CONFIG: dict[str, Any] = {
         "💰 <b>مبلغ فاکتور:</b> <b>{amount}</b>\n\n"
         "👇 <i>لطفاً ابتدا روی دکمه «✅ پرداخت کردم» زیر بزنید و مجدداً رسید را ارسال کنید:</i>"
     ),
+    "auto_verify_delay_enabled": True,
+    "auto_verify_delay_minutes": 5,
+    "auto_verify_delay_text": (
+        "در انتظار پرداخت توسط شما\n"
+        "پرداخت به صورت خودکار تایید می‌شود. در صورت تایید نشدن بعد از {time} اقدام به ارسال رسید فرمایید تا توسط مدیریت بررسی و تایید شود."
+    ),
 }
 
 
@@ -1168,12 +1174,30 @@ async def get_receipt_config() -> dict[str, Any]:
     reminder_unpaid_text = await get_setting(
         "receipt_reminder_unpaid_text", DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
     )
+    delay_enabled_str = (
+        await get_setting("receipt_auto_verify_delay_enabled", "1") or "1"
+    )
+    delay_minutes_str = (
+        await get_setting("receipt_auto_verify_delay_minutes", "5") or "5"
+    )
+    delay_text = await get_setting(
+        "receipt_auto_verify_delay_text",
+        DEFAULT_RECEIPT_CONFIG["auto_verify_delay_text"],
+    )
+
     try:
         expiry_minutes = int(expiry_str)
         if expiry_minutes < 5 or expiry_minutes > 1440:
             expiry_minutes = INVOICE_EXPIRY_MINUTES
     except (ValueError, TypeError):
         expiry_minutes = INVOICE_EXPIRY_MINUTES
+
+    try:
+        delay_minutes = int(delay_minutes_str)
+        if delay_minutes < 1 or delay_minutes > 60:
+            delay_minutes = 5
+    except (ValueError, TypeError):
+        delay_minutes = 5
 
     return {
         "overall_enabled": overall_str == "1",
@@ -1188,6 +1212,11 @@ async def get_receipt_config() -> dict[str, Any]:
         "reminder_unpaid_text": (
             reminder_unpaid_text or DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
         ),
+        "auto_verify_delay_enabled": delay_enabled_str == "1",
+        "auto_verify_delay_minutes": delay_minutes,
+        "auto_verify_delay_text": (
+            delay_text or DEFAULT_RECEIPT_CONFIG["auto_verify_delay_text"]
+        ),
     }
 
 
@@ -1200,6 +1229,9 @@ async def set_receipt_config(
     expiry_minutes: int | None = None,
     reminder_unpaid_enabled: bool | None = None,
     reminder_unpaid_text: str | None = None,
+    auto_verify_delay_enabled: bool | None = None,
+    auto_verify_delay_minutes: int | None = None,
+    auto_verify_delay_text: str | None = None,
 ) -> None:
     if overall_enabled is not None:
         await set_setting("receipt_overall_enabled", "1" if overall_enabled else "0")
@@ -1220,6 +1252,18 @@ async def set_receipt_config(
         )
     if reminder_unpaid_text is not None:
         await set_setting("receipt_reminder_unpaid_text", reminder_unpaid_text.strip())
+    if auto_verify_delay_enabled is not None:
+        await set_setting(
+            "receipt_auto_verify_delay_enabled",
+            "1" if auto_verify_delay_enabled else "0",
+        )
+    if auto_verify_delay_minutes is not None:
+        clamped_delay = max(1, min(60, auto_verify_delay_minutes))
+        await set_setting("receipt_auto_verify_delay_minutes", str(clamped_delay))
+    if auto_verify_delay_text is not None:
+        await set_setting(
+            "receipt_auto_verify_delay_text", auto_verify_delay_text.strip()
+        )
 
 
 async def reset_receipt_config() -> None:
@@ -1232,6 +1276,12 @@ async def reset_receipt_config() -> None:
     await set_setting("receipt_reminder_unpaid_enabled", "1")
     await set_setting(
         "receipt_reminder_unpaid_text", DEFAULT_RECEIPT_CONFIG["reminder_unpaid_text"]
+    )
+    await set_setting("receipt_auto_verify_delay_enabled", "1")
+    await set_setting("receipt_auto_verify_delay_minutes", "5")
+    await set_setting(
+        "receipt_auto_verify_delay_text",
+        DEFAULT_RECEIPT_CONFIG["auto_verify_delay_text"],
     )
 
 
