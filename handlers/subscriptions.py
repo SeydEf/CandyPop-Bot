@@ -1896,7 +1896,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
         )
-        notice_line = f"⚠️ <i>(لطفا دقیقا مبلغ <code>{card_payable_amount}</code> را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.)</i>\n\n"
+        notice_line = f"⚠️ <i>لطفا دقیقا مبلغ <code>{card_payable_amount}</code> را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</i>\n\n"
 
     breakdown_str = "\n".join(breakdown_lines)
 
@@ -1923,7 +1923,7 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
-        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان\n\n"
         f"{notice_line}"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
