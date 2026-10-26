@@ -96,6 +96,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
     received_at = data.get("received_at")
 
     if await is_sms_fingerprint_processed(fingerprint):
+        # TODO: get related invoice by fingerprint and put db status in response
         logger.info("Bank SMS already processed: %s", fingerprint)
         return web.json_response(
             {
@@ -155,7 +156,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         invoice_id=invoice_id,
         bot=bot,
         is_reapproval=False,
-        admin_name="تأیید خودکار پیامک بانکی",
+        admin_name="تأیید خودکار از طریق پیامک بانکی",
     )
 
     if not success:
@@ -164,6 +165,16 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             {"status": "error", "message": f"خطا در فعال‌سازی سفارش: {msg}"},
             status=500,
         )
+
+    time_disp = html.escape(str(timestamp_str or "نامشخص"))
+
+    admin_notice, review_caption = await _build_bank_sms_admin_messages(
+        invoice=invoice,
+        amount_toman=amount_toman,
+        time_disp=time_disp,
+        fingerprint=fingerprint,
+        delivery_msg=msg,
+    )
 
     review_msg_id = invoice.get("message_id")
     if review_msg_id:
@@ -182,11 +193,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                     await bot.edit_message_caption(
                         chat_id=a_id,
                         message_id=review_msg_id,
-                        caption=(
-                            f"⚡️ <b>این پرداخت به صورت خودکار توسط پیامک بانکی تأیید شد.</b>\n\n"
-                            f"🆔 فاکتور: <code>{invoice_id}</code>\n"
-                            f"💰 مبلغ: <code>{format_price(amount_toman)}</code>"
-                        ),
+                        caption=review_caption,
                         reply_markup=admin_invoice_processed_keyboard(
                             invoice_id=invoice_id,
                             tg_id=tg_id,
@@ -196,26 +203,27 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                         parse_mode="HTML",
                     )
                 except Exception:
-                    pass
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=a_id,
+                            message_id=review_msg_id,
+                            text=review_caption,
+                            reply_markup=admin_invoice_processed_keyboard(
+                                invoice_id=invoice_id,
+                                tg_id=tg_id,
+                                is_rejected=False,
+                                origin="notif",
+                            ),
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
         except Exception as e:
             logger.debug(
                 "Could not update review message for auto-approved invoice: %s", e
             )
 
     try:
-        sender_disp = html.escape(str(account_number or sender or "نامشخص"))
-        time_disp = html.escape(str(timestamp_str or "نامشخص"))
-        admin_notice = (
-            "⚡️ <b>تأیید خودکار پرداخت کارت به کارت (پیامک بانکی)</b>\n\n"
-            f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
-            f"👤 <b>شناسه کاربر:</b> <code>{tg_id}</code>\n"
-            f"💰 <b>مبلغ واریزی:</b> <code>{format_price(amount_toman)}</code>\n"
-            f"🏦 <b>اطلاعات فرستنده/حساب:</b> <code>{sender_disp}</code>\n"
-            f"⏱ <b>زمان واریز:</b> <code>{to_persian_digits(time_disp)}</code>\n"
-            f"🔑 <b>اثرانگشت تراکنش:</b> <code>{fingerprint[:16]}...</code>\n\n"
-            "✅ سفارش کاربر به صورت خودکار تایید و تحویل شد."
-        )
-
         admin_ids = [ADMIN_CHAT_ID]
         for adm in await get_all_admins():
             a_id = adm["tg_id"]
@@ -243,10 +251,139 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             "order_id": invoice_id,
             "user_id": tg_id,
             "amount_toman": amount_toman,
-            "message": "سفارش با موفقیت تایید و فعال شد.",
+            "message": "تراکنش با موفقیت تایید شد.",
         },
         status=200,
     )
+
+
+async def _build_bank_sms_admin_messages(
+    invoice: dict[str, Any],
+    amount_toman: int,
+    time_disp: str,
+    fingerprint: str,
+    delivery_msg: str,
+) -> tuple[str, str]:
+    from db.models import get_user
+    from services.pricing import format_volume_label
+
+    tg_id = invoice["tg_id"]
+    invoice_id = invoice["id"]
+    user = await get_user(tg_id)
+    username = user.get("username") if user else None
+    full_name = user.get("full_name") if user else None
+
+    user_disp = f"<code>{tg_id}</code>"
+    if username:
+        user_disp += f" (@{username})"
+    if full_name:
+        user_disp += f" | {html.escape(full_name)}"
+
+    target_email = invoice.get("target_email")
+    is_topup = target_email == "TOPUP" or (
+        invoice.get("duration_days") == 0 and invoice.get("data_gb") == 0
+    )
+    is_renewal = bool(target_email and target_email != "TOPUP")
+
+    duration = invoice.get("duration_days", 0)
+    gb = invoice.get("data_gb", 0)
+    users_count = invoice.get("users_count", 1)
+
+    service_email = target_email if is_renewal else ""
+    if (
+        not service_email
+        and delivery_msg
+        and "(" in delivery_msg
+        and ")" in delivery_msg
+    ):
+        start_idx = delivery_msg.find("(")
+        end_idx = delivery_msg.rfind(")")
+        if start_idx != -1 and end_idx != -1:
+            service_email = delivery_msg[start_idx + 1 : end_idx].strip()
+
+    if is_topup:
+        order_title = "⚡️ <b>تأیید خودکار افزایش موجودی کیف پول (پیامک بانکی)</b>"
+        order_header = "👛 <b>مشخصات تراکنش:</b>"
+        specs_lines = [
+            "• نوع عملیات: <b>شارژ مستقیم کیف پول</b>",
+            f"• مبلغ شارژ: <b>{format_price(amount_toman)}</b>",
+        ]
+    elif is_renewal:
+        order_title = "⚡️ <b>تأیید خودکار تمدید اشتراک (پیامک بانکی)</b>"
+        order_header = "🔄 <b>مشخصات بسته تمدید:</b>"
+        vol_label = await format_volume_label(gb, with_real_gb=True)
+        specs_lines = [
+            f"• نام سرویس: <code>{target_email}</code>",
+            f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>",
+            f"• ظرفیت اتصال: <b>{to_persian_digits(users_count)} کاربر</b>",
+            f"• حجم ترافیک: <b>{vol_label}</b>",
+        ]
+    else:
+        order_title = "⚡️ <b>تأیید خودکار پرداخت اشتراک (پیامک بانکی)</b>"
+        order_header = "📦 <b>مشخصات سرویس:</b>"
+        vol_label = await format_volume_label(gb, with_real_gb=True)
+        specs_lines = []
+        if service_email:
+            specs_lines.append(f"• نام سرویس: <code>{service_email}</code>")
+        specs_lines.extend(
+            [
+                f"• مدت اعتبار: <b>{to_persian_digits(duration)} روز</b>",
+                f"• ظرفیت اتصال: <b>{to_persian_digits(users_count)} کاربر</b>",
+                f"• حجم ترافیک: <b>{vol_label}</b>",
+            ]
+        )
+
+    specs_str = "\n".join(specs_lines)
+
+    disc_code = invoice.get("discount_code")
+    orig_amount = invoice.get("original_amount") or invoice.get("amount", amount_toman)
+    disc_lines = []
+    if orig_amount > amount_toman:
+        disc_lines.append(f"• مبلغ پایه: <s>{format_price(orig_amount)}</s>")
+        if disc_code:
+            disc_lines.append(f"• کد تخفیف: <code>{disc_code}</code>")
+        elif is_renewal:
+            disc_lines.append("• تخفیف: <b>تخفیف ویژه تمدید اشتراک</b>")
+        else:
+            disc_lines.append("• تخفیف: <b>تخفیف پیش‌فرض</b>")
+    disc_str = ("\n" + "\n".join(disc_lines)) if disc_lines else ""
+
+    price_str = f"💰 <b>مبلغ واریزی:</b> <b>{format_price(amount_toman)}</b>"
+    bank_lines = [
+        f"• زمان واریز: <code>{to_persian_digits(time_disp)}</code>",
+        f"• اثرانگشت تراکنش: <code>{fingerprint}</code>",
+    ]
+    bank_str = "\n".join(bank_lines)
+
+    admin_notice = (
+        f"{order_title}\n\n"
+        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        f"👤 <b>کاربر:</b> {user_disp}\n\n"
+        f"{order_header}\n"
+        f"{specs_str}"
+        f"{disc_str}\n"
+        f"{price_str}\n\n"
+        f"💳 <b>اطلاعات تراکنش پیامکی:</b>\n"
+        f"{bank_str}\n\n"
+        f"✅ <b>وضعیت:</b> {delivery_msg}"
+    )
+
+    review_caption = (
+        f"⚡️ <b>این پرداخت به صورت خودکار توسط پیامک بانکی تأیید شد.</b>\n\n"
+        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        f"👤 <b>کاربر:</b> {user_disp}\n\n"
+        f"{order_header}\n"
+        f"{specs_str}"
+        f"{disc_str}\n"
+        f"{price_str}\n\n"
+        f"⏳ <b>زمان:</b> <code>{to_persian_digits(time_disp)}</code>\n"
+        f"🔑 <b>اثرانگشت:</b> <code>{fingerprint}</code>\n\n"
+        f"✅ <b>{delivery_msg}</b>"
+    )
+    if len(review_caption) > 1024:
+        review_caption = review_caption[:1020] + "..."
+
+    return admin_notice, review_caption
 
 
 async def start_bank_sms_server(bot: Bot) -> None:
