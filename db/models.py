@@ -431,7 +431,7 @@ async def get_all_invoices_paginated(
         conditions.append("i.status = 'approved'")
     elif status_filter == "pending":
         conditions.append("i.status IN ('pending', 'under_review')")
-    elif status_filter in ("rejected", "expired"):
+    elif status_filter in ("rejected", "expired", "cancelled"):
         conditions.append("i.status = ?")
         params.append(status_filter)
 
@@ -510,6 +510,12 @@ async def get_invoice_details(invoice_id: str) -> dict[str, Any] | None:
 
 async def delete_invoice(invoice_id: str) -> bool:
     db = await get_db()
+    await db.execute(
+        "DELETE FROM bank_sms_transactions WHERE invoice_id = ?", (invoice_id,)
+    )
+    await db.execute(
+        "DELETE FROM reserved_renewals WHERE invoice_id = ?", (invoice_id,)
+    )
     cursor = await db.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
     await db.commit()
     return cursor.rowcount > 0
@@ -2867,6 +2873,7 @@ async def record_bank_sms_transaction(
 
 
 async def get_recent_bank_sms_transactions(limit: int = 10) -> list[dict[str, Any]]:
+    await clean_orphaned_bank_sms_transactions()
     db = await get_db()
     cursor = await db.execute(
         """SELECT t.*, i.tg_id, u.username, u.full_name
@@ -2878,6 +2885,46 @@ async def get_recent_bank_sms_transactions(limit: int = 10) -> list[dict[str, An
     )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
+
+
+async def delete_bank_sms_transaction(tx_id: int) -> bool:
+    """Delete a specific bank SMS transaction by its ID."""
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM bank_sms_transactions WHERE id = ?", (tx_id,)
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def clear_all_bank_sms_transactions() -> int:
+    """Clear all bank SMS transaction records."""
+    db = await get_db()
+    cursor = await db.execute("DELETE FROM bank_sms_transactions")
+    await db.commit()
+    return cursor.rowcount
+
+
+async def clear_unmatched_bank_sms_transactions() -> int:
+    """Clear bank SMS transactions that did not match any invoice."""
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM bank_sms_transactions WHERE status = 'unmatched'"
+    )
+    await db.commit()
+    return cursor.rowcount
+
+
+async def clean_orphaned_bank_sms_transactions() -> int:
+    """Remove bank SMS transactions pointing to invoices that no longer exist in invoices table."""
+    db = await get_db()
+    cursor = await db.execute(
+        """DELETE FROM bank_sms_transactions
+           WHERE invoice_id IS NOT NULL
+             AND invoice_id NOT IN (SELECT id FROM invoices)"""
+    )
+    await db.commit()
+    return cursor.rowcount
 
 
 async def get_bank_sms_stats() -> dict[str, int]:

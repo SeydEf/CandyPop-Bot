@@ -18,7 +18,7 @@ from db.models import (
     record_bank_sms_transaction,
 )
 from services.invoice_service import approve_invoice
-from utils.formatting import format_price, to_persian_digits
+from utils.formatting import format_datetime, format_price, to_persian_digits
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
     bot = _bot_instance
     if not bot:
         return web.json_response(
-            {"error": "Server Not Ready", "detail": "ربات هنوز آماده نیست."},
+            {"error": "Server Not Ready", "detail": "سرور هنوز آماده نیست."},
             status=503,
         )
 
@@ -96,7 +96,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
     received_at = data.get("received_at")
 
     if await is_sms_fingerprint_processed(fingerprint):
-        # TODO: get related invoice by fingerprint and put db status in response
         logger.info("Bank SMS already processed: %s", fingerprint)
         return web.json_response(
             {
@@ -156,6 +155,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         invoice_id=invoice_id,
         bot=bot,
         is_reapproval=False,
+        admin_id=None,
         admin_name="تأیید خودکار از طریق پیامک بانکی",
     )
 
@@ -166,12 +166,9 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             status=500,
         )
 
-    time_disp = html.escape(str(timestamp_str or "نامشخص"))
-
     admin_notice, review_caption = await _build_bank_sms_admin_messages(
         invoice=invoice,
         amount_toman=amount_toman,
-        time_disp=time_disp,
         fingerprint=fingerprint,
         delivery_msg=msg,
     )
@@ -260,7 +257,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
 async def _build_bank_sms_admin_messages(
     invoice: dict[str, Any],
     amount_toman: int,
-    time_disp: str,
     fingerprint: str,
     delivery_msg: str,
 ) -> tuple[str, str]:
@@ -350,7 +346,6 @@ async def _build_bank_sms_admin_messages(
 
     price_str = f"💰 <b>مبلغ واریزی:</b> <b>{format_price(amount_toman)}</b>"
     bank_lines = [
-        f"• زمان واریز: <code>{to_persian_digits(time_disp)}</code>",
         f"• اثرانگشت تراکنش: <code>{fingerprint}</code>",
     ]
     bank_str = "\n".join(bank_lines)
@@ -365,7 +360,8 @@ async def _build_bank_sms_admin_messages(
         f"{price_str}\n\n"
         f"💳 <b>اطلاعات تراکنش پیامکی:</b>\n"
         f"{bank_str}\n\n"
-        f"✅ <b>وضعیت:</b> {delivery_msg}"
+        f"✅ <b>وضعیت:</b> {delivery_msg}\n"
+        f"⏳ <b>زمان تایید تراکنش:</b> {format_datetime(invoice.get('processed_at'))}"
     )
 
     review_caption = (
@@ -376,8 +372,6 @@ async def _build_bank_sms_admin_messages(
         f"{specs_str}"
         f"{disc_str}\n"
         f"{price_str}\n\n"
-        f"⏳ <b>زمان:</b> <code>{to_persian_digits(time_disp)}</code>\n"
-        f"🔑 <b>اثرانگشت:</b> <code>{fingerprint}</code>\n\n"
         f"✅ <b>{delivery_msg}</b>"
     )
     if len(review_caption) > 1024:

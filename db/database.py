@@ -139,7 +139,7 @@ async def init_db() -> None:
             timestamp_str   TEXT,
             raw_sms         TEXT,
             received_at     TEXT,
-            invoice_id      TEXT REFERENCES invoices(id),
+            invoice_id      TEXT REFERENCES invoices(id) ON DELETE CASCADE,
             status          TEXT NOT NULL,
             created_at      TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -188,6 +188,15 @@ async def init_db() -> None:
 
     try:
         await db.execute("ALTER TABLE invoices ADD COLUMN processed_by_name TEXT")
+    except Exception:
+        pass
+
+    try:
+        await db.execute(
+            """DELETE FROM bank_sms_transactions
+               WHERE invoice_id IS NOT NULL
+                 AND invoice_id NOT IN (SELECT id FROM invoices)"""
+        )
     except Exception:
         pass
 

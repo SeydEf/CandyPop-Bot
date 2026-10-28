@@ -9318,10 +9318,34 @@ async def admin_bank_sms_logs(callback: types.CallbackQuery, state: FSMContext) 
         return
 
     from db.models import get_recent_bank_sms_transactions
+    from utils.helpers import safe_edit_text
 
     txs = await get_recent_bank_sms_transactions(limit=10)
     if not txs:
-        await callback.answer("ℹ️ هیچ تراکنشی تاکنون ثبت نشده است.", show_alert=True)
+        text = (
+            "📋 <b>گزارش تراکنش‌های پیامک بانکی</b>\n\n"
+            "ℹ️ <i>هیچ تراکنشی در سیستم ثبت نشده است.</i>"
+        )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔄 بروزرسانی",
+                        callback_data="admin_bank_sms_logs",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به تنظیمات وب‌هوک",
+                        callback_data="admin_bank_sms_menu",
+                    )
+                ],
+            ]
+        )
+        await safe_edit_text(
+            callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+        )
+        await callback.answer()
         return
 
     status_labels = {
@@ -9331,8 +9355,12 @@ async def admin_bank_sms_logs(callback: types.CallbackQuery, state: FSMContext) 
     }
 
     lines = ["📋 <b>گزارش ۱۰ تراکنش پیامکی اخیر:</b>\n"]
+    has_unmatched = False
     for t in txs:
-        st_text = status_labels.get(t["status"], t["status"])
+        st = t.get("status")
+        if st == "unmatched":
+            has_unmatched = True
+        st_text = status_labels.get(st, st)
         amt_str = format_price(t["amount_toman"])
         rec_time = (
             format_datetime(t["created_at"])
@@ -9342,28 +9370,123 @@ async def admin_bank_sms_logs(callback: types.CallbackQuery, state: FSMContext) 
         inv_str = (
             f"| فاکتور: <code>{t['invoice_id']}</code>" if t.get("invoice_id") else ""
         )
+        u_info = ""
+        if t.get("username"):
+            u_info = f" | خریدار: @{t['username']}"
+        elif t.get("tg_id"):
+            u_info = f" | خریدار: <code>{t['tg_id']}</code>"
+
         lines.append(
-            f"🔹 <b>{amt_str}</b> ({st_text}) {inv_str}\n"
+            f"🔹 <b>{amt_str}</b> ({st_text}) {inv_str}{u_info}\n"
             f"   • تاریخ: {rec_time} | بانک: {t.get('sender') or 'نامشخص'}\n"
         )
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به تنظیمات وب‌هوک",
-                    callback_data="admin_bank_sms_menu",
-                )
-            ]
-        ]
+    action_buttons: list[InlineKeyboardButton] = []
+    if has_unmatched:
+        action_buttons.append(
+            InlineKeyboardButton(
+                text="🧹 حذف نامطابق‌ها",
+                callback_data="admin_bank_sms_clear_unmatched",
+            )
+        )
+    action_buttons.append(
+        InlineKeyboardButton(
+            text="🗑 پاکسازی کل تاریخچه",
+            callback_data="admin_bank_sms_clear_ask",
+        )
     )
 
-    from utils.helpers import safe_edit_text
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="🔄 بروزرسانی لیست",
+                callback_data="admin_bank_sms_logs",
+            )
+        ],
+        action_buttons,
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به تنظیمات وب‌هوک",
+                callback_data="admin_bank_sms_menu",
+            )
+        ],
+    ]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
     await safe_edit_text(
         callback.message, "\n".join(lines), reply_markup=keyboard, parse_mode="HTML"
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_bank_sms_clear_unmatched")
+async def admin_bank_sms_clear_unmatched(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+
+    from db.models import clear_unmatched_bank_sms_transactions
+
+    cleared = await clear_unmatched_bank_sms_transactions()
+    await callback.answer(
+        f"✅ {to_persian_digits(cleared)} تراکنش نامطابق با موفقیت پاکسازی شدند.",
+        show_alert=True,
+    )
+    await admin_bank_sms_logs(callback, state)
+
+
+@router.callback_query(F.data == "admin_bank_sms_clear_ask")
+async def admin_bank_sms_clear_ask(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+
+    text = (
+        "🗑 <b>پاکسازی تاریخچه تراکنش‌های پیامک بانکی</b>\n\n"
+        "⚠️ آیا از پاکسازی و حذف کامل کلیه گزارش‌های تراکنش پیامک بانکی اطمینان دارید؟\n\n"
+        "🚨 <b>هشدار:</b> این عملیات تنها گزارش‌های ثبت‌شده پیامک در وب‌هوک را پاک می‌کند و اثری بر روی فاکتورها یا اشتراک‌های تأییدشده نخواهد داشت."
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚠️ بله، کل تاریخچه حذف شود",
+                    callback_data="admin_bank_sms_clear_confirm",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data="admin_bank_sms_logs",
+                )
+            ],
+        ]
+    )
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_bank_sms_clear_confirm")
+async def admin_bank_sms_clear_confirm(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "card_config"):
+        return
+
+    from db.models import clear_all_bank_sms_transactions
+
+    cleared = await clear_all_bank_sms_transactions()
+    await callback.answer(
+        f"✅ تاریخچه با موفقیت پاکسازی شد ({to_persian_digits(cleared)} رکورد حذف گردید).",
+        show_alert=True,
+    )
+    await admin_bank_sms_logs(callback, state)
 
 
 async def _build_receipt_config_menu_content() -> tuple[str, InlineKeyboardMarkup]:
@@ -11883,16 +12006,19 @@ async def admin_invoice_view(callback: types.CallbackQuery, state: FSMContext) -
         return
     await state.clear()
 
-    parts = callback.data.split("_")
-    if len(parts) < 6:
+    payload = callback.data.removeprefix("admin_inv_view_")
+    if "_" not in payload:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
         return
-
-    inv_id = parts[3]
-    status_filter = parts[4]
-    try:
-        page = int(parts[5])
-    except ValueError:
+    inv_id, rest = payload.split("_", 1)
+    if "_" in rest:
+        status_filter, page_str = rest.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except ValueError:
+            page = 0
+    else:
+        status_filter = rest
         page = 0
 
     found = await _render_invoice_details(
@@ -11919,12 +12045,8 @@ async def admin_invoice_receipt_view(callback: types.CallbackQuery, bot: Bot) ->
         )
         return
 
-    parts = callback.data.split("_")
-    if len(parts) < 6:
-        await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
-        return
-
-    inv_id = parts[3]
+    payload = callback.data.removeprefix("admin_inv_receipt_")
+    inv_id = payload.split("_", 1)[0]
 
     from db.models import get_invoice_details
 
@@ -11964,16 +12086,20 @@ async def admin_invoice_delete_ask(
         return
     await state.clear()
 
-    parts = callback.data.split("_")
-    if len(parts) < 7:
+    payload = callback.data.removeprefix("admin_inv_del_ask_")
+    if "_" not in payload:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
         return
 
-    inv_id = parts[4]
-    status_filter = parts[5]
-    try:
-        page = int(parts[6])
-    except ValueError:
+    inv_id, rest = payload.split("_", 1)
+    if "_" in rest:
+        status_filter, page_str = rest.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except ValueError:
+            page = 0
+    else:
+        status_filter = rest
         page = 0
 
     from db.models import get_invoice_details
@@ -11993,7 +12119,7 @@ async def admin_invoice_delete_ask(
         f"🆔 <b>کد فاکتور:</b> <code>{inv_id}</code>\n"
         f"👤 <b>کاربر:</b> {u_name} (<code>{inv.get('tg_id')}</code>)\n"
         f"💰 <b>مبلغ:</b> {amount_str}\n\n"
-        f"🚨 <b>هشدار:</b> این عملیات غیرقابل بازگشت است و تمام رکوردهای این فاکتور برای همیشه پاک خواهد شد."
+        f"🚨 <b>هشدار:</b> این عملیات غیرقابل بازگشت است و تمام رکوردهای مرتبط با این فاکتور (شامل تراکنش‌های پیامک بانکی) برای همیشه پاک خواهند شد."
     )
 
     keyboard = admin_invoice_delete_confirm_keyboard(inv_id, status_filter, page)
@@ -12010,28 +12136,55 @@ async def admin_invoice_delete_confirm(
     if not await _require_permission(callback, "delete_invoices"):
         return
 
-    parts = callback.data.split("_")
-    if len(parts) < 7:
+    payload = callback.data.removeprefix("admin_inv_del_confirm_")
+    if "_" not in payload:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
         return
 
-    inv_id = parts[4]
-    status_filter = parts[5]
-    try:
-        page = int(parts[6])
-    except ValueError:
+    inv_id, rest = payload.split("_", 1)
+    if "_" in rest:
+        status_filter, page_str = rest.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except ValueError:
+            page = 0
+    else:
+        status_filter = rest
         page = 0
 
     from db.models import delete_invoice
 
-    success = await delete_invoice(inv_id)
+    try:
+        success = await delete_invoice(inv_id)
+    except Exception as e:
+        logger.exception("Error deleting invoice %s: %s", inv_id, e)
+        await callback.answer(f"❌ خطا در حذف فاکتور: {e}", show_alert=True)
+        return
+
     alert_msg = (
-        "✅ فاکتور با موفقیت از دیتابیس حذف شد."
+        "✅ فاکتور و کلیه رکوردهای وابسته با موفقیت از دیتابیس حذف شدند."
         if success
         else "⚠️ فاکتور یافت نشد یا قبلاً حذف شده است."
     )
 
-    await _render_invoices_list(callback.message, status_filter, page)
+    if status_filter == "notif":
+        if callback.message.photo:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(
+                f"🗑 <b>فاکتور با کد <code>{inv_id}</code> با موفقیت از دیتابیس حذف شد.</b>",
+                parse_mode="HTML",
+            )
+        else:
+            await safe_edit_text(
+                callback.message,
+                f"🗑 <b>فاکتور با کد <code>{inv_id}</code> با موفقیت از دیتابیس حذف شد.</b>",
+                parse_mode="HTML",
+            )
+    else:
+        await _render_invoices_list(callback.message, status_filter, page)
     await callback.answer(alert_msg, show_alert=True)
 
 
@@ -12043,16 +12196,20 @@ async def admin_invoice_reapprove_ask(
         return
     await state.clear()
 
-    parts = callback.data.split("_")
-    if len(parts) < 7:
+    payload = callback.data.removeprefix("admin_inv_reapprove_ask_")
+    if "_" not in payload:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
         return
 
-    inv_id = parts[4]
-    status_filter = parts[5]
-    try:
-        page = int(parts[6])
-    except ValueError:
+    inv_id, rest = payload.split("_", 1)
+    if "_" in rest:
+        status_filter, page_str = rest.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except ValueError:
+            page = 0
+    else:
+        status_filter = rest
         page = 0
 
     from db.models import get_invoice_details
@@ -12115,16 +12272,20 @@ async def admin_invoice_reapprove_confirm(
         return
     await state.clear()
 
-    parts = callback.data.split("_")
-    if len(parts) < 7:
+    payload = callback.data.removeprefix("admin_inv_reapprove_confirm_")
+    if "_" not in payload:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
         return
 
-    inv_id = parts[4]
-    status_filter = parts[5]
-    try:
-        page = int(parts[6])
-    except ValueError:
+    inv_id, rest = payload.split("_", 1)
+    if "_" in rest:
+        status_filter, page_str = rest.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except ValueError:
+            page = 0
+    else:
+        status_filter = rest
         page = 0
 
     import html
@@ -12186,16 +12347,20 @@ async def admin_invoice_to_review(
         return
     await state.clear()
 
-    parts = callback.data.split("_")
-    if len(parts) < 6:
+    payload = callback.data.removeprefix("admin_inv_to_review_")
+    if "_" not in payload:
         await callback.answer("خطای نامعتبر بودن پارامترها.", show_alert=True)
         return
 
-    inv_id = parts[4]
-    origin = parts[5]
-    try:
-        page = int(parts[6])
-    except (IndexError, ValueError):
+    inv_id, rest = payload.split("_", 1)
+    if "_" in rest:
+        origin, page_str = rest.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except (IndexError, ValueError):
+            page = 0
+    else:
+        origin = rest
         page = 0
 
     inv = await get_invoice_details(inv_id)
