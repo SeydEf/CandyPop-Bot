@@ -155,7 +155,6 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         invoice_id=invoice_id,
         bot=bot,
         is_reapproval=False,
-        admin_id=None,
         admin_name="تأیید خودکار از طریق پیامک بانکی",
     )
 
