@@ -92,6 +92,7 @@ async def wallet_deposit_preset(
     from db.models import generate_unique_card_amount
 
     card_payable_amount = await generate_unique_card_amount(amount)
+    card_payable_rial = card_payable_amount * 10
     unique_delta = card_payable_amount - amount
 
     tg_id = callback.from_user.id
@@ -128,7 +129,7 @@ async def wallet_deposit_preset(
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
-        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان\n\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان (معادل <code>{card_payable_rial}</code> ریال)\n\n"
         f"{notice_line}"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
@@ -265,13 +266,13 @@ async def wallet_deposit_custom_input(
 
     from db.models import generate_unique_card_amount
 
-    card_amount = await generate_unique_card_amount(amount)
-    card_payable_amount = format_price(card_amount)
-    unique_delta = card_amount - amount
+    card_payable_amount = await generate_unique_card_amount(amount)
+    card_payable_rial = card_payable_amount * 10
+    unique_delta = card_payable_amount - amount
 
     invoice = await create_invoice(
         tg_id=tg_id,
-        amount=card_amount,
+        amount=card_payable_amount,
         duration_days=0,
         data_gb=0,
         users_count=0,
@@ -301,7 +302,7 @@ async def wallet_deposit_custom_input(
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
-        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان\n\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان (معادل <code>{card_payable_rial}</code> ریال)\n\n"
         f"{notice_line}"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
@@ -311,6 +312,8 @@ async def wallet_deposit_custom_input(
 
     await message.answer(
         text,
-        reply_markup=card_payment_keyboard(invoice_id, card_number, card_amount),
+        reply_markup=card_payment_keyboard(
+            invoice_id, card_number, card_payable_amount
+        ),
         parse_mode="HTML",
     )

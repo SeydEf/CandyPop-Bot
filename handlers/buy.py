@@ -1119,6 +1119,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     from db.models import generate_unique_card_amount
 
     card_payable_amount = await generate_unique_card_amount(payable_amount)
+    card_payable_rial = card_payable_amount * 10
     unique_delta = card_payable_amount - payable_amount
 
     invoice = await create_invoice(
@@ -1178,7 +1179,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
-        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان\n\n"
+        f"💎 <b>مبلغ قابل پرداخت:</b> <code>{card_payable_amount}</code> تومان (معادل <code>{card_payable_rial}</code> ریال)\n\n"
         f"{notice_line}"
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
