@@ -228,11 +228,21 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                 if await has_admin_permission(a_id, "approve_invoices"):
                     admin_ids.append(a_id)
 
+        from keyboards.inline_kb import admin_invoice_processed_keyboard
+
+        admin_keyboard = admin_invoice_processed_keyboard(
+            invoice_id=invoice_id,
+            tg_id=tg_id,
+            is_rejected=False,
+            origin="notif",
+        )
+
         for a_id in admin_ids:
             try:
                 await bot.send_message(
                     chat_id=a_id,
                     text=admin_notice,
+                    reply_markup=admin_keyboard,
                     parse_mode="HTML",
                 )
             except Exception as e:

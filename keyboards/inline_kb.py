@@ -307,7 +307,7 @@ def admin_invoice_processed_keyboard(
                 callback_data=f"admin_manage_user_{tg_id}_inv_{invoice_id}_{origin}_0",
             ),
             InlineKeyboardButton(
-                text="🧾 جزئیات فاکتور",
+                text="🧾 جزئیات تراکنش",
                 callback_data=f"admin_inv_view_{invoice_id}_{origin}_0",
             ),
         ]
