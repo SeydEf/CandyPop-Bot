@@ -711,7 +711,8 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
         await callback.answer("❌ اشتراک در پنل سرور یافت نشد.", show_alert=True)
         return
 
-    current_gb = max(1, client.get("totalGB", 0) // (1024**3))
+    total_bytes = client.get("totalGB", 0) or 0
+    total_gb_int = int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
     current_users = max(1, client.get("limitIp", 1))
 
     from db.models import get_reserve_renewal_config
@@ -722,9 +723,16 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
     action_title = (
         "📦 <b>رزرو اشتراک</b>" if reserve_enabled else "🔄 <b>تمدید اشتراک</b>"
     )
-    prompt_desc = "💡 مایلید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم، تعداد کاربر) را تغییر می‌دهید؟"
 
-    vol_label = await format_volume_label(current_gb)
+    if total_bytes == 0:
+        vol_label = "♾️ نامحدود"
+        prompt_desc = "💡 به دلیل نامحدود بودن ترافیک این سرویس در سرور، لطفاً پلن مورد نظر خود را برای تمدید انتخاب کنید:"
+        allow_same_plan = False
+    else:
+        current_gb = max(1, total_gb_int)
+        vol_label = await format_volume_label(current_gb)
+        prompt_desc = "💡 مایلید با مشخصات قبلی تمدید شود یا مشخصات (مدت، حجم، تعداد کاربر) را تغییر می‌دهید؟"
+        allow_same_plan = True
 
     text = (
         f"{action_title}\n\n"
@@ -735,7 +743,10 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
     )
     await callback.message.edit_text(
         text,
-        reply_markup=renew_options_keyboard(is_reserve_mode=reserve_enabled),
+        reply_markup=renew_options_keyboard(
+            is_reserve_mode=reserve_enabled,
+            allow_same_plan=allow_same_plan,
+        ),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -880,7 +891,16 @@ async def renew_same_plan(callback: types.CallbackQuery, state: FSMContext) -> N
         await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
         return
 
-    current_gb = max(1, client.get("totalGB", 0) // (1024**3))
+    total_bytes = client.get("totalGB", 0) or 0
+    if total_bytes == 0:
+        await callback.answer(
+            "⚠️ ترافیک این سرویس نامحدود است؛ لطفاً پلن مورد نظر را انتخاب کنید.",
+            show_alert=True,
+        )
+        await renew_change_plan(callback, state)
+        return
+
+    current_gb = max(1, int(round(total_bytes / (1024**3))))
     current_users = max(1, client.get("limitIp", 1))
     duration = 30
 

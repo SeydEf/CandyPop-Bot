@@ -16,7 +16,7 @@ from db.models import (
     get_sub_final_attachment,
 )
 from services import xui_api
-from utils.formatting import format_size_gb, to_persian_digits
+from utils.formatting import to_persian_digits
 from utils.helpers import _build_sub_link
 
 logger = logging.getLogger(__name__)
@@ -230,12 +230,15 @@ async def activate_reserved_renewal(
 
     if bot and tg_id > 0:
         try:
+            from services.pricing import format_volume_label
+
+            vol_label = await format_volume_label(data_gb)
             msg = (
                 f"🎉 <b>بسته تمدید شما با موفقیت فعال شد!</b>\n\n"
                 f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
                 f"⏱ <b>مدت اعتبار جدید:</b> {to_persian_digits(total_duration_days)} روز\n"
                 f"👥 <b>ظرفیت کاربر جدید:</b> {to_persian_digits(users_count)} کاربر\n"
-                f"📊 <b>حجم ترافیک جدید:</b> {format_size_gb(data_gb)}\n"
+                f"📊 <b>حجم ترافیک جدید:</b> {vol_label}\n"
                 f"🔗 <b>لینک هوشمند اشتراک:</b>\n<code>{sub_link}</code>\n\n"
                 f"🚀 <i>ترافیک و زمان جدید به سرویس شما افزوده شد. نیازی به تغییر کانفیگ‌ها نیست و اتصال دستگاه‌ها برقرار خواهد ماند.</i>"
             )

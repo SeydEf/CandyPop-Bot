@@ -324,7 +324,12 @@ async def renew_client(
 
     current_total_bytes = client.get("totalGB", 0) or 0
     added_bytes = data_gb * 1024 * 1024 * 1024
-    new_total_bytes = current_total_bytes + added_bytes
+    if data_gb == 0:
+        new_total_bytes = 0
+    elif current_total_bytes == 0:
+        new_total_bytes = added_bytes
+    else:
+        new_total_bytes = current_total_bytes + added_bytes
 
     client["expiryTime"] = new_expiry_ms
     client["totalGB"] = new_total_bytes

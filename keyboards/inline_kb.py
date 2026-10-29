@@ -412,31 +412,43 @@ def subscription_manage_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def renew_options_keyboard(is_reserve_mode: bool = False) -> InlineKeyboardMarkup:
+def renew_options_keyboard(
+    is_reserve_mode: bool = False,
+    allow_same_plan: bool = True,
+) -> InlineKeyboardMarkup:
     same_text = "📦 رزرو با مشخصات فعلی" if is_reserve_mode else "🔄 تمدید پلن فعلی"
-    change_text = "⚙️ تغییر مشخصات و رزرو" if is_reserve_mode else "⚙️ تغییر پلن و تمدید"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    change_text = (
+        ("⚙️ تغییر مشخصات و رزرو" if allow_same_plan else "⚙️ انتخاب مشخصات و رزرو")
+        if is_reserve_mode
+        else ("⚙️ تغییر پلن و تمدید" if allow_same_plan else "⚙️ انتخاب پلن و تمدید")
+    )
+    rows: list[list[InlineKeyboardButton]] = []
+    if allow_same_plan:
+        rows.append(
             [
                 InlineKeyboardButton(
                     text=same_text,
                     callback_data="renew_same",
                 ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=change_text,
-                    callback_data="renew_change",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت",
-                    callback_data="sub_view_current",
-                ),
-            ],
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=change_text,
+                callback_data="renew_change",
+            ),
         ]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت",
+                callback_data="sub_view_current",
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def renew_duration_keyboard(
