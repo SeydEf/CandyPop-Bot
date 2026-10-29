@@ -223,12 +223,9 @@ async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) ->
 
 @router.message(BuyStates.waiting_custom_gb, F.text)
 async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> None:
-    if message.text and message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer(
-            "🚫 فرایند خرید لغو شد.",
-            reply_markup=main_menu_keyboard(),
-        )
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
         return
 
     try:
@@ -289,6 +286,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
         return
 
     await state.update_data(gb=gb)
+    await state.set_state(None)
     data = await state.get_data()
     renew_email = data.get("renew_email")
 
@@ -568,12 +566,9 @@ async def buy_custom_duration_prompt(
 
 @router.message(BuyStates.waiting_custom_days, F.text)
 async def buy_custom_duration_input(message: types.Message, state: FSMContext) -> None:
-    if message.text and message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer(
-            "🚫 فرایند خرید لغو شد.",
-            reply_markup=main_menu_keyboard(),
-        )
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
         return
 
     data = await state.get_data()
@@ -922,6 +917,11 @@ async def buy_discount_apply_prompt(
 
 @router.message(BuyStates.waiting_discount_code, F.text)
 async def buy_discount_process(message: types.Message, state: FSMContext) -> None:
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
+        return
+
     if not message.text:
         return
 
@@ -1000,6 +1000,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         final_price=final_price,
         price=final_price,
     )
+    await state.set_state(None)
 
     text = await _build_pre_invoice_text(
         gb=gb,

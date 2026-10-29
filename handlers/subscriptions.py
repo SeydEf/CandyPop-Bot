@@ -366,6 +366,11 @@ async def rename_start(callback: types.CallbackQuery, state: FSMContext) -> None
 
 @router.message(SubStates.waiting_rename, F.text)
 async def rename_process(message: types.Message, state: FSMContext) -> None:
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
+        return
+
     if not message.text:
         return
 
@@ -1037,9 +1042,9 @@ async def renew_custom_duration_prompt(
 async def renew_custom_duration_input(
     message: types.Message, state: FSMContext
 ) -> None:
-    if message.text and message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("🚫 فرایند تمدید لغو شد.")
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
         return
 
     cancel_kb = InlineKeyboardMarkup(
@@ -1086,6 +1091,7 @@ async def renew_custom_duration_input(
 
     duration = days
     await state.update_data(duration=duration)
+    await state.set_state(None)
     data = await state.get_data()
     gb = data.get("gb", 30)
     users = data.get("users", 1)
@@ -1178,6 +1184,7 @@ async def renew_select_duration(
 async def renew_back_to_duration(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
+    await state.set_state(None)
     data = await state.get_data()
     email = data.get("renew_email", "")
     gb = data.get("gb", 30)
@@ -1202,6 +1209,7 @@ async def renew_back_to_duration(
 
 @router.callback_query(F.data == "renew_back_to_users")
 async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(None)
     data = await state.get_data()
     email = data.get("renew_email", "")
     gb = data.get("gb", 30)
@@ -1277,9 +1285,9 @@ async def renew_custom_volume(callback: types.CallbackQuery, state: FSMContext) 
 
 @router.message(SubStates.waiting_custom_gb, F.text)
 async def renew_custom_volume_input(message: types.Message, state: FSMContext) -> None:
-    if message.text and message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer("🚫 فرایند تمدید لغو شد.")
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
         return
 
     cancel_kb = InlineKeyboardMarkup(
@@ -1333,6 +1341,7 @@ async def renew_custom_volume_input(message: types.Message, state: FSMContext) -
         return
 
     await state.update_data(gb=gb)
+    await state.set_state(None)
     data = await state.get_data()
     email = data.get("renew_email", "")
 
@@ -1693,6 +1702,11 @@ async def renew_discount_apply_prompt(
 
 @router.message(SubStates.waiting_renew_discount, F.text)
 async def renew_discount_process(message: types.Message, state: FSMContext) -> None:
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
+        return
+
     if not message.text:
         return
 

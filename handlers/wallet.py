@@ -210,13 +210,9 @@ async def wallet_deposit_custom_input(
         )
         return
 
-    if message.text.strip() == "/cancel":
-        await state.clear()
-        await message.answer(
-            "❌ <b>فرآیند افزایش موجودی کیف پول لغو شد.</b>",
-            reply_markup=main_menu_keyboard(),
-            parse_mode="HTML",
-        )
+    from utils.helpers import handle_reply_keyboard_or_command
+
+    if await handle_reply_keyboard_or_command(message, state):
         return
 
     raw_text = persian_to_english_digits(message.text.strip())

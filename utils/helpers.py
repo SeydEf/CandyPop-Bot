@@ -6,6 +6,7 @@ import uuid
 import qrcode
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.context import FSMContext
 
 from config import SUB_BASE_URL
 
@@ -78,3 +79,94 @@ async def safe_edit_text(
         if "message is not modified" in str(e):
             return False
         raise e
+
+
+async def handle_reply_keyboard_or_command(
+    message: types.Message, state: FSMContext
+) -> bool:
+    if not message.text:
+        return False
+    text = message.text.strip()
+    if text == "/cancel":
+        await state.clear()
+        from keyboards.reply_kb import main_menu_keyboard
+
+        await message.answer("🚫 عملیات لغو شد.", reply_markup=main_menu_keyboard())
+        return True
+    if text.startswith("/start"):
+        await state.clear()
+        from handlers.start import cmd_start
+
+        await cmd_start(message, state)
+        return True
+
+    from keyboards.reply_kb import (
+        BTN_BUY,
+        BTN_GUIDE,
+        BTN_INCREASE_WALLET,
+        BTN_INVITE,
+        BTN_MY_SUBS,
+        BTN_PRICING,
+        BTN_PROFILE,
+        BTN_SUPPORT,
+        BTN_TEST,
+    )
+
+    if text == BTN_BUY:
+        await state.clear()
+        from handlers.buy import buy_start
+
+        await buy_start(message, state)
+        return True
+    if text == BTN_MY_SUBS:
+        await state.clear()
+        from handlers.subscriptions import my_subscriptions
+
+        await my_subscriptions(message)
+        return True
+    if text == BTN_PROFILE:
+        await state.clear()
+        from handlers.profile import profile_dashboard
+
+        await profile_dashboard(message)
+        return True
+    if text == BTN_INCREASE_WALLET:
+        await state.clear()
+        from handlers.wallet import wallet_deposit_start
+
+        await wallet_deposit_start(message, state)
+        return True
+    if text == BTN_PRICING:
+        await state.clear()
+        from handlers.pricing import show_pricing
+
+        await show_pricing(message)
+        return True
+    if text == BTN_GUIDE:
+        await state.clear()
+        from handlers.guide import cmd_guide
+
+        await cmd_guide(message)
+        return True
+    if text == BTN_SUPPORT:
+        await state.clear()
+        from handlers.start import cmd_support
+
+        await cmd_support(message)
+        return True
+    if text == BTN_INVITE:
+        await state.clear()
+        from handlers.referral import referral_menu
+
+        bot = message.bot
+        if bot:
+            await referral_menu(message, bot)
+        return True
+    if text == BTN_TEST:
+        await state.clear()
+        from handlers.test_sub import test_subscription
+
+        await test_subscription(message)
+        return True
+
+    return False
