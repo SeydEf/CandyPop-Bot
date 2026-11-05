@@ -803,7 +803,9 @@ async def _build_renewal_invoice(
     stack_discounts = renew_cfg.get("stack_discounts", False)
 
     g_cfg = await get_global_discount_config()
-    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get("apply_to_renew", True)
+    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get(
+        "apply_to_renew", True
+    )
     if is_g_active and not g_cfg.get("allow_coupon_stack", False):
         allow_coupon = False
 
@@ -1694,7 +1696,9 @@ async def renew_discount_apply_prompt(
     from db.models import get_global_discount_config, is_global_discount_active
 
     g_cfg = await get_global_discount_config()
-    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get("apply_to_renew", True)
+    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get(
+        "apply_to_renew", True
+    )
     if is_g_active and not g_cfg.get("allow_coupon_stack", False):
         await callback.answer(
             "⚠️ با توجه به جشنواره تخفیف همگانی، امکان استفاده از کد تخفیف مجزا وجود ندارد.",
