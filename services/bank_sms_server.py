@@ -5,8 +5,8 @@ import logging
 import secrets
 from typing import Any
 
-from aiohttp import web
 from aiogram import Bot
+from aiohttp import web
 
 from config import ADMIN_CHAT_ID
 from db.models import (
@@ -152,7 +152,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         invoice_id=invoice_id,
     )
 
-    success, msg, _ = await approve_invoice(
+    success, delivery_msg, _ = await approve_invoice(
         invoice_id=invoice_id,
         bot=bot,
         is_reapproval=False,
@@ -160,9 +160,11 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
     )
 
     if not success:
-        logger.error("Failed to approve invoice %s via bank SMS: %s", invoice_id, msg)
+        logger.error(
+            "Failed to approve invoice %s via bank SMS: %s", invoice_id, delivery_msg
+        )
         return web.json_response(
-            {"status": "error", "message": f"خطا در فعال‌سازی سفارش: {msg}"},
+            {"status": "error", "message": f"خطا در فعال‌سازی سفارش: {delivery_msg}"},
             status=500,
         )
 
@@ -174,7 +176,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         invoice=invoice,
         amount_toman=amount_toman,
         fingerprint=fingerprint,
-        delivery_msg=msg,
+        delivery_msg=delivery_msg,
     )
 
     user_msg_id = invoice.get("user_message_id")
@@ -187,6 +189,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
 
     if user_msg_id and tg_id:
         from datetime import datetime, timezone
+
         from utils.formatting import format_datetime, format_price
 
         processed_at_val = (
@@ -194,12 +197,24 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         )
         time_str = format_datetime(processed_at_val, with_seconds=True)
 
+        is_topup = (
+            invoice.get("type") == "topup"
+            or invoice.get("target_email") == "TOPUP"
+            or (invoice.get("duration_days", 0) == 0 and invoice.get("data_gb", 0) == 0)
+        )
+
+        detail_hint = (
+            "✨ <i>موجودی جدید در پیام بعدی برای شما ارسال شد.</i>"
+            if is_topup
+            else "✨ <i>جزئیات و لینک اتصال در پیام بعدی برای شما ارسال شد.</i>"
+        )
+
         user_edit_text = (
             f"✅ <b>فاکتور شماره {invoice_id} با موفقیت به‌صورت خودکار تایید شد.</b>\n\n"
             f"💰 <b>مبلغ پرداختی:</b> <b>{format_price(amount_toman)}</b>\n"
             f"⏳ <b>زمان تایید:</b> <code>{time_str}</code>\n"
             f"💳 <b>وضعیت:</b> {delivery_msg}\n\n"
-            f"✨ <i>جزئیات و لینک اتصال در پیام بعدی برای شما ارسال شد.</i>"
+            f"{detail_hint}"
         )
         try:
             await bot.edit_message_text(
