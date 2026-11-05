@@ -210,7 +210,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         )
 
         user_edit_text = (
-            f"✅ <b>فاکتور شماره {invoice_id} با موفقیت به‌صورت خودکار تایید شد.</b>\n\n"
+            f"✅ <b>فاکتور شماره {invoice_id} با موفقیت تایید شد.</b>\n\n"
             f"💰 <b>مبلغ پرداختی:</b> <b>{format_price(amount_toman)}</b>\n"
             f"⏳ <b>زمان تایید:</b> <code>{time_str}</code>\n"
             f"💳 <b>وضعیت:</b> {delivery_msg}\n\n"
