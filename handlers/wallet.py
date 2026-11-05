@@ -120,7 +120,7 @@ async def wallet_deposit_preset(
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
         )
-        notice_line = f"⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
+        notice_line = "⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
     breakdown_str = "\n".join(breakdown_lines)
 
     text = (
@@ -294,7 +294,7 @@ async def wallet_deposit_custom_input(
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
         )
-        notice_line = f"⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
+        notice_line = "⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
     breakdown_str = "\n".join(breakdown_lines)
 
     text = (

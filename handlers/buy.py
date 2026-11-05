@@ -467,7 +467,6 @@ async def _resolve_buy_invoice_pricing(
     users: int,
     coupon_dc: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from db.discounts import calculate_discount_amount
     from db.models import (
         calculate_global_discount,
         get_global_discount_config,
@@ -1337,7 +1336,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
         )
-        notice_line = f"⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
+        notice_line = "⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
 
     breakdown_str = "\n".join(breakdown_lines)
 

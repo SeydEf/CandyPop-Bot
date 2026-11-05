@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import re
@@ -13777,7 +13778,6 @@ async def admin_online_clients_list(
     except ValueError:
         page = 0
 
-    import asyncio
     import math
 
     from db.models import get_user
