@@ -120,7 +120,7 @@ async def wallet_deposit_preset(
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
         )
-        notice_line = f"⚠️ <i>لطفا دقیقا مبلغ <code>{card_payable_amount}</code> را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</i>\n\n"
+        notice_line = f"⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
     breakdown_str = "\n".join(breakdown_lines)
 
     text = (
@@ -134,7 +134,7 @@ async def wallet_deposit_preset(
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت: {to_persian_digits(expiry_minutes)} دقیقه</b>\n\n"
-        f"✨ <i>پس از انتقال وجه، روی دکمه «✅ ارسال رسید پرداختی» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
+        f"✨ <i>در صورت عدم تأیید خودکار پرداخت، پس از واریز وجه، روی دکمه «✅ ارسال رسید پرداختی» بزنید و تصویر فیش واریزی خود را ارسال کنید.</i>"
     )
 
     await callback.message.edit_text(
@@ -289,12 +289,12 @@ async def wallet_deposit_custom_input(
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"
         )
-        notice_line = f"⚠️ <i>لطفا دقیقا مبلغ <code>{card_payable_amount}</code> را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</i>\n\n"
+        notice_line = f"⚠️ <b>لطفا دقیقا مبلغ بالا را انتقال دهید و آن را به هیچ‌وجه رُند نکنید تا سفارش شما فورا و خودکار تایید شود.</b>\n\n"
     breakdown_str = "\n".join(breakdown_lines)
 
     text = (
         f"💳 <b>فاکتور افزایش موجودی کیف پول</b>\n\n"
-        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
+        f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n\n"
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
@@ -303,7 +303,7 @@ async def wallet_deposit_custom_input(
         f"💳 <b>شماره کارت جهت واریز:</b>\n<code>{card_number}</code>\n"
         f"👤 <b>به نام:</b> {card_holder}\n\n"
         f"⏳ <b>مهلت پرداخت: {to_persian_digits(expiry_minutes)} دقیقه</b>\n\n"
-        f"✨ <i>پس از انتقال وجه، روی دکمه «✅ ارسال رسید پرداختی» بزنید و تصویر فیش واریز را ارسال کنید.</i>"
+        f"✨ <i>در صورت عدم تأیید خودکار پرداخت، پس از واریز وجه، روی دکمه «✅ ارسال رسید پرداختی» بزنید و تصویر فیش واریزی خود را ارسال کنید.</i>"
     )
 
     await message.answer(

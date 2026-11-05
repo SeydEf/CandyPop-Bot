@@ -2798,12 +2798,12 @@ async def generate_unique_card_amount(base_amount: int) -> int:
     existing_amounts = {r["amount"] for r in rows}
 
     available_deltas = [
-        d for d in range(1, 1000) if (base_amount + d) not in existing_amounts
+        d for d in range(1, 300) if (base_amount + d) not in existing_amounts
     ]
     if available_deltas:
         return base_amount + random.choice(available_deltas)
 
-    return base_amount + random.randint(1, 999)
+    return base_amount + random.randint(1, 300)
 
 
 async def find_pending_card_invoice_by_amount(
