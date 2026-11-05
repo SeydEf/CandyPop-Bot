@@ -13,6 +13,7 @@ from db.models import (
     find_pending_card_invoice_by_amount,
     get_all_admins,
     get_bank_sms_config,
+    get_invoice,
     has_admin_permission,
     is_sms_fingerprint_processed,
     record_bank_sms_transaction,
@@ -164,6 +165,10 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
             {"status": "error", "message": f"خطا در فعال‌سازی سفارش: {msg}"},
             status=500,
         )
+
+    updated_invoice = await get_invoice(invoice_id)
+    if updated_invoice:
+        invoice = updated_invoice
 
     admin_notice, review_caption = await _build_bank_sms_admin_messages(
         invoice=invoice,
@@ -359,6 +364,13 @@ async def _build_bank_sms_admin_messages(
     ]
     bank_str = "\n".join(bank_lines)
 
+    from datetime import datetime, timezone
+
+    processed_at_val = (
+        invoice.get("processed_at") or datetime.now(timezone.utc).isoformat()
+    )
+    processed_time_str = format_datetime(processed_at_val, with_seconds=True)
+
     admin_notice = (
         f"{order_title}\n\n"
         f"🧾 <b>شماره فاکتور:</b> <code>{invoice_id}</code>\n"
@@ -370,7 +382,7 @@ async def _build_bank_sms_admin_messages(
         f"💳 <b>اطلاعات تراکنش پیامکی:</b>\n"
         f"{bank_str}\n\n"
         f"✅ <b>وضعیت:</b> {delivery_msg}\n"
-        f"⏳ <b>زمان تایید تراکنش:</b> {format_datetime(invoice.get('processed_at'))}"
+        f"⏳ <b>زمان تایید تراکنش:</b> {processed_time_str}"
     )
 
     review_caption = (
@@ -381,7 +393,8 @@ async def _build_bank_sms_admin_messages(
         f"{specs_str}"
         f"{disc_str}\n"
         f"{price_str}\n\n"
-        f"✅ <b>{delivery_msg}</b>"
+        f"✅ <b>{delivery_msg}</b>\n"
+        f"⏳ <b>زمان تایید:</b> {processed_time_str}"
     )
     if len(review_caption) > 1024:
         review_caption = review_caption[:1020] + "..."
