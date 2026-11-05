@@ -61,6 +61,8 @@ async def init_db() -> None:
             processed_at    TEXT,
             processed_by    INTEGER,
             processed_by_name TEXT
+            user_message_id INTEGER DEFAULT NULL,
+            admin_message_id INTEGER DEFAULT NULL
         );
 
         CREATE TABLE IF NOT EXISTS referrals (
@@ -147,68 +149,6 @@ async def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_bank_sms_fingerprint ON bank_sms_transactions(fingerprint);
         CREATE INDEX IF NOT EXISTS idx_bank_sms_amount ON bank_sms_transactions(amount_toman);
     """)
-
-    try:
-        await db.execute(
-            "ALTER TABLE bot_admins ADD COLUMN permissions TEXT DEFAULT '{}'"
-        )
-    except Exception:
-        pass
-
-    try:
-        await db.execute(
-            "ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0"
-        )
-    except Exception:
-        pass
-
-    try:
-        await db.execute(
-            "ALTER TABLE discount_codes ADD COLUMN rules TEXT DEFAULT '{}'"
-        )
-    except Exception:
-        pass
-
-    try:
-        await db.execute(
-            "ALTER TABLE discount_usage ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 1"
-        )
-    except Exception:
-        pass
-
-    try:
-        await db.execute("ALTER TABLE invoices ADD COLUMN processed_at TEXT")
-    except Exception:
-        pass
-
-    try:
-        await db.execute("ALTER TABLE invoices ADD COLUMN processed_by INTEGER")
-    except Exception:
-        pass
-
-    try:
-        await db.execute("ALTER TABLE invoices ADD COLUMN processed_by_name TEXT")
-    except Exception:
-        pass
-
-    try:
-        await db.execute("ALTER TABLE invoices ADD COLUMN user_message_id INTEGER DEFAULT NULL")
-    except Exception:
-        pass
-
-    try:
-        await db.execute("ALTER TABLE invoices ADD COLUMN admin_message_id INTEGER DEFAULT NULL")
-    except Exception:
-        pass
-
-    try:
-        await db.execute(
-            """DELETE FROM bank_sms_transactions
-               WHERE invoice_id IS NOT NULL
-                 AND invoice_id NOT IN (SELECT id FROM invoices)"""
-        )
-    except Exception:
-        pass
 
     await db.commit()
 
