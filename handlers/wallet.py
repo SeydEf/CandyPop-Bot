@@ -146,6 +146,11 @@ async def wallet_deposit_preset(
     )
     await callback.answer()
 
+    if callback.message:
+        from db.models import set_invoice_user_message_id
+
+        await set_invoice_user_message_id(invoice_id, callback.message.message_id)
+
 
 @router.callback_query(F.data == "deposit_back")
 async def wallet_deposit_back(callback: types.CallbackQuery, state: FSMContext) -> None:
@@ -306,10 +311,14 @@ async def wallet_deposit_custom_input(
         f"✨ <i>در صورت عدم تأیید خودکار پرداخت، پس از واریز وجه، روی دکمه «✅ ارسال رسید پرداختی» بزنید و تصویر فیش واریزی خود را ارسال کنید.</i>"
     )
 
-    await message.answer(
+    sent_msg = await message.answer(
         text,
         reply_markup=card_payment_keyboard(
             invoice_id, card_number, card_payable_amount
         ),
         parse_mode="HTML",
     )
+    if sent_msg:
+        from db.models import set_invoice_user_message_id
+
+        await set_invoice_user_message_id(invoice_id, sent_msg.message_id)

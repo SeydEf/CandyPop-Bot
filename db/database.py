@@ -192,6 +192,16 @@ async def init_db() -> None:
         pass
 
     try:
+        await db.execute("ALTER TABLE invoices ADD COLUMN user_message_id INTEGER DEFAULT NULL")
+    except Exception:
+        pass
+
+    try:
+        await db.execute("ALTER TABLE invoices ADD COLUMN admin_message_id INTEGER DEFAULT NULL")
+    except Exception:
+        pass
+
+    try:
         await db.execute(
             """DELETE FROM bank_sms_transactions
                WHERE invoice_id IS NOT NULL

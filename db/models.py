@@ -358,6 +358,24 @@ async def set_invoice_message_id(invoice_id: str, message_id: int) -> None:
     await db.commit()
 
 
+async def set_invoice_user_message_id(invoice_id: str, message_id: int) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE invoices SET user_message_id = ?, message_id = COALESCE(message_id, ?) WHERE id = ?",
+        (message_id, message_id, invoice_id),
+    )
+    await db.commit()
+
+
+async def set_invoice_admin_message_id(invoice_id: str, message_id: int) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE invoices SET admin_message_id = ? WHERE id = ?",
+        (message_id, invoice_id),
+    )
+    await db.commit()
+
+
 async def get_pending_invoices_by_user(tg_id: int) -> list[dict[str, Any]]:
     await ensure_user(tg_id)
     db = await get_db()

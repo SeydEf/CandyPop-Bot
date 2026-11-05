@@ -1376,6 +1376,11 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     )
     await callback.answer()
 
+    if callback.message:
+        from db.models import set_invoice_user_message_id
+
+        await set_invoice_user_message_id(invoice_id, callback.message.message_id)
+
     asyncio.create_task(
         _expire_invoice_after(invoice_id, callback, expiry_minutes * 60)
     )
@@ -1839,6 +1844,9 @@ async def receive_receipt_photo(
             logger.warning("Failed to send invoice review photo to %d: %s", a_id, e)
 
     if primary_msg_id > 0:
+        from db.models import set_invoice_admin_message_id
+
+        await set_invoice_admin_message_id(invoice_id, primary_msg_id)
         await set_invoice_message_id(invoice_id, primary_msg_id)
 
 
@@ -1967,6 +1975,9 @@ async def receive_receipt_text(
             logger.warning("Failed to send invoice review text to %d: %s", a_id, e)
 
     if primary_msg_id > 0:
+        from db.models import set_invoice_admin_message_id
+
+        await set_invoice_admin_message_id(invoice_id, primary_msg_id)
         await set_invoice_message_id(invoice_id, primary_msg_id)
 
 

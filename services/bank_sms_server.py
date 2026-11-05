@@ -177,8 +177,49 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
         delivery_msg=msg,
     )
 
-    review_msg_id = invoice.get("message_id")
-    if review_msg_id:
+    user_msg_id = invoice.get("user_message_id")
+    if (
+        not user_msg_id
+        and not invoice.get("receipt_file_id")
+        and not invoice.get("receipt_text")
+    ):
+        user_msg_id = invoice.get("message_id")
+
+    if user_msg_id and tg_id:
+        from datetime import datetime, timezone
+        from utils.formatting import format_datetime, format_price
+
+        processed_at_val = (
+            invoice.get("processed_at") or datetime.now(timezone.utc).isoformat()
+        )
+        time_str = format_datetime(processed_at_val, with_seconds=True)
+
+        user_edit_text = (
+            f"✅ <b>فاکتور شماره {invoice_id} با موفقیت به‌صورت خودکار تایید شد.</b>\n\n"
+            f"💰 <b>مبلغ پرداختی:</b> <b>{format_price(amount_toman)}</b>\n"
+            f"⏳ <b>زمان تایید:</b> <code>{time_str}</code>\n"
+            f"💳 <b>وضعیت:</b> {delivery_msg}\n\n"
+            f"✨ <i>جزئیات و لینک اتصال در پیام بعدی برای شما ارسال شد.</i>"
+        )
+        try:
+            await bot.edit_message_text(
+                chat_id=tg_id,
+                message_id=user_msg_id,
+                text=user_edit_text,
+                reply_markup=None,
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.debug("Could not edit user invoice message: %s", e)
+
+    admin_review_msg_id = invoice.get("admin_message_id")
+    if not admin_review_msg_id and (
+        invoice.get("receipt_file_id") or invoice.get("receipt_text")
+    ):
+        admin_review_msg_id = invoice.get("message_id")
+
+    admin_edited = False
+    if admin_review_msg_id:
         try:
             from keyboards.inline_kb import admin_invoice_processed_keyboard
 
@@ -193,7 +234,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                 try:
                     await bot.edit_message_caption(
                         chat_id=a_id,
-                        message_id=review_msg_id,
+                        message_id=admin_review_msg_id,
                         caption=review_caption,
                         reply_markup=admin_invoice_processed_keyboard(
                             invoice_id=invoice_id,
@@ -203,11 +244,12 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                         ),
                         parse_mode="HTML",
                     )
+                    admin_edited = True
                 except Exception:
                     try:
                         await bot.edit_message_text(
                             chat_id=a_id,
-                            message_id=review_msg_id,
+                            message_id=admin_review_msg_id,
                             text=review_caption,
                             reply_markup=admin_invoice_processed_keyboard(
                                 invoice_id=invoice_id,
@@ -217,6 +259,7 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                             ),
                             parse_mode="HTML",
                         )
+                        admin_edited = True
                     except Exception:
                         pass
         except Exception as e:
@@ -224,37 +267,38 @@ async def handle_bank_sms_webhook(request: web.Request) -> web.Response:
                 "Could not update review message for auto-approved invoice: %s", e
             )
 
-    try:
-        admin_ids = [ADMIN_CHAT_ID]
-        for adm in await get_all_admins():
-            a_id = adm["tg_id"]
-            if a_id > 0 and a_id not in admin_ids:
-                if await has_admin_permission(a_id, "approve_invoices"):
-                    admin_ids.append(a_id)
+    if not admin_edited:
+        try:
+            admin_ids = [ADMIN_CHAT_ID]
+            for adm in await get_all_admins():
+                a_id = adm["tg_id"]
+                if a_id > 0 and a_id not in admin_ids:
+                    if await has_admin_permission(a_id, "approve_invoices"):
+                        admin_ids.append(a_id)
 
-        from keyboards.inline_kb import admin_invoice_processed_keyboard
+            from keyboards.inline_kb import admin_invoice_processed_keyboard
 
-        admin_keyboard = admin_invoice_processed_keyboard(
-            invoice_id=invoice_id,
-            tg_id=tg_id,
-            is_rejected=False,
-            origin="notif",
-        )
+            admin_keyboard = admin_invoice_processed_keyboard(
+                invoice_id=invoice_id,
+                tg_id=tg_id,
+                is_rejected=False,
+                origin="notif",
+            )
 
-        for a_id in admin_ids:
-            try:
-                await bot.send_message(
-                    chat_id=a_id,
-                    text=admin_notice,
-                    reply_markup=admin_keyboard,
-                    parse_mode="HTML",
-                )
-            except Exception as e:
-                logger.warning(
-                    "Failed to send bank SMS notice to admin %d: %s", a_id, e
-                )
-    except Exception as e:
-        logger.warning("Error notifying admin of auto-approved invoice: %s", e)
+            for a_id in admin_ids:
+                try:
+                    await bot.send_message(
+                        chat_id=a_id,
+                        text=admin_notice,
+                        reply_markup=admin_keyboard,
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to send bank SMS notice to admin %d: %s", a_id, e
+                    )
+        except Exception as e:
+            logger.warning("Failed to broadcast bank SMS notice to admins: %s", e)
 
     return web.json_response(
         {
