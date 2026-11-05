@@ -8,6 +8,7 @@ from utils.formatting import format_price, to_persian_digits
 
 
 async def volume_keyboard() -> InlineKeyboardMarkup:
+    from db.models import calculate_global_discount, get_global_discount_config
     from services.pricing import (
         calculate_data_price,
         format_volume_button_text,
@@ -17,13 +18,24 @@ async def volume_keyboard() -> InlineKeyboardMarkup:
 
     rows: list[list[InlineKeyboardButton]] = []
     vol_plans = await get_volume_plans()
+    g_cfg = await get_global_discount_config()
+    is_sale = g_cfg.get("enabled", False) and g_cfg.get("apply_to_buy", True)
 
     for item in vol_plans:
         if not item.get("enabled_buy", True):
             continue
         gb = item.get("gb", 0)
         data_price = await calculate_data_price(gb)
-        label = format_volume_button_text(item, data_price)
+        if is_sale:
+            disc, final_p, _ = calculate_global_discount(
+                data_price, g_cfg, is_renewal=False
+            )
+            has_disc = disc > 0
+            label = format_volume_button_text(
+                item, final_p if has_disc else data_price, has_sale=has_disc
+            )
+        else:
+            label = format_volume_button_text(item, data_price)
         btn = InlineKeyboardButton(
             text=label,
             callback_data=f"buy_vol_{gb}",
@@ -171,6 +183,7 @@ def payment_method_keyboard(
     price: int,
     has_discount: bool = False,
     card_enabled: bool = True,
+    allow_coupon: bool = True,
 ) -> InlineKeyboardMarkup:
     discount_btn = (
         InlineKeyboardButton(
@@ -178,21 +191,27 @@ def payment_method_keyboard(
             callback_data=f"buy_discount_remove_{duration}_{users}_{gb}_{price}",
         )
         if has_discount
-        else InlineKeyboardButton(
-            text="🏷️ اعمال کد تخفیف",
-            callback_data=f"buy_discount_apply_{duration}_{users}_{gb}_{price}",
+        else (
+            InlineKeyboardButton(
+                text="🏷️ اعمال کد تخفیف",
+                callback_data=f"buy_discount_apply_{duration}_{users}_{gb}_{price}",
+            )
+            if allow_coupon
+            else None
         )
     )
 
-    rows = [
-        [discount_btn],
+    rows = []
+    if discount_btn:
+        rows.append([discount_btn])
+    rows.append(
         [
             InlineKeyboardButton(
                 text="💰 کیف پول",
                 callback_data=f"buy_pay_wallet_{duration}_{users}_{gb}_{price}",
             ),
-        ],
-    ]
+        ]
+    )
     if card_enabled:
         rows.append(
             [
@@ -544,6 +563,7 @@ def renew_users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
 async def renew_volume_keyboard(
     duration: int = 30, users: int = 1
 ) -> InlineKeyboardMarkup:
+    from db.models import calculate_global_discount, get_global_discount_config
     from services.pricing import (
         calculate_data_price,
         format_volume_button_text,
@@ -553,13 +573,24 @@ async def renew_volume_keyboard(
 
     vol_plans = await get_volume_plans()
     rows: list[list[InlineKeyboardButton]] = []
+    g_cfg = await get_global_discount_config()
+    is_sale = g_cfg.get("enabled", False) and g_cfg.get("apply_to_renew", True)
 
     for item in vol_plans:
         if not item.get("enabled_renew", True):
             continue
         gb = item.get("gb", 0)
         data_price = await calculate_data_price(gb)
-        label = format_volume_button_text(item, data_price)
+        if is_sale:
+            disc, final_p, _ = calculate_global_discount(
+                data_price, g_cfg, is_renewal=True
+            )
+            has_disc = disc > 0
+            label = format_volume_button_text(
+                item, final_p if has_disc else data_price, has_sale=has_disc
+            )
+        else:
+            label = format_volume_button_text(item, data_price)
         btn = InlineKeyboardButton(
             text=label,
             callback_data=f"renew_vol_{gb}",

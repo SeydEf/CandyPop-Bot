@@ -121,6 +121,10 @@ class AdminControlStates(StatesGroup):
 
     waiting_backup_time = State()
     waiting_renewal_discount_percent = State()
+    waiting_global_discount_amount = State()
+    waiting_global_discount_max_cap = State()
+    waiting_global_discount_min_order = State()
+    waiting_global_discount_custom_expiry = State()
 
 
 def _is_owner(event: types.CallbackQuery | types.Message) -> bool:
@@ -408,7 +412,11 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
 
 
 async def _build_pricing_submenu() -> InlineKeyboardMarkup:
-    from db.models import get_card_config
+    from db.models import (
+        get_card_config,
+        get_global_discount_config,
+        is_global_discount_active,
+    )
     from services.pricing import get_pricing_config
 
     card_config = await get_card_config()
@@ -416,6 +424,9 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
 
     pricing_config = await get_pricing_config()
     tiers_status = "🟢" if pricing_config.get("volume_tiers_enabled", True) else "🔴"
+
+    g_cfg = await get_global_discount_config()
+    g_status = "🟢" if is_global_discount_active(g_cfg) else "🔴"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -465,6 +476,12 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="🖼️ تنظیم متن و تصویر تعرفه‌ها",
                     callback_data="admin_pricing_disp_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"🔥 جشنواره و تخفیف همگانی ({g_status})",
+                    callback_data="admin_global_discount_menu",
                 ),
             ],
             [
@@ -4976,6 +4993,12 @@ async def admin_discounts_menu(
         ],
         [
             InlineKeyboardButton(
+                text="🔥 جشنواره و تخفیف همگانی پلن‌ها",
+                callback_data="admin_global_discount_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="🔄 تنظیمات تخفیف تمدید اشتراک",
                 callback_data="admin_renewal_discount_menu",
             )
@@ -7473,6 +7496,1082 @@ async def admin_renewal_discount_save_percent(
     await message.answer(
         f"✅ درصد تخفیف پیش‌فرض تمدید با موفقیت روی <b>{to_persian_digits(val)}٪</b> تنظیم شد.\n\n{text}",
         reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+# =========================================================================
+# بخش جشنواره و تخفیف همگانی پلن‌ها (Global Plan Festival Discount)
+# =========================================================================
+
+
+async def _build_global_discount_menu_content() -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import (
+        format_discount_remaining_time,
+        get_global_discount_config,
+        is_global_discount_active,
+    )
+    from utils.formatting import format_price, to_persian_digits
+
+    cfg = await get_global_discount_config()
+    is_active = is_global_discount_active(cfg)
+    status_str = "🟢 فعال" if is_active else "🔴 غیرفعال"
+    toggle_btn_text = "🔴 غیرفعال‌سازی جشنواره" if is_active else "🟢 فعال‌سازی جشنواره"
+
+    disc_type = cfg.get("discount_type", "percent")
+    type_str = "درصدی (%)" if disc_type == "percent" else "مبلغ ثابت (نقدی)"
+    amount = int(cfg.get("amount", 20) or 0)
+    amount_str = (
+        f"{to_persian_digits(amount)}٪"
+        if disc_type == "percent"
+        else format_price(amount)
+    )
+
+    max_cap = int(cfg.get("max_discount_amount", 0) or 0)
+    max_cap_str = format_price(max_cap) if max_cap > 0 else "بدون سقف"
+
+    min_order = int(cfg.get("min_order_amount", 0) or 0)
+    min_order_str = format_price(min_order) if min_order > 0 else "بدون شرط (همه مبالغ)"
+
+    apply_buy = bool(cfg.get("apply_to_buy", True))
+    apply_renew = bool(cfg.get("apply_to_renew", True))
+    allow_coupon_stack = bool(cfg.get("allow_coupon_stack", False))
+
+    exp_iso = cfg.get("expires_at")
+    rem_time = format_discount_remaining_time(exp_iso)
+    if exp_iso:
+        if rem_time == "پایان‌یافته":
+            dur_str = "⚠️ پایان‌یافته (منقضی)"
+        else:
+            dur_str = f"⏳ مدت‌دار (باقیمانده: {rem_time})"
+    else:
+        dur_str = "♾ دائمی (بدون انقضا)"
+
+    text = (
+        "🔥 <b>مدیریت جشنواره و تخفیف همگانی پلن‌ها</b>\n\n"
+        "در این بخش می‌توانید روی کلیه پلن‌های خرید و تمدید تخفیف همگانی (جشنواره) اعمال کنید.\n\n"
+        f"🔘 <b>وضعیت جشنواره:</b> {status_str}\n"
+        f"🏷 <b>نوع تخفیف:</b> <b>{type_str}</b>\n"
+        f"💎 <b>میزان تخفیف:</b> <b>{amount_str}</b>\n"
+        f"⏱ <b>مدت زمان / انقضا:</b> <b>{dur_str}</b>\n"
+        f"🛑 <b>سقف تخفیف درصدی:</b> {max_cap_str}\n"
+        f"📉 <b>حداقل مبلغ سفارش:</b> {min_order_str}\n"
+        f"🛒 <b>اعمال روی خرید جدید:</b> {'🟢 فعال' if apply_buy else '🔴 غیرفعال'}\n"
+        f"🔄 <b>اعمال روی تمدید اشتراک:</b> {'🟢 فعال' if apply_renew else '🔴 غیرفعال'}\n"
+        f"➕ <b>ترکیب با کد تخفیف:</b> {'🟢 مجاز' if allow_coupon_stack else '🔴 غیرمجاز'}\n\n"
+        "💡 <i>در صورت فعال بودن، قیمت تخفیف‌خورده با نماد 🔥 روی دکمه‌های پلن و پیش‌فاکتور به کاربران نمایش داده می‌شود.</i>\n\n"
+        "جهت تغییر هر یک از موارد، گزینه مورد نظر را انتخاب کنید:"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=toggle_btn_text, callback_data="admin_toggle_global_discount"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🏷 نوع: {type_str}",
+                callback_data="admin_gdisc_type_toggle",
+            ),
+            InlineKeyboardButton(
+                text=f"💎 مقدار: {amount_str}",
+                callback_data="admin_gdisc_amount_start",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"⏱ زمان‌بندی: {dur_str.split(' ')[0]} {dur_str.split(' ')[1] if len(dur_str.split(' ')) > 1 else ''}",
+                callback_data="admin_gdisc_expiry_menu",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🛑 سقف تخفیف: {max_cap_str}",
+                callback_data="admin_gdisc_max_cap_start",
+            ),
+            InlineKeyboardButton(
+                text=f"📉 حداقل سفارش: {min_order_str}",
+                callback_data="admin_gdisc_min_order_start",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"خرید جدید: {'🟢 فعال' if apply_buy else '🔴 غیرفعال'}",
+                callback_data="admin_gdisc_toggle_buy",
+            ),
+            InlineKeyboardButton(
+                text=f"تمدید: {'🟢 فعال' if apply_renew else '🔴 غیرفعال'}",
+                callback_data="admin_gdisc_toggle_renew",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"ترکیب با کد تخفیف: {'🟢 مجاز' if allow_coupon_stack else '🔴 غیرمجاز'}",
+                callback_data="admin_gdisc_toggle_stack",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📢 اطلاع‌رسانی جشنواره به کاربران",
+                callback_data="admin_gdisc_broadcast_prompt",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔄 بازنشانی تنظیمات جشنواره",
+                callback_data="admin_gdisc_reset_confirm",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به تنظیمات مالی", callback_data="admin_pricing_menu"
+            )
+        ],
+    ]
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "admin_global_discount_menu")
+async def admin_global_discount_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+    await state.clear()
+
+    text, keyboard = await _build_global_discount_menu_content()
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message, text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_global_discount")
+async def admin_toggle_global_discount(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import (
+        get_global_discount_config,
+        is_global_discount_active,
+        set_global_discount_config,
+    )
+
+    cfg = await get_global_discount_config()
+    is_active = is_global_discount_active(cfg)
+    new_state = not is_active
+
+    exp_iso = cfg.get("expires_at")
+    if new_state and exp_iso:
+        try:
+            exp_dt = datetime.fromisoformat(exp_iso)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= exp_dt:
+                exp_iso = None
+        except Exception:
+            exp_iso = None
+
+    await set_global_discount_config(enabled=new_state, expires_at=exp_iso)
+    word = "فعال" if new_state else "غیرفعال"
+    await callback.answer(f"✅ جشنواره تخفیف همگانی {word} شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_type_toggle")
+async def admin_gdisc_type_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import get_global_discount_config, set_global_discount_config
+
+    cfg = await get_global_discount_config()
+    current_type = cfg.get("discount_type", "percent")
+    current_amt = int(cfg.get("amount", 20) or 0)
+
+    if current_type == "percent":
+        new_type = "fixed"
+        new_amt = 25000 if current_amt <= 100 else current_amt
+    else:
+        new_type = "percent"
+        new_amt = 20 if current_amt > 100 else current_amt
+
+    await set_global_discount_config(discount_type=new_type, amount=new_amt)
+    type_name = "درصدی (%)" if new_type == "percent" else "مبلغ ثابت (تومان)"
+    await callback.answer(f"✅ نوع تخفیف به {type_name} تغییر یافت.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_amount_start")
+async def admin_gdisc_amount_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import get_global_discount_config
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_global_discount_config()
+    disc_type = cfg.get("discount_type", "percent")
+    await state.set_state(AdminControlStates.waiting_global_discount_amount)
+
+    if disc_type == "percent":
+        text = (
+            "💎 <b>تنظیم درصد تخفیف جشنواره:</b>\n\n"
+            "می‌توانید یکی از درصدهای آماده زیر را انتخاب کنید یا مقدار دلخواه (۱ تا ۱۰۰) را به صورت عدد بفرستید:\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+        )
+        quick_btns = [
+            [
+                InlineKeyboardButton(
+                    text="۱۰٪", callback_data="admin_gdisc_amt_quick_10"
+                ),
+                InlineKeyboardButton(
+                    text="۱۵٪", callback_data="admin_gdisc_amt_quick_15"
+                ),
+                InlineKeyboardButton(
+                    text="۲۰٪", callback_data="admin_gdisc_amt_quick_20"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۲۵٪", callback_data="admin_gdisc_amt_quick_25"
+                ),
+                InlineKeyboardButton(
+                    text="۳۰٪", callback_data="admin_gdisc_amt_quick_30"
+                ),
+                InlineKeyboardButton(
+                    text="۵۰٪", callback_data="admin_gdisc_amt_quick_50"
+                ),
+            ],
+        ]
+    else:
+        text = (
+            "💎 <b>تنظیم مبلغ تخفیف جشنواره (نقدی):</b>\n\n"
+            "می‌توانید یکی از مبالغ آماده زیر را انتخاب کنید یا مبلغ دلخواه را به تومان ارسال کنید:\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>"
+        )
+        quick_btns = [
+            [
+                InlineKeyboardButton(
+                    text="۱۰,۰۰۰ تومان", callback_data="admin_gdisc_amt_quick_10000"
+                ),
+                InlineKeyboardButton(
+                    text="۲۰,۰۰۰ تومان", callback_data="admin_gdisc_amt_quick_20000"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۳۰,۰۰۰ تومان", callback_data="admin_gdisc_amt_quick_30000"
+                ),
+                InlineKeyboardButton(
+                    text="۵۰,۰۰۰ تومان", callback_data="admin_gdisc_amt_quick_50000"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۱۰۰,۰۰۰ تومان", callback_data="admin_gdisc_amt_quick_100000"
+                ),
+            ],
+        ]
+
+    quick_btns.append(
+        [
+            InlineKeyboardButton(
+                text="❌ انصراف و بازگشت",
+                callback_data="admin_global_discount_menu",
+            )
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=quick_btns),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_gdisc_amt_quick_(\d+)$"))
+async def admin_gdisc_amt_quick(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    amt = int(callback.data.split("_")[-1])
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(amount=amt)
+    await state.clear()
+    await callback.answer("✅ مقدار تخفیف تنظیم شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.message(AdminControlStates.waiting_global_discount_amount, F.text)
+async def admin_gdisc_save_amount(message: types.Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+
+    from utils.formatting import to_english_digits
+
+    clean_text = (
+        to_english_digits(message.text.strip())
+        .replace(",", "")
+        .replace("،", "")
+        .replace(" ", "")
+    )
+
+    if clean_text == "/cancel":
+        await state.clear()
+        text, kb = await _build_global_discount_menu_content()
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    from db.models import get_global_discount_config, set_global_discount_config
+
+    cfg = await get_global_discount_config()
+    disc_type = cfg.get("discount_type", "percent")
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_global_discount_menu",
+                )
+            ]
+        ]
+    )
+
+    try:
+        val = int(clean_text)
+        if disc_type == "percent":
+            if val < 1 or val > 100:
+                raise ValueError()
+        else:
+            if val < 1000:
+                raise ValueError()
+    except ValueError:
+        hint = (
+            "یک عدد صحیح بین ۱ تا ۱۰۰"
+            if disc_type == "percent"
+            else "مبلغی معتبر (حداقل ۱,۰۰۰ تومان)"
+        )
+        await message.answer(
+            f"❌ لطفاً {hint} ارسال کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>",
+            reply_markup=cancel_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await set_global_discount_config(amount=val)
+    await state.clear()
+
+    text, kb = await _build_global_discount_menu_content()
+    from utils.formatting import format_price, to_persian_digits
+
+    display_val = (
+        f"{to_persian_digits(val)}٪" if disc_type == "percent" else format_price(val)
+    )
+    await message.answer(
+        f"✅ میزان تخفیف با موفقیت روی <b>{display_val}</b> تنظیم شد.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_gdisc_expiry_menu")
+async def admin_gdisc_expiry_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+    await state.clear()
+
+    from db.models import (
+        format_discount_remaining_time,
+        get_global_discount_config,
+    )
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_global_discount_config()
+    exp_iso = cfg.get("expires_at")
+    rem = format_discount_remaining_time(exp_iso)
+    cur_status = f"⏳ باقیمانده: {rem}" if exp_iso and rem else "♾ دائمی (بدون انقضا)"
+
+    text = (
+        "⏱ <b>تنظیم زمان‌بندی و مدت اعتبار جشنواره</b>\n\n"
+        f"وضعیت فعلی: <b>{cur_status}</b>\n\n"
+        "یکی از مدت‌های آماده زیر را انتخاب کنید یا مدت دلخواه خود را تعیین نمایید:"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="♾ بدون انقضا (دائمی)",
+                    callback_data="admin_gdisc_exp_perm",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۱۲ ساعت", callback_data="admin_gdisc_exp_12h"
+                ),
+                InlineKeyboardButton(
+                    text="۲۴ ساعت (۱ روز)", callback_data="admin_gdisc_exp_24h"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="۳ روز", callback_data="admin_gdisc_exp_3d"),
+                InlineKeyboardButton(
+                    text="۷ روز (۱ هفته)", callback_data="admin_gdisc_exp_7d"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✍️ مدت دلخواه (بر حسب ساعت)",
+                    callback_data="admin_gdisc_exp_custom_start",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به منوی جشنواره",
+                    callback_data="admin_global_discount_menu",
+                )
+            ],
+        ]
+    )
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_gdisc_exp_perm")
+async def admin_gdisc_exp_perm(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(expires_at=None)
+    await callback.answer("✅ انقضای جشنواره برداشته شد (دائمی).", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data.regexp(r"^admin_gdisc_exp_(12h|24h|3d|7d)$"))
+async def admin_gdisc_exp_presets(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    key = callback.data.split("_")[-1]
+    hours_map = {
+        "12h": 12,
+        "24h": 24,
+        "3d": 72,
+        "7d": 168,
+    }
+    h = hours_map.get(key, 24)
+    exp_dt = datetime.now(timezone.utc) + timedelta(hours=h)
+
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(expires_at=exp_dt.isoformat())
+    await callback.answer("✅ مهلت جشنواره با موفقیت تنظیم شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_exp_custom_start")
+async def admin_gdisc_exp_custom_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_global_discount_custom_expiry)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_gdisc_expiry_menu",
+                )
+            ]
+        ]
+    )
+    from utils.helpers import safe_edit_text
+
+    await safe_edit_text(
+        callback.message,
+        "✍️ <b>مدت زمان جشنواره را به ساعت وارد کنید:</b>\n\n"
+        "برای مثال برای ۲ روز عدد <code>48</code> و برای ۱۰ روز عدد <code>240</code> را ارسال کنید.\n\n"
+        "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>",
+        reply_markup=cancel_kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminControlStates.waiting_global_discount_custom_expiry, F.text)
+async def admin_gdisc_save_custom_expiry(
+    message: types.Message, state: FSMContext
+) -> None:
+    if not message.text:
+        return
+
+    from utils.formatting import to_english_digits
+
+    clean_text = (
+        to_english_digits(message.text.strip())
+        .replace(",", "")
+        .replace("،", "")
+        .replace(" ", "")
+    )
+
+    if clean_text == "/cancel":
+        await state.clear()
+        text, kb = await _build_global_discount_menu_content()
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    try:
+        hours = int(clean_text)
+        if hours < 1 or hours > 8760:
+            raise ValueError()
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_gdisc_expiry_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً عددی بین ۱ تا ۸۷۶۰ (معادل حداکثر ۱ سال به ساعت) وارد کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    exp_dt = datetime.now(timezone.utc) + timedelta(hours=hours)
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(expires_at=exp_dt.isoformat())
+    await state.clear()
+
+    text, kb = await _build_global_discount_menu_content()
+    await message.answer(
+        f"✅ مدت اعتبار جشنواره با موفقیت برای <b>{to_persian_digits(hours)} ساعت</b> تنظیم شد.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_gdisc_max_cap_start")
+async def admin_gdisc_max_cap_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_global_discount_max_cap)
+    from utils.helpers import safe_edit_text
+
+    text = (
+        "🛑 <b>تنظیم سقف تخفیف جشنواره:</b>\n\n"
+        "در صورتی که نوع تخفیف «درصدی» باشد، سقف تخفیف مانع از اعمال مبالغ بیش از حد تعیین‌شده می‌شود.\n"
+        "عدد <b>0</b> به معنی بدون سقف است.\n\n"
+        "می‌توانید یکی از گزینه‌های زیر را انتخاب کرده یا مبلغ سقف را به تومان ارسال کنید:"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="♾ بدون سقف (۰)",
+                    callback_data="admin_gdisc_cap_quick_0",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۳۰,۰۰۰ تومان", callback_data="admin_gdisc_cap_quick_30000"
+                ),
+                InlineKeyboardButton(
+                    text="۵۰,۰۰۰ تومان", callback_data="admin_gdisc_cap_quick_50000"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۱۰۰,۰۰۰ تومان",
+                    callback_data="admin_gdisc_cap_quick_100000",
+                ),
+                InlineKeyboardButton(
+                    text="۲۰۰,۰۰۰ تومان",
+                    callback_data="admin_gdisc_cap_quick_200000",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_global_discount_menu",
+                )
+            ],
+        ]
+    )
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_gdisc_cap_quick_(\d+)$"))
+async def admin_gdisc_cap_quick(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    val = int(callback.data.split("_")[-1])
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(max_discount_amount=val)
+    await state.clear()
+    await callback.answer("✅ سقف تخفیف جشنواره به‌روزرسانی شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.message(AdminControlStates.waiting_global_discount_max_cap, F.text)
+async def admin_gdisc_save_max_cap(message: types.Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+
+    from utils.formatting import to_english_digits
+
+    clean_text = (
+        to_english_digits(message.text.strip())
+        .replace(",", "")
+        .replace("،", "")
+        .replace(" ", "")
+    )
+
+    if clean_text == "/cancel":
+        await state.clear()
+        text, kb = await _build_global_discount_menu_content()
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    try:
+        val = int(clean_text)
+        if val < 0:
+            raise ValueError()
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_global_discount_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر (۰ یا مبلغ به تومان) وارد کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(max_discount_amount=val)
+    await state.clear()
+
+    text, kb = await _build_global_discount_menu_content()
+    from utils.formatting import format_price
+
+    lbl = format_price(val) if val > 0 else "بدون سقف"
+    await message.answer(
+        f"✅ سقف تخفیف با موفقیت روی <b>{lbl}</b> تنظیم شد.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_gdisc_min_order_start")
+async def admin_gdisc_min_order_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    await state.set_state(AdminControlStates.waiting_global_discount_min_order)
+    from utils.helpers import safe_edit_text
+
+    text = (
+        "📉 <b>تنظیم حداقل مبلغ سفارش برای اعمال جشنواره:</b>\n\n"
+        "در صورت تعیین حداقل مبلغ، تخفیف تنها روی سفارش‌هایی اعمال می‌شود که مبلغ کل آن‌ها برابر یا بیشتر از این مقدار باشد.\n"
+        "عدد <b>0</b> به معنی بدون شرط حداقل است.\n\n"
+        "می‌توانید یکی از گزینه‌های آماده را انتخاب کرده یا مبلغ دلخواه را به تومان ارسال کنید:"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="♾ بدون حداقل (۰)",
+                    callback_data="admin_gdisc_min_quick_0",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۵۰,۰۰۰ تومان", callback_data="admin_gdisc_min_quick_50000"
+                ),
+                InlineKeyboardButton(
+                    text="۱۰۰,۰۰۰ تومان",
+                    callback_data="admin_gdisc_min_quick_100000",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="۲۰۰,۰۰۰ تومان",
+                    callback_data="admin_gdisc_min_quick_200000",
+                ),
+                InlineKeyboardButton(
+                    text="۳۰۰,۰۰۰ تومان",
+                    callback_data="admin_gdisc_min_quick_300000",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_global_discount_menu",
+                )
+            ],
+        ]
+    )
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^admin_gdisc_min_quick_(\d+)$"))
+async def admin_gdisc_min_quick(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    val = int(callback.data.split("_")[-1])
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(min_order_amount=val)
+    await state.clear()
+    await callback.answer("✅ حداقل مبلغ سفارش جشنواره به‌روزرسانی شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.message(AdminControlStates.waiting_global_discount_min_order, F.text)
+async def admin_gdisc_save_min_order(message: types.Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+
+    from utils.formatting import to_english_digits
+
+    clean_text = (
+        to_english_digits(message.text.strip())
+        .replace(",", "")
+        .replace("،", "")
+        .replace(" ", "")
+    )
+
+    if clean_text == "/cancel":
+        await state.clear()
+        text, kb = await _build_global_discount_menu_content()
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    try:
+        val = int(clean_text)
+        if val < 0:
+            raise ValueError()
+    except ValueError:
+        err_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف و بازگشت",
+                        callback_data="admin_global_discount_menu",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد معتبر (۰ یا مبلغ به تومان) وارد کنید.\n\n"
+            "💡 <i>برای انصراف از دکمه زیر یا دستور /cancel استفاده کنید.</i>",
+            reply_markup=err_kb,
+            parse_mode="HTML",
+        )
+        return
+
+    from db.models import set_global_discount_config
+
+    await set_global_discount_config(min_order_amount=val)
+    await state.clear()
+
+    text, kb = await _build_global_discount_menu_content()
+    from utils.formatting import format_price
+
+    lbl = format_price(val) if val > 0 else "بدون شرط (همه مبالغ)"
+    await message.answer(
+        f"✅ حداقل مبلغ سفارش جشنواره روی <b>{lbl}</b> تنظیم شد.\n\n{text}",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin_gdisc_toggle_buy")
+async def admin_gdisc_toggle_buy(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import get_global_discount_config, set_global_discount_config
+
+    cfg = await get_global_discount_config()
+    new_val = not cfg.get("apply_to_buy", True)
+    await set_global_discount_config(apply_to_buy=new_val)
+    word = "فعال" if new_val else "غیرفعال"
+    await callback.answer(f"✅ اعمال روی خرید جدید {word} شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_toggle_renew")
+async def admin_gdisc_toggle_renew(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import get_global_discount_config, set_global_discount_config
+
+    cfg = await get_global_discount_config()
+    new_val = not cfg.get("apply_to_renew", True)
+    await set_global_discount_config(apply_to_renew=new_val)
+    word = "فعال" if new_val else "غیرفعال"
+    await callback.answer(f"✅ اعمال روی تمدید اشتراک {word} شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_toggle_stack")
+async def admin_gdisc_toggle_stack(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import get_global_discount_config, set_global_discount_config
+
+    cfg = await get_global_discount_config()
+    new_val = not cfg.get("allow_coupon_stack", False)
+    await set_global_discount_config(allow_coupon_stack=new_val)
+    word = "مجاز" if new_val else "غیرمجاز"
+    await callback.answer(f"✅ امکان ترکیب با کد تخفیف {word} شد.", show_alert=True)
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_reset_confirm")
+async def admin_gdisc_reset_confirm(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import reset_global_discount_config
+
+    await reset_global_discount_config()
+    await callback.answer(
+        "✅ تنظیمات جشنواره به حالت پیش‌فرض بازنشانی شد.", show_alert=True
+    )
+    await admin_global_discount_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_gdisc_broadcast_prompt")
+async def admin_gdisc_broadcast_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from db.models import (
+        format_discount_remaining_time,
+        get_all_user_ids,
+        get_global_discount_config,
+        is_global_discount_active,
+    )
+    from utils.formatting import format_price, to_persian_digits
+    from utils.helpers import safe_edit_text
+
+    cfg = await get_global_discount_config()
+    if not is_global_discount_active(cfg):
+        await callback.answer(
+            "⚠️ جشنواره تخفیف در حال حاضر غیرفعال است. لطفاً ابتدا آن را فعال کنید.",
+            show_alert=True,
+        )
+        return
+
+    users = await get_all_user_ids()
+    total_users = len(users)
+
+    disc_type = cfg.get("discount_type", "percent")
+    amt = int(cfg.get("amount", 20) or 0)
+    amt_str = (
+        f"{to_persian_digits(amt)}٪" if disc_type == "percent" else format_price(amt)
+    )
+    exp_iso = cfg.get("expires_at")
+    rem = format_discount_remaining_time(exp_iso)
+    rem_str = rem if rem else "نامحدود (دائمی)"
+
+    preview_msg = (
+        "🎉 <b>جشنواره تخفیف همگانی آغاز شد!</b>\n\n"
+        f"🔥 <b>تخفیف ویژه:</b> <b>{amt_str} تخفیف</b> روی تمامی پلن‌ها\n"
+        f"⏳ <b>مهلت جشنواره:</b> {rem_str}\n\n"
+        "🚀 همین حالا با مراجعه به ربات، اشتراک خود را با تخفیف ویژه تهیه یا تمدید نمایید!"
+    )
+
+    confirm_text = (
+        "📢 <b>ارسال اطلاعیه جشنواره به تمام کاربران</b>\n\n"
+        f"👥 <b>تعداد مخاطبان:</b> {to_persian_digits(total_users)} کاربر\n\n"
+        f"📋 <b>پیش‌نمایش پیام ارسالی:</b>\n"
+        "────────────────────\n"
+        f"{preview_msg}\n"
+        "────────────────────\n\n"
+        "آیا از ارسال این اطلاعیه به تمام کاربران اطمینان دارید؟"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 بله، ارسال همگانی آغاز شود",
+                    callback_data="admin_gdisc_broadcast_send",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_global_discount_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message, confirm_text, reply_markup=kb, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_gdisc_broadcast_send")
+async def admin_gdisc_broadcast_send(
+    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "global_discount"):
+        return
+
+    from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+
+    from db.models import (
+        format_discount_remaining_time,
+        get_all_user_ids,
+        get_global_discount_config,
+    )
+    from keyboards.reply_kb import main_menu_keyboard
+    from utils.formatting import format_price, to_persian_digits
+
+    cfg = await get_global_discount_config()
+    disc_type = cfg.get("discount_type", "percent")
+    amt = int(cfg.get("amount", 20) or 0)
+    amt_str = (
+        f"{to_persian_digits(amt)}٪" if disc_type == "percent" else format_price(amt)
+    )
+    exp_iso = cfg.get("expires_at")
+    rem = format_discount_remaining_time(exp_iso)
+    rem_str = rem if rem else "نامحدود (دائمی)"
+
+    broadcast_text = (
+        "🎉 <b>جشنواره تخفیف همگانی آغاز شد!</b>\n\n"
+        f"🔥 <b>تخفیف ویژه:</b> <b>{amt_str} تخفیف</b> روی تمامی پلن‌ها\n"
+        f"⏳ <b>مهلت جشنواره:</b> {rem_str}\n\n"
+        "🚀 همین حالا با استفاده از منوی زیر، اشتراک خود را با تخفیف استثنایی تهیه یا تمدید نمایید!"
+    )
+
+    user_ids = await get_all_user_ids()
+    total_users = len(user_ids)
+
+    status_msg = await callback.message.answer(
+        f"⏳ <b>درحال ارسال اطلاعیه جشنواره...</b>\n"
+        f"📊 پیشرفت: ۰ از {to_persian_digits(total_users)} کاربر",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+    success_count = 0
+    fail_count = 0
+
+    for idx, u_id in enumerate(user_ids, 1):
+        try:
+            await bot.send_message(
+                chat_id=u_id,
+                text=broadcast_text,
+                reply_markup=main_menu_keyboard(),
+                parse_mode="HTML",
+            )
+            success_count += 1
+        except (TelegramForbiddenError, TelegramBadRequest):
+            fail_count += 1
+        except Exception as e:
+            logger.warning("Festival broadcast failed for user %s: %s", u_id, e)
+            fail_count += 1
+
+        if idx % 50 == 0 or idx == total_users:
+            try:
+                await status_msg.edit_text(
+                    f"⏳ <b>درحال ارسال اطلاعیه جشنواره...</b>\n"
+                    f"📊 پیشرفت: {to_persian_digits(idx)} از {to_persian_digits(total_users)} کاربر\n"
+                    f"✅ موفق: {to_persian_digits(success_count)} | ❌ ناموفق: {to_persian_digits(fail_count)}",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+
+        await asyncio.sleep(0.04)
+
+    report_text = (
+        f"🎉 <b>ارسال اطلاعیه جشنواره با موفقیت به پایان رسید!</b>\n\n"
+        f"👥 <b>کل کاربران هدف:</b> {to_persian_digits(total_users)} کاربر\n"
+        f"✅ <b>تحویل موفق:</b> {to_persian_digits(success_count)} کاربر\n"
+        f"❌ <b>ناموفق / بلاک‌شده:</b> {to_persian_digits(fail_count)} کاربر"
+    )
+    from keyboards.inline_kb import back_to_admin_keyboard
+
+    await status_msg.reply(
+        report_text,
+        reply_markup=back_to_admin_keyboard(),
         parse_mode="HTML",
     )
 

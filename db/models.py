@@ -1783,6 +1783,147 @@ async def reset_renewal_discount_config() -> None:
     await set_setting("renewal_stack_discounts", "0")
 
 
+DEFAULT_GLOBAL_DISCOUNT_CONFIG: dict[str, Any] = {
+    "enabled": False,
+    "discount_type": "percent",  # "percent" or "fixed"
+    "amount": 20,
+    "max_discount_amount": 0,
+    "min_order_amount": 0,
+    "apply_to_buy": True,
+    "apply_to_renew": True,
+    "allow_coupon_stack": False,
+    "expires_at": None,
+}
+
+
+async def get_global_discount_config() -> dict[str, Any]:
+    raw = await get_setting("global_discount_config")
+    if not raw:
+        return dict(DEFAULT_GLOBAL_DISCOUNT_CONFIG)
+    try:
+        data = json.loads(raw)
+        cfg = dict(DEFAULT_GLOBAL_DISCOUNT_CONFIG)
+        cfg.update(data)
+        return cfg
+    except Exception:
+        return dict(DEFAULT_GLOBAL_DISCOUNT_CONFIG)
+
+
+async def set_global_discount_config(
+    cfg: dict[str, Any] | None = None, **kwargs: Any
+) -> None:
+    current = await get_global_discount_config()
+    if cfg:
+        current.update(cfg)
+    if kwargs:
+        current.update(kwargs)
+    await set_setting("global_discount_config", json.dumps(current, ensure_ascii=False))
+
+
+async def reset_global_discount_config() -> None:
+    await set_setting(
+        "global_discount_config",
+        json.dumps(DEFAULT_GLOBAL_DISCOUNT_CONFIG, ensure_ascii=False),
+    )
+
+
+def is_global_discount_active(cfg: dict[str, Any]) -> bool:
+    if not cfg.get("enabled", False):
+        return False
+    exp = cfg.get("expires_at")
+    if exp:
+        try:
+            exp_dt = datetime.fromisoformat(exp)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp_dt:
+                return False
+        except Exception:
+            pass
+    return True
+
+
+def format_discount_remaining_time(expires_at: str | None) -> str | None:
+    if not expires_at:
+        return None
+    from utils.formatting import to_persian_digits
+
+    try:
+        exp_dt = datetime.fromisoformat(expires_at)
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        diff = exp_dt - datetime.now(timezone.utc)
+        total_seconds = int(diff.total_seconds())
+        if total_seconds <= 0:
+            return "پایان‌یافته"
+        days = total_seconds // 86400
+        rem_sec = total_seconds % 86400
+        hours = rem_sec // 3600
+        minutes = (rem_sec % 3600) // 60
+        parts = []
+        if days > 0:
+            parts.append(f"{to_persian_digits(days)} روز")
+        if hours > 0:
+            parts.append(f"{to_persian_digits(hours)} ساعت")
+        if minutes > 0 and days == 0:
+            parts.append(f"{to_persian_digits(minutes)} دقیقه")
+        return " و ".join(parts) if parts else "کمتر از ۱ دقیقه"
+    except Exception:
+        return None
+
+
+def calculate_global_discount(
+    original_price: int,
+    cfg: dict[str, Any],
+    is_renewal: bool = False,
+    has_coupon: bool = False,
+) -> tuple[int, int, dict[str, Any] | None]:
+    if not is_global_discount_active(cfg):
+        return 0, original_price, None
+
+    if is_renewal and not cfg.get("apply_to_renew", True):
+        return 0, original_price, None
+    if not is_renewal and not cfg.get("apply_to_buy", True):
+        return 0, original_price, None
+
+    if has_coupon and not cfg.get("allow_coupon_stack", False):
+        return 0, original_price, None
+
+    min_order = int(cfg.get("min_order_amount", 0) or 0)
+    if min_order > 0 and original_price < min_order:
+        return 0, original_price, None
+
+    disc_type = cfg.get("discount_type", "percent")
+    amount = int(cfg.get("amount", 0) or 0)
+    if amount <= 0:
+        return 0, original_price, None
+
+    from utils.formatting import format_price, to_persian_digits
+
+    if disc_type == "fixed":
+        discount_amount = min(amount, original_price)
+        label = f"تخفیف همگانی {format_price(amount)}"
+    else:
+        discount_amount = int(round(original_price * (amount / 100.0)))
+        max_cap = int(cfg.get("max_discount_amount", 0) or 0)
+        if max_cap > 0:
+            discount_amount = min(discount_amount, max_cap)
+        label = f"جشنواره تخفیف {to_persian_digits(amount)}٪"
+
+    final_price = max(0, original_price - discount_amount)
+    rem_time = format_discount_remaining_time(cfg.get("expires_at"))
+
+    info = {
+        "amount": amount,
+        "discount_type": disc_type,
+        "discount_amount": discount_amount,
+        "label": label,
+        "expires_at": cfg.get("expires_at"),
+        "remaining_text": rem_time,
+    }
+    return discount_amount, final_price, info
+
+
 DEFAULT_BACKUP_CONFIG: dict[str, Any] = {
     "auto_enabled": True,
     "schedule_time": "00:00",
@@ -2073,6 +2214,7 @@ PERMISSION_TITLES: dict[str, str] = {
     "shop_status": "وضعیت فروش و تمدید",
     "reserve_renewal": "تنظیمات تمدید رزرو شده",
     "discounts": "مدیریت کدهای تخفیف",
+    "global_discount": "جشنواره و تخفیف همگانی پلن‌ها",
     "test_sub": "تنظیمات اشتراک تست",
     "bulk_gift": "اعمال هدیه همگانی",
     "alerts": "هشدارها و پایش IP",
@@ -2105,6 +2247,7 @@ DEFAULT_ADMIN_PERMISSIONS: dict[str, bool] = {
     "shop_status": True,
     "reserve_renewal": True,
     "discounts": True,
+    "global_discount": True,
     "test_sub": True,
     "bulk_gift": True,
     "alerts": True,

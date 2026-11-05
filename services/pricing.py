@@ -571,24 +571,35 @@ async def resolve_plan_user_config(plan_gb: int | None = None) -> dict[str, Any]
     }
 
 
-def format_volume_button_text(plan: dict[str, Any], data_price: int) -> str:
+def format_volume_button_text(
+    plan: dict[str, Any],
+    data_price: int,
+    has_sale: bool = False,
+    sale_badge: str = "",
+) -> str:
     from utils.formatting import format_price
 
     is_unlimited = bool(plan.get("is_unlimited", False))
     btn_text = str(plan.get("button_text", "")).strip()
+    prefix = "🔥 " if has_sale else ""
     if not btn_text:
         if is_unlimited:
-            return f"♾️ نامحدود ({format_price(data_price)})"
-        return f"📊 {plan.get('gb', 0)} گیگ ({format_price(data_price)})"
+            return f"{prefix}♾️ نامحدود ({format_price(data_price)})"
+        return f"{prefix}📊 {plan.get('gb', 0)} گیگ ({format_price(data_price)})"
 
     raw_price_str = f"{data_price:,}"
     price_str = format_price(data_price)
     gb_str = "نامحدود" if is_unlimited else str(plan.get("gb", 0))
 
-    return (
+    formatted = (
         btn_text.replace("{gb}", gb_str)
         .replace("{price}", price_str)
         .replace("{raw_price}", raw_price_str)
+    )
+    return (
+        f"{prefix}{formatted}"
+        if (has_sale and not formatted.startswith("🔥"))
+        else formatted
     )
 
 

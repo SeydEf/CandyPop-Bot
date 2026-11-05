@@ -75,8 +75,30 @@ class BuyStates(StatesGroup):
 
 
 async def _get_volume_step_text() -> str:
+    from db.models import (
+        format_discount_remaining_time,
+        get_global_discount_config,
+        is_global_discount_active,
+    )
+
+    g_cfg = await get_global_discount_config()
+    header = ""
+    if is_global_discount_active(g_cfg) and g_cfg.get("apply_to_buy", True):
+        disc_type = g_cfg.get("discount_type", "percent")
+        amt = g_cfg.get("amount", 0)
+        from utils.formatting import format_price, to_persian_digits
+
+        amt_str = (
+            f"{to_persian_digits(amt)}٪"
+            if disc_type == "percent"
+            else format_price(amt)
+        )
+        rem = format_discount_remaining_time(g_cfg.get("expires_at"))
+        rem_str = f" (⏳ مهلت: {rem})" if rem else ""
+        header = f"🔥 <b>جشنواره تخفیف همگانی فعال است! ({amt_str} تخفیف روی پلن‌ها){rem_str}</b>\n\n"
+
     return (
-        "🚀 <b>گام ۱ از ۳: انتخاب حجم ترافیک</b>\n\n"
+        f"{header}🚀 <b>گام ۱ از ۳: انتخاب حجم ترافیک</b>\n\n"
         "حجم مورد نظر خود را از گزینه‌های زیر انتخاب کرده یا حجم دلخواه ارسال نمایید:"
     )
 
@@ -439,6 +461,72 @@ async def _get_duration_step_text(gb: int, users: int) -> str:
     )
 
 
+async def _resolve_buy_invoice_pricing(
+    gb: int,
+    duration: int,
+    users: int,
+    coupon_dc: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from db.discounts import calculate_discount_amount
+    from db.models import (
+        calculate_global_discount,
+        get_global_discount_config,
+        is_global_discount_active,
+    )
+
+    bd = await get_price_breakdown(gb, duration, users)
+    original_price = bd["total_price"]
+
+    g_cfg = await get_global_discount_config()
+    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get("apply_to_buy", True)
+    allow_coupon_stack = bool(g_cfg.get("allow_coupon_stack", False))
+
+    allow_coupon = True
+    if is_g_active and not allow_coupon_stack:
+        allow_coupon = False
+
+    g_disc = 0
+    g_info = None
+    if is_g_active:
+        g_disc, _, g_info = calculate_global_discount(
+            original_price, g_cfg, is_renewal=False, has_coupon=bool(coupon_dc)
+        )
+
+    coupon_disc = 0
+    clean_code = None
+    disc_label = ""
+    if coupon_dc and (allow_coupon or allow_coupon_stack):
+        clean_code = coupon_dc.get("code")
+        base_for_coupon = (
+            max(0, original_price - g_disc) if allow_coupon_stack else original_price
+        )
+        c_amt, _ = calculate_discount_amount(coupon_dc, base_for_coupon)
+        coupon_disc = c_amt
+        rules = coupon_dc.get("rules") or {}
+        disc_type = rules.get("discount_type", "percent")
+        if disc_type == "fixed":
+            disc_label = f"{format_price(rules.get('amount', 0))} تخفیف نقدی"
+        else:
+            percent = rules.get("amount") or coupon_dc.get("discount_percent", 0)
+            disc_label = f"{to_persian_digits(percent)}٪ تخفیف"
+
+    total_discount = min(original_price, g_disc + coupon_disc)
+    final_price = max(0, original_price - total_discount)
+
+    return {
+        "original_price": original_price,
+        "final_price": final_price,
+        "total_discount": total_discount,
+        "global_discount_amount": g_disc,
+        "global_discount_info": g_info,
+        "coupon_code": clean_code,
+        "coupon_label": disc_label,
+        "coupon_discount_amount": coupon_disc,
+        "allow_coupon": allow_coupon,
+        "is_global_active": is_g_active,
+    }
+
+
 async def _build_pre_invoice_text(
     gb: int,
     duration: int,
@@ -448,6 +536,8 @@ async def _build_pre_invoice_text(
     discount_code: str | None = None,
     discount_label: str = "",
     discount_amount: int = 0,
+    global_discount_info: dict[str, Any] | None = None,
+    global_discount_amount: int = 0,
     title: str = "📋 <b>پیش‌فاکتور خرید اشتراک</b>",
 ) -> str:
     bd = await get_price_breakdown(gb, duration, users)
@@ -468,18 +558,33 @@ async def _build_pre_invoice_text(
         breakdown_lines.append(
             f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
         )
+    if global_discount_amount > 0:
+        g_lbl = (
+            global_discount_info.get("label", "جشنواره تخفیف همگانی")
+            if global_discount_info
+            else "جشنواره تخفیف همگانی"
+        )
+        breakdown_lines.append(f"• 🎉 {g_lbl}: -{format_price(global_discount_amount)}")
     if discount_amount > 0:
         lbl = (
             f" ({discount_code} | {discount_label})"
             if discount_code and discount_label
             else (f" ({discount_code})" if discount_code else "")
         )
-        breakdown_lines.append(f"• تخفیف{lbl}: -{format_price(discount_amount)}")
+        breakdown_lines.append(f"• 🏷️ تخفیف{lbl}: -{format_price(discount_amount)}")
 
     breakdown_str = "\n".join(breakdown_lines)
 
+    rem_line = ""
+    if global_discount_info and global_discount_info.get("remaining_time"):
+        rem_line = f"⏳ <b>مهلت باقیمانده جشنواره:</b> {global_discount_info['remaining_time']}\n"
+
+    final_title = title
+    if global_discount_amount > 0 and not title.startswith("🎉"):
+        final_title = f"🎉 <b>{title.replace('📋 ', '')}</b>"
+
     return (
-        f"{title}\n\n"
+        f"{final_title}\n\n"
         f"📦 <b>مشخصات سرویس:</b>\n"
         f"• حجم ترافیک: <b>{vol_label}</b>\n"
         f"• ظرفیت اتصال: <b>{to_persian_digits(users)} کاربر</b>\n"
@@ -487,6 +592,7 @@ async def _build_pre_invoice_text(
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
+        f"{rem_line}"
         f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
         f"💳 روش پرداخت مورد نظر خود را انتخاب کنید:"
     )
@@ -618,24 +724,40 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
         return
 
     await state.clear()
-    bd = await get_price_breakdown(gb, days, users)
-    price = bd["total_price"]
+    res = await _resolve_buy_invoice_pricing(gb, days, users)
+    price = res["final_price"]
+    await state.update_data(
+        original_price=res["original_price"],
+        final_price=price,
+        global_discount_amount=res["global_discount_amount"],
+    )
 
     text = await _build_pre_invoice_text(
-        gb=gb, duration=days, users=users, final_price=price
+        gb=gb,
+        duration=days,
+        users=users,
+        final_price=price,
+        original_price=res["original_price"],
+        global_discount_info=res["global_discount_info"],
+        global_discount_amount=res["global_discount_amount"],
     )
     card_cfg = await get_card_config()
     await message.answer(
         text,
         reply_markup=payment_method_keyboard(
-            days, users, gb, price, card_enabled=card_cfg.get("enabled", True)
+            days,
+            users,
+            gb,
+            price,
+            card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=res["allow_coupon"],
         ),
         parse_mode="HTML",
     )
 
 
 @router.callback_query(F.data.regexp(r"^buy_dur_\d+_\d+_\d+$"))
-async def buy_select_duration(callback: types.CallbackQuery) -> None:
+async def buy_select_duration(callback: types.CallbackQuery, state: FSMContext) -> None:
     parts = callback.data.split("_")
     gb = int(parts[2])
     users = int(parts[3])
@@ -645,17 +767,33 @@ async def buy_select_duration(callback: types.CallbackQuery) -> None:
         await callback.answer("⚠️ این مدت زمان برای این پلن فعال نیست.", show_alert=True)
         return
 
-    bd = await get_price_breakdown(gb, duration, users)
-    price = bd["total_price"]
+    res = await _resolve_buy_invoice_pricing(gb, duration, users)
+    price = res["final_price"]
+    await state.update_data(
+        original_price=res["original_price"],
+        final_price=price,
+        global_discount_amount=res["global_discount_amount"],
+    )
 
     text = await _build_pre_invoice_text(
-        gb=gb, duration=duration, users=users, final_price=price
+        gb=gb,
+        duration=duration,
+        users=users,
+        final_price=price,
+        original_price=res["original_price"],
+        global_discount_info=res["global_discount_info"],
+        global_discount_amount=res["global_discount_amount"],
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
         text,
         reply_markup=payment_method_keyboard(
-            duration, users, gb, price, card_enabled=card_cfg.get("enabled", True)
+            duration,
+            users,
+            gb,
+            price,
+            card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=res["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -697,6 +835,8 @@ async def buy_wallet_payment(callback: types.CallbackQuery) -> None:
         breakdown_lines.append(
             f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
         )
+    if bd["total_price"] > price:
+        breakdown_lines.append(f"• تخفیف: -{format_price(bd['total_price'] - price)}")
 
     breakdown_str = "\n".join(breakdown_lines)
 
@@ -882,6 +1022,20 @@ async def buy_wallet_confirm(
 async def buy_discount_apply_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
+    from db.models import get_global_discount_config, is_global_discount_active
+
+    g_cfg = await get_global_discount_config()
+    if (
+        is_global_discount_active(g_cfg)
+        and g_cfg.get("apply_to_buy", True)
+        and not g_cfg.get("allow_coupon_stack", False)
+    ):
+        await callback.answer(
+            "⚠️ با توجه به جشنواره تخفیف همگانی، امکان استفاده از کد تخفیف مجزا وجود ندارد.",
+            show_alert=True,
+        )
+        return
+
     parts = callback.data.split("_")
     duration = int(parts[3])
     users = int(parts[4])
@@ -933,8 +1087,16 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
 
     if message.text.strip() == "/cancel":
         await state.clear()
+        res = await _resolve_buy_invoice_pricing(gb, duration, users)
+        final_price = res["final_price"]
         text = await _build_pre_invoice_text(
-            gb=gb, duration=duration, users=users, final_price=original_price
+            gb=gb,
+            duration=duration,
+            users=users,
+            final_price=final_price,
+            original_price=res["original_price"],
+            global_discount_info=res["global_discount_info"],
+            global_discount_amount=res["global_discount_amount"],
         )
         card_cfg = await get_card_config()
         await message.answer(
@@ -943,8 +1105,9 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
                 duration,
                 users,
                 gb,
-                original_price,
+                final_price,
                 card_enabled=card_cfg.get("enabled", True),
+                allow_coupon=res["allow_coupon"],
             ),
             parse_mode="HTML",
         )
@@ -983,15 +1146,11 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         )
         return
 
-    discount_amount, final_price = calculate_discount_amount(dc, original_price)
-    clean_code = dc["code"]
-    rules = dc.get("rules") or {}
-    disc_type = rules.get("discount_type", "percent")
-    if disc_type == "fixed":
-        disc_label = f"{format_price(rules.get('amount', 0))} تخفیف نقدی"
-    else:
-        percent = rules.get("amount") or dc["discount_percent"]
-        disc_label = f"{to_persian_digits(percent)}٪ تخفیف"
+    res = await _resolve_buy_invoice_pricing(gb, duration, users, coupon_dc=dc)
+    clean_code = res["coupon_code"]
+    disc_label = res["coupon_label"]
+    discount_amount = res["coupon_discount_amount"]
+    final_price = res["final_price"]
 
     await state.update_data(
         discount_code=clean_code,
@@ -999,6 +1158,8 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         discount_amount=discount_amount,
         final_price=final_price,
         price=final_price,
+        original_price=res["original_price"],
+        global_discount_amount=res["global_discount_amount"],
     )
     await state.set_state(None)
 
@@ -1007,10 +1168,12 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
         duration=duration,
         users=users,
         final_price=final_price,
-        original_price=original_price,
+        original_price=res["original_price"],
         discount_code=clean_code,
         discount_label=disc_label,
         discount_amount=discount_amount,
+        global_discount_info=res["global_discount_info"],
+        global_discount_amount=res["global_discount_amount"],
         title="🎉 <b>کد تخفیف با موفقیت اعمال شد!</b>\n📋 <b>پیش‌فاکتور خرید اشتراک</b>",
     )
     card_cfg = await get_card_config()
@@ -1023,6 +1186,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
             final_price,
             has_discount=True,
             card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=res["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1037,11 +1201,17 @@ async def buy_discount_cancel(callback: types.CallbackQuery, state: FSMContext) 
     _price = int(parts[6])
 
     await state.clear()
-    bd = await get_price_breakdown(gb, duration, users)
-    original_price = bd["total_price"]
+    res = await _resolve_buy_invoice_pricing(gb, duration, users)
+    final_price = res["final_price"]
 
     text = await _build_pre_invoice_text(
-        gb=gb, duration=duration, users=users, final_price=original_price
+        gb=gb,
+        duration=duration,
+        users=users,
+        final_price=final_price,
+        original_price=res["original_price"],
+        global_discount_info=res["global_discount_info"],
+        global_discount_amount=res["global_discount_amount"],
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -1050,8 +1220,9 @@ async def buy_discount_cancel(callback: types.CallbackQuery, state: FSMContext) 
             duration,
             users,
             gb,
-            original_price,
+            final_price,
             card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=res["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1067,11 +1238,17 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
     _ = int(parts[6])
 
     await state.update_data(discount_code=None, discount_percent=None, final_price=None)
-    bd = await get_price_breakdown(gb, duration, users)
-    original_price = bd["total_price"]
+    res = await _resolve_buy_invoice_pricing(gb, duration, users)
+    final_price = res["final_price"]
 
     text = await _build_pre_invoice_text(
-        gb=gb, duration=duration, users=users, final_price=original_price
+        gb=gb,
+        duration=duration,
+        users=users,
+        final_price=final_price,
+        original_price=res["original_price"],
+        global_discount_info=res["global_discount_info"],
+        global_discount_amount=res["global_discount_amount"],
     )
     card_cfg = await get_card_config()
     await callback.message.edit_text(
@@ -1080,8 +1257,9 @@ async def buy_discount_remove(callback: types.CallbackQuery, state: FSMContext) 
             duration,
             users,
             gb,
-            original_price,
+            final_price,
             card_enabled=card_cfg.get("enabled", True),
+            allow_coupon=res["allow_coupon"],
         ),
         parse_mode="HTML",
     )
@@ -1113,9 +1291,7 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
     original_price = data.get("original_price", price)
     final_price = data.get("final_price")
 
-    payable_amount = (
-        final_price if (discount_code and final_price is not None) else price
-    )
+    payable_amount = final_price if final_price is not None else price
 
     from db.models import generate_unique_card_amount
 
@@ -1149,11 +1325,14 @@ async def buy_card_payment(callback: types.CallbackQuery, state: FSMContext) -> 
         breakdown_lines.append(
             f"• افزایش مدت ({to_persian_digits(duration)} روز): +{format_price(bd['duration_surcharge'])}"
         )
-    if discount_code and original_price > payable_amount:
+    if original_price > payable_amount:
         discount_amount = original_price - payable_amount
-        breakdown_lines.append(
+        lbl = (
             f"• تخفیف ({discount_code}): -{format_price(discount_amount)}"
+            if discount_code
+            else f"• تخفیف: -{format_price(discount_amount)}"
         )
+        breakdown_lines.append(lbl)
     if unique_delta > 0:
         breakdown_lines.append(
             f"• شناسه اختصاصی واریز: +{to_persian_digits(unique_delta)} تومان"

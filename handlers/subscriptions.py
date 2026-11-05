@@ -763,8 +763,11 @@ async def _build_renewal_invoice(
 ) -> tuple[str, dict[str, Any]]:
     from db.discounts import calculate_discount_amount
     from db.models import (
+        calculate_global_discount,
+        get_global_discount_config,
         get_renewal_discount_config,
         get_reserve_renewal_config,
+        is_global_discount_active,
     )
 
     email = data.get("renew_email", "")
@@ -799,6 +802,11 @@ async def _build_renewal_invoice(
     allow_coupon = renew_cfg.get("allow_coupon", True)
     stack_discounts = renew_cfg.get("stack_discounts", False)
 
+    g_cfg = await get_global_discount_config()
+    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get("apply_to_renew", True)
+    if is_g_active and not g_cfg.get("allow_coupon_stack", False):
+        allow_coupon = False
+
     default_discount_amount = 0
     coupon_discount_amount = 0
     coupon_code_str = None
@@ -830,6 +838,14 @@ async def _build_renewal_invoice(
     else:
         total_discount = min(original_price, default_discount_amount)
 
+    global_discount_amount = 0
+    global_discount_info = None
+    if is_g_active:
+        global_discount_amount, _, global_discount_info = calculate_global_discount(
+            original_price, g_cfg, is_renewal=True, has_coupon=bool(coupon_dc)
+        )
+        total_discount = min(original_price, total_discount + global_discount_amount)
+
     final_price = max(0, original_price - total_discount)
 
     vol_label = await format_volume_label(gb, with_fair_policy=True)
@@ -848,12 +864,26 @@ async def _build_renewal_invoice(
         breakdown_lines.append(
             f"• تخفیف تمدید ({to_persian_digits(default_percent)}٪): -{format_price(default_discount_amount)}"
         )
+    if global_discount_amount > 0:
+        g_lbl = (
+            global_discount_info.get("label", "جشنواره تخفیف همگانی")
+            if global_discount_info
+            else "جشنواره تخفیف همگانی"
+        )
+        breakdown_lines.append(f"• 🎉 {g_lbl}: -{format_price(global_discount_amount)}")
     if coupon_code_str and coupon_discount_amount > 0:
         breakdown_lines.append(
             f"• کد تخفیف ({coupon_code_str}): -{format_price(coupon_discount_amount)}"
         )
 
     breakdown_str = "\n".join(breakdown_lines)
+
+    rem_line = ""
+    if global_discount_info and global_discount_info.get("remaining_time"):
+        rem_line = f"⏳ <b>مهلت باقیمانده جشنواره:</b> {global_discount_info['remaining_time']}\n"
+
+    if global_discount_amount > 0 and not title.startswith("🎉"):
+        title = f"🎉 <b>{title.replace('📋 ', '')}</b>"
 
     text = (
         f"{title}\n\n"
@@ -865,6 +895,7 @@ async def _build_renewal_invoice(
         f"💳 <b>ریز محاسبات:</b>\n"
         f"{breakdown_str}\n"
         f"──────────────\n"
+        f"{rem_line}"
         f"💎 <b>مبلغ قابل پرداخت:</b> <b>{format_price(final_price)}</b>\n\n"
         f"💳 روش پرداخت را انتخاب کنید:"
     )
@@ -875,6 +906,8 @@ async def _build_renewal_invoice(
         "total_discount": total_discount,
         "coupon_code": coupon_code_str,
         "coupon_discount_amount": coupon_discount_amount,
+        "global_discount_amount": global_discount_amount,
+        "global_discount_info": global_discount_info,
         "allow_coupon": allow_coupon,
         "has_coupon": bool(coupon_code_str),
         "default_enabled": default_enabled,
@@ -1657,6 +1690,17 @@ async def renew_discount_apply_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
     from db.models import get_renewal_discount_config
+
+    from db.models import get_global_discount_config, is_global_discount_active
+
+    g_cfg = await get_global_discount_config()
+    is_g_active = is_global_discount_active(g_cfg) and g_cfg.get("apply_to_renew", True)
+    if is_g_active and not g_cfg.get("allow_coupon_stack", False):
+        await callback.answer(
+            "⚠️ با توجه به جشنواره تخفیف همگانی، امکان استفاده از کد تخفیف مجزا وجود ندارد.",
+            show_alert=True,
+        )
+        return
 
     renew_cfg = await get_renewal_discount_config()
     if not renew_cfg.get("allow_coupon", True):
