@@ -246,37 +246,37 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📊 آمار و گزارشات جامع",
+                    text="📊 آمار",
                     callback_data="admin_stats_menu",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="👥 مدیریت کاربران و اشتراک‌ها",
+                    text="👥 کاربران",
                     callback_data="admin_sub_users_menu",
                 ),
                 InlineKeyboardButton(
-                    text="💰 مالی، پرداخت و تعرفه‌ها",
+                    text="💰 مالی",
                     callback_data="admin_pricing_menu",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🏷️ تخفیف‌ها، جشنواره و هدایا",
+                    text="🏷️ تخفیف‌ها",
                     callback_data="admin_discounts_hub_menu",
                 ),
                 InlineKeyboardButton(
-                    text="📡 سرور، اینباند و زیرساخت",
+                    text="📡 سرورها",
                     callback_data="admin_servers_menu",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🔔 هشدارها و زمان‌بندها",
+                    text="🔔 هشدارها",
                     callback_data="admin_alerts_menu",
                 ),
                 InlineKeyboardButton(
-                    text="📢 ارتباطات و تنظیمات عمومی",
+                    text="⚙️ تنظیمات",
                     callback_data="admin_settings_menu",
                 ),
             ],
@@ -421,6 +421,7 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
 async def _build_discounts_hub_menu() -> InlineKeyboardMarkup:
     from db.models import (
         get_global_discount_config,
+        get_renewal_discount_config,
         is_global_discount_active,
     )
     from services.pricing import get_pricing_config
@@ -430,6 +431,9 @@ async def _build_discounts_hub_menu() -> InlineKeyboardMarkup:
 
     g_cfg = await get_global_discount_config()
     g_status = "🟢" if is_global_discount_active(g_cfg) else "🔴"
+
+    ren_cfg = await get_renewal_discount_config()
+    ren_status = "🟢" if ren_cfg.get("enabled", False) else "🔴"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -449,6 +453,12 @@ async def _build_discounts_hub_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=f"📊 پله‌های تخفیف حجم ({tiers_status})",
                     callback_data="admin_price_tiers_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"🔄 تخفیف تمدید اشتراک ({ren_status})",
+                    callback_data="admin_renewal_discount_menu",
                 ),
             ],
             [
@@ -5020,18 +5030,6 @@ async def admin_discounts_menu(
                 text="➕ ساخت کد تخفیف جدید", callback_data="admin_disc_create_menu"
             )
         ],
-        [
-            InlineKeyboardButton(
-                text="🔥 جشنواره و تخفیف همگانی پلن‌ها",
-                callback_data="admin_global_discount_menu",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🔄 تنظیمات تخفیف تمدید اشتراک",
-                callback_data="admin_renewal_discount_menu",
-            )
-        ],
     ]
 
     for dc in codes[:10]:
@@ -7300,8 +7298,8 @@ async def _build_renewal_discount_menu_content() -> tuple[str, InlineKeyboardMar
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به کدهای تخفیف",
-                    callback_data="admin_discounts_menu",
+                    text="🔙 بازگشت به تخفیف‌ها و هدایا",
+                    callback_data="admin_discounts_hub_menu",
                 )
             ],
         ]
