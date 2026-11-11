@@ -10377,6 +10377,7 @@ async def admin_bank_sms_gen_key(
     if not await _require_permission(callback, "card_config"):
         return
     import secrets
+
     from db.models import set_bank_sms_config
 
     new_key = secrets.token_hex(16)

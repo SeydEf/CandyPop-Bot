@@ -173,10 +173,10 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot) -> None:
         return
 
     invoice_id = callback.data[len("admin_approve_") :]
-    from services.invoice_service import approve_invoice
-
     import html
     from datetime import datetime, timezone
+
+    from services.invoice_service import approve_invoice
 
     admin_name = html.escape(
         callback.from_user.full_name

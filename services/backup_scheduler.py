@@ -42,8 +42,7 @@ def _create_backup_archive_sync(temp_dir: str) -> tuple[str, int]:
 
     try:
         with open(dump_sql_path, "w", encoding="utf-8") as f:
-            for line in dest_con.iterdump():
-                f.write(f"{line}\n")
+            f.writelines(f"{line}\n" for line in dest_con.iterdump())
     finally:
         dest_con.close()
 

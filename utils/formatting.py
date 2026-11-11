@@ -43,7 +43,7 @@ def format_size_gb(gb: float) -> str:
     return f"{gb:.1f}GB"
 
 
-def format_detailed_traffic(bytes_val: float | int) -> str:
+def format_detailed_traffic(bytes_val: float) -> str:
     if bytes_val <= 0:
         return f"{to_persian_digits(0)} مگابایت ({to_persian_digits(0)} گیگابایت)"
 
@@ -67,7 +67,7 @@ def format_detailed_traffic(bytes_val: float | int) -> str:
     return f"{mb_str} مگابایت ({gb_str} گیگابایت)"
 
 
-def format_size_persian_gb(bytes_val: float | int) -> str:
+def format_size_persian_gb(bytes_val: float) -> str:
     if bytes_val <= 0:
         return "نامحدود"
     gb = bytes_val / (1024**3)

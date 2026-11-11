@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 import uuid
+from typing import Any
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
@@ -36,10 +36,6 @@ from keyboards.inline_kb import (
     subscription_manage_keyboard,
     subscriptions_list_keyboard,
 )
-from services.renewal_service import (
-    activate_reserved_renewal,
-    is_client_expired,
-)
 from keyboards.reply_kb import BTN_MY_SUBS
 from services import xui_api
 from services.pricing import (
@@ -49,6 +45,10 @@ from services.pricing import (
     is_duration_allowed_for_volume,
     is_unlimited_volume,
 )
+from services.renewal_service import (
+    activate_reserved_renewal,
+    is_client_expired,
+)
 from utils.formatting import (
     format_detailed_traffic,
     format_price,
@@ -57,7 +57,7 @@ from utils.formatting import (
     persian_to_english_digits,
     to_persian_digits,
 )
-from utils.helpers import generate_qr, _build_sub_link
+from utils.helpers import _build_sub_link, generate_qr
 
 logger = logging.getLogger(__name__)
 router = Router(name="subscriptions")
@@ -1251,8 +1251,8 @@ async def renew_back_to_users(callback: types.CallbackQuery, state: FSMContext) 
 
     user_cfg = await resolve_plan_user_config(gb)
     if not user_cfg["allow_selection"]:
-        from keyboards.inline_kb import renew_volume_keyboard
         from db.models import get_reserve_renewal_config
+        from keyboards.inline_kb import renew_volume_keyboard
 
         reserve_cfg = await get_reserve_renewal_config()
         reserve_enabled = bool(reserve_cfg.get("enabled", True))
@@ -1689,9 +1689,11 @@ async def renew_wallet_confirm(
 async def renew_discount_apply_prompt(
     callback: types.CallbackQuery, state: FSMContext
 ) -> None:
-    from db.models import get_renewal_discount_config
-
-    from db.models import get_global_discount_config, is_global_discount_active
+    from db.models import (
+        get_global_discount_config,
+        get_renewal_discount_config,
+        is_global_discount_active,
+    )
 
     g_cfg = await get_global_discount_config()
     is_g_active = is_global_discount_active(g_cfg) and g_cfg.get("apply_to_renew", True)
@@ -2024,9 +2026,9 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
 
         await set_invoice_user_message_id(invoice_id, callback.message.message_id)
 
-    from handlers.buy import _expire_invoice_after
-
     import asyncio
+
+    from handlers.buy import _expire_invoice_after
 
     asyncio.create_task(
         _expire_invoice_after(invoice_id, callback, expiry_minutes * 60)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from aiogram import Bot, F, Router, types
