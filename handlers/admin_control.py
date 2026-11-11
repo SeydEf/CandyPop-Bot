@@ -172,31 +172,30 @@ async def _require_permission(
 
 async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     config = await get_pricing_config()
-    test_config = await get_test_sub_config()
     from db.models import (
         get_alert_config,
-        get_card_config,
+        get_backup_config,
         get_channel_lock_config,
+        get_global_discount_config,
+        get_inbound_monitor_config,
         get_ip_checker_config,
-        get_pricing_display_config,
         get_referral_config,
-        get_schedulers_last_run,
         get_shop_status,
         get_start_first_use_config,
-        get_start_message_config,
+        is_global_discount_active,
     )
 
     ref_config = await get_referral_config()
-    card_config = await get_card_config()
     alert_config = await get_alert_config()
     ip_config = await get_ip_checker_config()
-    schedulers_last_run = await get_schedulers_last_run()
     shop_status = await get_shop_status()
-    start_msg_config = await get_start_message_config()
-    pricing_disp_config = await get_pricing_display_config()
     channel_lock_config = await get_channel_lock_config()
+    inbound_mon_config = await get_inbound_monitor_config()
+    backup_config = await get_backup_config()
+    global_discount_cfg = await get_global_discount_config()
+
     channel_lock_status_str = (
-        "🟢 فعال" if channel_lock_config["enabled"] else "🔴 غیرفعال"
+        "🟢 فعال" if channel_lock_config.get("enabled", False) else "🔴 غیرفعال"
     )
     start_first_use_enabled = await get_start_first_use_config()
     start_first_use_str = (
@@ -204,124 +203,43 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
     )
 
     pur_status_str = (
-        "🟢 باز (فعال)" if shop_status["purchases_enabled"] else "🔴 بسته (غیرفعال)"
+        "🟢 باز" if shop_status.get("purchases_enabled", True) else "🔴 بسته"
     )
     ren_status_str = (
-        "🟢 باز (فعال)" if shop_status["renewals_enabled"] else "🔴 بسته (غیرفعال)"
+        "🟢 باز" if shop_status.get("renewals_enabled", True) else "🔴 بسته"
     )
 
-    card_num = card_config["card_number"] or "تنظیم نشده"
-    card_own = card_config["card_holder"] or "تنظیم نشده"
+    base_rate = config["base_gb_rate"]
+    volume_tiers_enabled = config.get("volume_tiers_enabled", True)
+    tiers_status = "🟢 فعال" if volume_tiers_enabled else "🔴 غیرفعال"
+
+    g_status = (
+        "🟢 فعال" if is_global_discount_active(global_discount_cfg) else "🔴 غیرفعال"
+    )
 
     alert_sch_enabled = bool(alert_config.get("enabled", True))
     ip_checker_enabled = bool(ip_config.get("enabled", True))
+    auto_delete_enabled = bool(alert_config.get("auto_delete_enabled", True))
 
     alert_sch_status = "🟢 فعال" if alert_sch_enabled else "🔴 غیرفعال"
     ip_sch_status = "🟢 فعال" if ip_checker_enabled else "🔴 غیرفعال"
+    auto_del_status = "🟢 فعال" if auto_delete_enabled else "🔴 غیرفعال"
 
-    last_alert_raw = schedulers_last_run.get("alert_scheduler")
-    last_ip_raw = schedulers_last_run.get("ip_checker")
-
-    last_alert_time = (
-        format_datetime(last_alert_raw) if last_alert_raw else "هنوز اجرا نشده"
-    )
-    last_ip_time = format_datetime(last_ip_raw) if last_ip_raw else "هنوز اجرا نشده"
-
-    schedulers_text = (
-        f"  • 🔔 هشدارهای حجم و انقضا: {alert_sch_status} | آخرین پایش: <code>{last_alert_time}</code>\n"
-        f"  • 🛡 پایش سقف IP: {ip_sch_status} | آخرین پایش: <code>{last_ip_time}</code>\n"
-    )
-
-    min_gb_alert = float(alert_config["min_gb"])
-    min_days_alert = int(alert_config["min_days"])
-    auto_delete_days = int(alert_config["auto_delete_days"])
-    interval_minutes = int(alert_config.get("interval_minutes", 30))
-    low_gb_enabled = bool(alert_config.get("low_gb_enabled", True))
-    expiring_days_enabled = bool(alert_config.get("expiring_days_enabled", True))
-
-    base_rate = config["base_gb_rate"]
-    user_surcharge = config["user_surcharge"]
-    dur_surcharges: dict[int, int] = config["duration_surcharges"]
-    volume_tiers: list[tuple[int, int]] = config["volume_tiers"]
-    fallback_rate: int = config["fallback_gb_rate"]
-
-    test_gb = test_config["gb"]
-    test_dur = test_config["duration_days"]
-    test_cool = test_config["cooldown_days"]
-    test_cool_enabled = test_config.get("cooldown_enabled", True)
-    test_cool_str = (
-        f"{to_persian_digits(test_cool)} روز"
-        if test_cool_enabled
-        else "🔴 غیرفعال (فقط یک‌بار)"
-    )
-
-    ref_status = "🟢 فعال" if ref_config["enabled"] else "🔴 غیرفعال"
-    ref_percent = to_persian_digits(ref_config["percent"])
-
-    tiers_text = ""
-    for max_gb, rate in sorted(volume_tiers, key=lambda x: x[0]):
-        tiers_text += (
-            f"  • تا {to_persian_digits(max_gb)} گیگ: {format_price(rate)} / GB\n"
-        )
-    last_max = volume_tiers[-1][0] if volume_tiers else 100
-    tiers_text += f"  • بالای {to_persian_digits(last_max)} گیگ: {format_price(fallback_rate)} / GB\n"
-
-    volume_tiers_enabled = config.get("volume_tiers_enabled", True)
-    if volume_tiers_enabled:
-        tiers_summary = f"📊 <b>پله‌های تخفیف حجم:</b> 🟢 فعال\n{tiers_text}"
-    else:
-        tiers_summary = f"📊 <b>پله‌های تخفیف حجم:</b> 🔴 غیرفعال (محاسبه بر اساس نرخ پایه: {format_price(base_rate)} / GB)\n"
-
-    dur_text = (
-        f"  • ۳۰ روز: +{format_price(dur_surcharges.get(30, 0))}\n"
-        f"  • ۶۰ روز: +{format_price(dur_surcharges.get(60, 0))}\n"
-        f"  • ۹۰ روز: +{format_price(dur_surcharges.get(90, 0))}\n"
-    )
-
-    test_text = (
-        f"  • حجم: {format_size_gb(test_gb)}\n"
-        f"  • مدت: {to_persian_digits(test_dur)} روز\n"
-        f"  • کول‌داون: {test_cool_str}\n"
-    )
-
-    ref_text = f"  • وضعیت: {ref_status}\n  • پورسانت پاداش: {ref_percent}٪\n"
-
-    del_days_str = (
-        f"{to_persian_digits(auto_delete_days)} روز پس از انقضا"
-        if auto_delete_days > 0
-        else "🔴 غیرفعال"
-    )
-
-    low_gb_status = "🟢 فعال" if low_gb_enabled else "🔴 غیرفعال"
-    exp_days_status = "🟢 فعال" if expiring_days_enabled else "🔴 غیرفعال"
-
-    alert_text = (
-        f"  • فاصله زمان بررسی (پایش): هر {to_persian_digits(interval_minutes)} دقیقه\n"
-        f"  • هشدار پله‌ای حجم (۱ گیگی): {low_gb_status} (کمتر از {format_size_gb(min_gb_alert)})\n"
-        f"  • یادآور روزانه زمان: {exp_days_status} (کمتر از {to_persian_digits(min_days_alert)} روز)\n"
-        f"  • حذف منقضی‌شده‌ها: {del_days_str}\n"
-    )
-
-    start_msg_status = "🟢 فعال" if start_msg_config["enabled"] else "🔴 غیرفعال"
-    pricing_disp_status = "🟢 فعال" if pricing_disp_config["enabled"] else "🔴 غیرفعال"
+    mon_status = "🟢 فعال" if inbound_mon_config.get("enabled", False) else "🔴 غیرفعال"
+    bak_status = "🟢 فعال" if backup_config.get("auto_enabled", True) else "🔴 غیرفعال"
+    ref_status = "🟢 فعال" if ref_config.get("enabled", True) else "🔴 غیرفعال"
 
     text = (
-        f"⚙️ <b>پنل مدیریت و تنظیمات ربات</b>\n\n"
-        f"🛒 <b>فروش جدید:</b> {pur_status_str}\n"
-        f"🔄 <b>تمدید اشتراک:</b> {ren_status_str}\n\n"
-        f"💵 <b>نرخ پایه هر گیگ:</b> {format_price(base_rate)}\n"
-        f"👤 <b>هزینه هر کاربر اضافه:</b> +{format_price(user_surcharge)}\n\n"
-        f"💳 <b>کارت جهت واریز:</b> <code>{card_num}</code> ({card_own})\n\n"
-        f"🤖 <b>وضعیت و آخرین اجرای زمان‌بندها:</b>\n{schedulers_text}\n"
-        f"🔔 <b>حدآستانه هشدارهای اتمام سرویس:</b>\n{alert_text}\n"
-        f"⏱ <b>حق‌الزحمه مدت زمان:</b>\n{dur_text}\n"
-        f"{tiers_summary}\n"
-        f"🎁 <b>اشتراک تست رایگان:</b>\n{test_text}\n"
-        f"👥 <b>سیستم زیرمجموعه‌گیری:</b>\n{ref_text}\n"
-        f"📩 <b>پیام پس از استارت:</b> {start_msg_status}\n"
-        f"📢 <b>عضویت اجباری کانال:</b> {channel_lock_status_str}\n"
-        f"💰 <b>بخش تعرفه‌ها:</b> {pricing_disp_status}\n"
-        f"⏳ <b>شروع اعتبار کانفیگ:</b> {start_first_use_str}"
+        "⚙️ <b>پنل مدیریت و کنترل جامع ربات</b>\n\n"
+        "به مرکز مدیریت خوش آمدید. خلاصه وضعیت ربات بر اساس دسته‌بندی‌ها:\n\n"
+        "📊 <b>آمار و گزارشات:</b> گزارش جامع درآمد، کاربران و اشتراک‌ها\n"
+        "👥 <b>کاربران و اشتراک‌ها:</b> مدیریت کاربران، اشتراک جدید، گروه‌ها و ادمین‌ها\n"
+        f"💰 <b>مالی و تعرفه‌ها:</b> فروش: {pur_status_str} | تمدید: {ren_status_str} | نرخ پایه: {format_price(base_rate)}\n"
+        f"🏷️ <b>تخفیف‌ها و هدایا:</b> جشنواره همگانی: {g_status} | پله‌های تخفیف: {tiers_status}\n"
+        f"📡 <b>سرور و زیرساخت:</b> پایش اینباندها: {mon_status} | پشتیبان‌گیری: {bak_status}\n"
+        f"🔔 <b>هشدارها و زمان‌بندها:</b> هشدارها: {alert_sch_status} | پایش IP: {ip_sch_status} | حذف منقضی: {auto_del_status}\n"
+        f"📢 <b>ارتباطات و تنظیمات:</b> قفل کانال: {channel_lock_status_str} | زیرمجموعه‌گیری: {ref_status} | شروع سرویس: {start_first_use_str}\n\n"
+        "جهت مدیریت هر بخش، یکی از دسته‌بندی‌های زیر را انتخاب کنید:"
     )
 
     keyboard = InlineKeyboardMarkup(
@@ -334,12 +252,22 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="👥 مدیریت کاربران",
+                    text="👥 مدیریت کاربران و اشتراک‌ها",
                     callback_data="admin_sub_users_menu",
                 ),
                 InlineKeyboardButton(
-                    text="💰 قیمت و مالی",
+                    text="💰 مالی، پرداخت و تعرفه‌ها",
                     callback_data="admin_pricing_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏷️ تخفیف‌ها، جشنواره و هدایا",
+                    callback_data="admin_discounts_hub_menu",
+                ),
+                InlineKeyboardButton(
+                    text="📡 سرور، اینباند و زیرساخت",
+                    callback_data="admin_servers_menu",
                 ),
             ],
             [
@@ -347,12 +275,12 @@ async def _build_pricing_panel() -> tuple[str, InlineKeyboardMarkup]:
                     text="🔔 هشدارها و زمان‌بندها",
                     callback_data="admin_alerts_menu",
                 ),
-            ],
-            [
                 InlineKeyboardButton(
-                    text="⚙️ تنظیمات",
+                    text="📢 ارتباطات و تنظیمات عمومی",
                     callback_data="admin_settings_menu",
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     text="❌ بستن پنل",
                     callback_data="admin_price_close",
@@ -386,12 +314,6 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="🧾 مدیریت و لیست فاکتورها",
-                    callback_data="admin_invoices_all_0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
                     text="👥 مدیریت گروه‌های مشتری (Groups)",
                     callback_data="admin_groups_menu",
                 ),
@@ -413,21 +335,10 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
 
 
 async def _build_pricing_submenu() -> InlineKeyboardMarkup:
-    from db.models import (
-        get_card_config,
-        get_global_discount_config,
-        is_global_discount_active,
-    )
-    from services.pricing import get_pricing_config
+    from db.models import get_card_config
 
     card_config = await get_card_config()
     card_status = "🟢" if card_config.get("enabled", True) else "🔴"
-
-    pricing_config = await get_pricing_config()
-    tiers_status = "🟢" if pricing_config.get("volume_tiers_enabled", True) else "🔴"
-
-    g_cfg = await get_global_discount_config()
-    g_status = "🟢" if is_global_discount_active(g_cfg) else "🔴"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -435,6 +346,24 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="🛒/🔄 وضعیت فروش و تمدید اشتراک",
                     callback_data="admin_shop_status_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧾 مدیریت و لیست فاکتورها",
+                    callback_data="admin_invoices_all_0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"💳 تنظیمات شماره کارت ({card_status})",
+                    callback_data="admin_card_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧾 تنظیمات دریافت رسید واریز (عکس/متن)",
+                    callback_data="admin_receipt_config_menu",
                 ),
             ],
             [
@@ -469,38 +398,8 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text=f"📊 پله‌های تخفیف حجم ({tiers_status})",
-                    callback_data="admin_price_tiers_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
                     text="🖼️ تنظیم متن و تصویر تعرفه‌ها",
                     callback_data="admin_pricing_disp_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"🔥 جشنواره و تخفیف همگانی ({g_status})",
-                    callback_data="admin_global_discount_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🏷️ مدیریت کدهای تخفیف",
-                    callback_data="admin_discounts_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"💳 تنظیمات شماره کارت ({card_status})",
-                    callback_data="admin_card_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🧾 تنظیمات دریافت رسید واریز (عکس/متن)",
-                    callback_data="admin_receipt_config_menu",
                 ),
             ],
             [
@@ -519,19 +418,49 @@ async def _build_pricing_submenu() -> InlineKeyboardMarkup:
     )
 
 
-def _build_alerts_submenu() -> InlineKeyboardMarkup:
+async def _build_discounts_hub_menu() -> InlineKeyboardMarkup:
+    from db.models import (
+        get_global_discount_config,
+        is_global_discount_active,
+    )
+    from services.pricing import get_pricing_config
+
+    pricing_config = await get_pricing_config()
+    tiers_status = "🟢" if pricing_config.get("volume_tiers_enabled", True) else "🔴"
+
+    g_cfg = await get_global_discount_config()
+    g_status = "🟢" if is_global_discount_active(g_cfg) else "🔴"
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔔 تنظیمات هشدارهای اتمام حجم و زمان",
-                    callback_data="admin_alert_menu",
+                    text="🏷️ مدیریت کدهای تخفیف",
+                    callback_data="admin_discounts_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"🔥 جشنواره و تخفیف همگانی ({g_status})",
+                    callback_data="admin_global_discount_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"📊 پله‌های تخفیف حجم ({tiers_status})",
+                    callback_data="admin_price_tiers_menu",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="🎁 هدیه همگانی (حجم و زمان به همه کاربران)",
                     callback_data="admin_bulk_gift_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🎁 تنظیمات اشتراک تست رایگان",
+                    callback_data="admin_test_menu",
                 ),
             ],
             [
@@ -556,21 +485,9 @@ def _build_alerts_submenu() -> InlineKeyboardMarkup:
     )
 
 
-def _build_settings_submenu() -> InlineKeyboardMarkup:
+def _build_servers_submenu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🎁 تنظیمات اشتراک تست",
-                    callback_data="admin_test_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 تنظیمات سیستم زیرمجموعه‌گیری",
-                    callback_data="admin_ref_menu",
-                ),
-            ],
             [
                 InlineKeyboardButton(
                     text="📡 مدیریت اینباندها (Inbounds)",
@@ -580,7 +497,69 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="🩺 پایش سلامت اینباندها (Health Check)",
-                    callback_data="admin_inbound_monitor_menu:settings",
+                    callback_data="admin_inbound_monitor_menu:servers",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💾 پشتیبان‌گیری و بکاپ دیتابیس (Backup)",
+                    callback_data="admin_backup_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                ),
+            ],
+        ]
+    )
+
+
+def _build_alerts_submenu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔔 تنظیمات هشدارهای اتمام حجم و زمان",
+                    callback_data="admin_alert_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🛡 وضعیت و لاگ پایش سقف IP",
+                    callback_data="admin_ip_checker_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف خودکار اکانت‌های منقضی",
+                    callback_data="admin_auto_delete_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پنل اصلی",
+                    callback_data="admin_price_main",
+                ),
+            ],
+        ]
+    )
+
+
+def _build_settings_submenu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📢 تنظیمات عضویت اجباری کانال",
+                    callback_data="admin_channel_lock_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📝 مدیریت پست‌ها و کپشن خودکار کانال",
+                    callback_data="admin_channel_posts_menu",
                 ),
             ],
             [
@@ -597,14 +576,8 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="📢 تنظیمات عضویت اجباری کانال",
-                    callback_data="admin_channel_lock_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📝 مدیریت پست‌ها و کپشن خودکار کانال",
-                    callback_data="admin_channel_posts_menu",
+                    text="👥 تنظیمات سیستم زیرمجموعه‌گیری",
+                    callback_data="admin_ref_menu",
                 ),
             ],
             [
@@ -617,12 +590,6 @@ def _build_settings_submenu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="📎 پیوست پیام نهایی خرید/تمدید",
                     callback_data="admin_sub_note_menu",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💾 پشتیبان‌گیری و بکاپ دیتابیس (Backup)",
-                    callback_data="admin_backup_menu",
                 ),
             ],
             [
@@ -669,7 +636,7 @@ async def admin_sub_users_menu_handler(
     await state.clear()
     await safe_edit_text(
         callback.message,
-        "👥 <b>مدیریت کاربران</b>\n\nیک بخش را انتخاب کنید:",
+        "👥 <b>مدیریت کاربران و اشتراک‌ها</b>\n\nیک بخش را انتخاب کنید:",
         reply_markup=_build_users_submenu(),
         parse_mode="HTML",
     )
@@ -685,8 +652,40 @@ async def admin_pricing_menu_handler(
     await state.clear()
     await safe_edit_text(
         callback.message,
-        "💰 <b>قیمت و مالی</b>\n\nیک بخش را انتخاب کنید:",
+        "💰 <b>مالی، پرداخت و تعرفه‌ها</b>\n\nیک بخش را انتخاب کنید:",
         reply_markup=await _build_pricing_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_discounts_hub_menu")
+async def admin_discounts_hub_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "🏷️ <b>تخفیف‌ها، جشنواره و هدایا</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=await _build_discounts_hub_menu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_servers_menu")
+async def admin_servers_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "📡 <b>سرور، اینباند و زیرساخت</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_servers_submenu(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -717,7 +716,7 @@ async def admin_settings_menu_handler(
     await state.clear()
     await safe_edit_text(
         callback.message,
-        "⚙️ <b>تنظیمات</b>\n\nیک بخش را انتخاب کنید:",
+        "📢 <b>ارتباطات، کانال و تنظیمات عمومی</b>\n\nیک بخش را انتخاب کنید:",
         reply_markup=_build_settings_submenu(),
         parse_mode="HTML",
     )
@@ -731,7 +730,7 @@ async def admin_cancel_to_pricing_handler(
     await state.clear()
     await safe_edit_text(
         callback.message,
-        "💰 <b>قیمت و مالی</b>\n\nیک بخش را انتخاب کنید:",
+        "💰 <b>مالی، پرداخت و تعرفه‌ها</b>\n\nیک بخش را انتخاب کنید:",
         reply_markup=await _build_pricing_submenu(),
         parse_mode="HTML",
     )
@@ -745,8 +744,36 @@ async def admin_cancel_to_users_handler(
     await state.clear()
     await safe_edit_text(
         callback.message,
-        "👥 <b>مدیریت کاربران</b>\n\nیک بخش را انتخاب کنید:",
+        "👥 <b>مدیریت کاربران و اشتراک‌ها</b>\n\nیک بخش را انتخاب کنید:",
         reply_markup=_build_users_submenu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel_to_discounts")
+async def admin_cancel_to_discounts_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "🏷️ <b>تخفیف‌ها، جشنواره و هدایا</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=await _build_discounts_hub_menu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel_to_servers")
+async def admin_cancel_to_servers_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    await state.clear()
+    await safe_edit_text(
+        callback.message,
+        "📡 <b>سرور، اینباند و زیرساخت</b>\n\nیک بخش را انتخاب کنید:",
+        reply_markup=_build_servers_submenu(),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -773,7 +800,7 @@ async def admin_cancel_to_settings_handler(
     await state.clear()
     await safe_edit_text(
         callback.message,
-        "⚙️ <b>تنظیمات</b>\n\nیک بخش را انتخاب کنید:",
+        "📢 <b>ارتباطات، کانال و تنظیمات عمومی</b>\n\nیک بخش را انتخاب کنید:",
         reply_markup=_build_settings_submenu(),
         parse_mode="HTML",
     )
@@ -4328,8 +4355,8 @@ async def _build_price_tiers_panel() -> tuple[str, InlineKeyboardMarkup]:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به قیمت و مالی",
-                    callback_data="admin_pricing_menu",
+                    text="🔙 بازگشت به تخفیف‌ها و هدایا",
+                    callback_data="admin_discounts_hub_menu",
                 )
             ],
         ]
@@ -4555,7 +4582,8 @@ async def admin_test_menu(callback: types.CallbackQuery, state: FSMContext) -> N
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
+                    text="🔙 بازگشت به تخفیف‌ها و هدایا",
+                    callback_data="admin_discounts_hub_menu",
                 ),
             ],
         ]
@@ -4671,7 +4699,7 @@ async def admin_test_gb_start(callback: types.CallbackQuery, state: FSMContext) 
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_settings",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4707,7 +4735,7 @@ async def admin_test_gb_save(message: types.Message, state: FSMContext) -> None:
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_settings",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4735,7 +4763,7 @@ async def admin_test_dur_start(
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_settings",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4771,7 +4799,7 @@ async def admin_test_dur_save(message: types.Message, state: FSMContext) -> None
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_settings",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4799,7 +4827,7 @@ async def admin_test_cooldown_start(
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_settings",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4835,7 +4863,7 @@ async def admin_test_cooldown_save(message: types.Message, state: FSMContext) ->
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_settings",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4884,7 +4912,7 @@ async def admin_test_reset_user_prompt(
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_alerts",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -4911,7 +4939,7 @@ async def admin_test_reset_user_save(message: types.Message, state: FSMContext) 
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
-                        callback_data="admin_cancel_to_alerts",
+                        callback_data="admin_cancel_to_discounts",
                     )
                 ]
             ]
@@ -5025,7 +5053,8 @@ async def admin_discounts_menu(
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به قیمت و مالی", callback_data="admin_pricing_menu"
+                text="🔙 بازگشت به تخفیف‌ها و هدایا",
+                callback_data="admin_discounts_hub_menu",
             )
         ]
     )
@@ -7626,7 +7655,8 @@ async def _build_global_discount_menu_content() -> tuple[str, InlineKeyboardMark
         ],
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به تنظیمات مالی", callback_data="admin_pricing_menu"
+                text="🔙 بازگشت به تخفیف‌ها و هدایا",
+                callback_data="admin_discounts_hub_menu",
             )
         ],
     ]
@@ -8612,7 +8642,8 @@ async def admin_ref_menu(callback: types.CallbackQuery, state: FSMContext) -> No
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
+                    text="🔙 بازگشت به تنظیمات",
+                    callback_data="admin_settings_menu",
                 ),
             ],
         ]
@@ -8735,7 +8766,8 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
+                        text="🔙 بازگشت به سرور و زیرساخت",
+                        callback_data="admin_servers_menu",
                     )
                 ]
             ]
@@ -8801,7 +8833,7 @@ async def admin_inbounds_menu(callback: types.CallbackQuery, state: FSMContext) 
     keyboard_rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به تنظیمات", callback_data="admin_settings_menu"
+                text="🔙 بازگشت به سرور و زیرساخت", callback_data="admin_servers_menu"
             )
         ]
     )
@@ -8881,7 +8913,7 @@ async def admin_inbound_monitor_menu(
 
     source = "settings"
     parts = callback.data.split(":")
-    if len(parts) > 1 and parts[1] in ("settings", "inbounds"):
+    if len(parts) > 1 and parts[1] in ("settings", "inbounds", "servers"):
         source = parts[1]
         await state.update_data(monitor_source=source)
     else:
@@ -8934,6 +8966,13 @@ async def admin_inbound_monitor_menu(
             InlineKeyboardButton(
                 text="🔙 بازگشت به مدیریت اینباندها",
                 callback_data="admin_inbounds_menu",
+            )
+        ]
+    elif source == "servers":
+        back_btn_row = [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به سرور و زیرساخت",
+                callback_data="admin_servers_menu",
             )
         ]
     else:
@@ -11585,27 +11624,16 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         return
     await state.clear()
 
-    from db.models import get_alert_config, get_ip_checker_config
+    from db.models import get_alert_config
 
     alert_config = await get_alert_config()
-    ip_config = await get_ip_checker_config()
     scheduler_enabled = bool(alert_config.get("enabled", True))
     min_gb = float(alert_config["min_gb"])
     min_days = int(alert_config["min_days"])
-    auto_delete_days = int(alert_config["auto_delete_days"])
     interval_minutes = int(alert_config.get("interval_minutes", 30))
-    ip_interval_minutes = int(ip_config.get("interval_minutes", 5))
     low_gb_enabled = bool(alert_config.get("low_gb_enabled", True))
     expiring_days_enabled = bool(alert_config.get("expiring_days_enabled", True))
     expired_notice_enabled = bool(alert_config.get("expired_notice_enabled", True))
-    auto_delete_enabled = bool(alert_config.get("auto_delete_enabled", True))
-    ip_checker_enabled = bool(ip_config.get("enabled", True))
-
-    del_str = (
-        f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
-        if auto_delete_days > 0 and auto_delete_enabled
-        else "<b>🔴 غیرفعال (بدون حذف)</b>"
-    )
 
     scheduler_btn_text = (
         "🟢 زمان‌بند هشدارهای خودکار (فعال)"
@@ -11627,31 +11655,17 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         if expired_notice_enabled
         else "🔴 ارسال اخطار انقضا (غیرفعال)"
     )
-    auto_del_btn_text = (
-        "🟢 حذف خودکار منقضی‌ها (فعال)"
-        if auto_delete_enabled
-        else "🔴 حذف خودکار منقضی‌ها (غیرفعال)"
-    )
-    ip_btn_text = (
-        "🟢 پایش سقف IP کاربر (فعال)"
-        if ip_checker_enabled
-        else "🔴 پایش سقف IP کاربر (غیرفعال)"
-    )
 
     text = (
-        f"🔔 <b>تنظیمات حدآستانه هشدارهای هوشمند و پاکسازی اشتراک‌ها</b>\n\n"
-        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس یا در صورت تخلف IP آگاه می‌سازد.\n\n"
+        f"🔔 <b>تنظیمات هشدارهای اتمام حجم و زمان</b>\n\n"
+        f"ربات به صورت خودکار کاربران را پیش از اتمام سرویس آگاه می‌سازد.\n\n"
         f"🔘 <b>وضعیت کلی زمان‌بند هشدارها:</b> {scheduler_btn_text}\n"
-        f"⏳ <b>فاصله زمان بررسی پایش هشدارهای عمومی:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
-        f"🛡 <b>فاصله زمان پایش سقف IP:</b> هر <b>{to_persian_digits(ip_interval_minutes)} دقیقه</b>\n"
-        f"🛡 <b>وضعیت پایش سقف IP (تخلفات):</b> {ip_btn_text}\n"
+        f"⏳ <b>فاصله زمان بررسی پایش:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
         f"📊 <b>هشدار پله‌ای حجم (هر ۱ گیگ):</b> {low_gb_btn_text}\n"
         f"⏱ <b>حدآستانه هشدار ترافیک:</b> کمتر از <b>{format_size_gb(min_gb)}</b>\n"
         f"📅 <b>یادآور روزانه اتمام زمان:</b> {exp_days_btn_text}\n"
         f"⏱ <b>حدآستانه هشدار انقضا:</b> کمتر از <b>{to_persian_digits(min_days)} روز</b>\n"
-        f"⛔️ <b>ارسال اخطار انقضای سرویس:</b> {exp_notice_btn_text}\n"
-        f"🗑 <b>حذف خودکار سرویس‌های منقضی:</b> {auto_del_btn_text}\n"
-        f"🗑 <b>مهلت حذف اشتراک‌های منقضی‌شده:</b> {del_str}\n\n"
+        f"⛔️ <b>ارسال اخطار انقضای سرویس:</b> {exp_notice_btn_text}\n\n"
         f"لطفاً یکی از گزینه‌های زیر را جهت تغییر انتخاب کنید:"
     )
 
@@ -11661,11 +11675,6 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
                 InlineKeyboardButton(
                     text=scheduler_btn_text,
                     callback_data="admin_alert_toggle_scheduler",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=ip_btn_text, callback_data="admin_alert_toggle_ip_checker"
                 ),
             ],
             [
@@ -11687,20 +11696,8 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
             ],
             [
                 InlineKeyboardButton(
-                    text=auto_del_btn_text,
-                    callback_data="admin_alert_toggle_auto_delete",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
                     text="⏳ تغییر فاصله عمومی بررسی (دقیقه)",
                     callback_data="admin_alert_edit_interval",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
-                    callback_data="admin_ip_edit_interval",
                 )
             ],
             [
@@ -11713,12 +11710,6 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
                 InlineKeyboardButton(
                     text="⏱ تغییر حدآستانه زمان (روز)",
                     callback_data="admin_alert_edit_days",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🗑 تغییر مهلت حذف منقضی‌شده‌ها (روز)",
-                    callback_data="admin_alert_edit_delete_days",
                 )
             ],
             [
@@ -11736,6 +11727,201 @@ async def admin_alert_menu(callback: types.CallbackQuery, state: FSMContext) -> 
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ip_checker_menu")
+async def admin_ip_checker_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "alerts"):
+        return
+    await state.clear()
+
+    from db.models import (
+        get_all_ip_violations_dict,
+        get_ip_checker_config,
+        get_schedulers_last_run,
+    )
+
+    ip_config = await get_ip_checker_config()
+    schedulers_last_run = await get_schedulers_last_run()
+    violations_dict = await get_all_ip_violations_dict()
+
+    enabled = bool(ip_config.get("enabled", True))
+    interval_minutes = int(ip_config.get("interval_minutes", 5))
+
+    status_str = "🟢 فعال" if enabled else "🔴 غیرفعال"
+    toggle_text = "🔴 غیرفعال‌سازی پایش IP" if enabled else "🟢 فعال‌سازی پایش IP"
+
+    last_ip_raw = schedulers_last_run.get("ip_checker")
+    last_ip_time = format_datetime(last_ip_raw) if last_ip_raw else "هنوز اجرا نشده"
+
+    suspended_clients = [v for v in violations_dict.values() if v.get("suspended")]
+    warned_clients = [
+        v
+        for v in violations_dict.values()
+        if not v.get("suspended") and v.get("violation_count", 0) > 0
+    ]
+
+    text = (
+        "🛡 <b>وضعیت و لاگ پایش سقف IP</b>\n\n"
+        "سیستم پایش سقف IP به صورت مداوم تعداد اتصالات همزمان هر سرویس را بررسی کرده "
+        "و در صورت تخلف، اخطار ارسال می‌کند و پس از ۳ اخطار سرویس را مسدود می‌سازد.\n\n"
+        f"🔘 <b>وضعیت پایش:</b> <b>{status_str}</b>\n"
+        f"⏳ <b>فاصله زمان پایش:</b> هر <b>{to_persian_digits(interval_minutes)} دقیقه</b>\n"
+        f"🕒 <b>آخرین پایش:</b> <code>{last_ip_time}</code>\n\n"
+        f"🚨 <b>آمار تخلفات:</b>\n"
+        f"  • اشتراک‌های مسدودشده: <b>{to_persian_digits(len(suspended_clients))}</b> مورد\n"
+        f"  • اشتراک‌های دارای اخطار: <b>{to_persian_digits(len(warned_clients))}</b> مورد\n"
+    )
+
+    if suspended_clients:
+        text += "\n<b>اشتراک‌های مسدودشده فعلی:</b>\n"
+        for sc in suspended_clients[:5]:
+            email = sc.get("email", "")
+            incidents = sc.get("total_incidents", 1)
+            text += f"  • <code>{email}</code> (سوابق: {to_persian_digits(incidents)} بار)\n"
+        if len(suspended_clients) > 5:
+            text += f"  <i>... و {to_persian_digits(len(suspended_clients) - 5)} مورد دیگر</i>\n"
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_text,
+                    callback_data="admin_ip_checker_toggle",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
+                    callback_data="admin_ip_edit_interval",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به هشدارها",
+                    callback_data="admin_alerts_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "admin_ip_checker_toggle")
+async def admin_ip_checker_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "alerts"):
+        return
+
+    from db.models import get_ip_checker_config, set_ip_checker_config
+
+    cfg = await get_ip_checker_config()
+    curr = bool(cfg.get("enabled", True))
+    await set_ip_checker_config(enabled=not curr)
+    await callback.answer(
+        f"✅ پایش سقف IP {'غیرفعال' if curr else 'فعال'} شد.", show_alert=True
+    )
+    await admin_ip_checker_menu_handler(callback, state)
+
+
+@router.callback_query(F.data == "admin_auto_delete_menu")
+async def admin_auto_delete_menu_handler(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "alerts"):
+        return
+    await state.clear()
+
+    from db.models import get_alert_config
+
+    alert_config = await get_alert_config()
+    auto_delete_enabled = bool(alert_config.get("auto_delete_enabled", True))
+    auto_delete_days = int(alert_config.get("auto_delete_days", 3))
+
+    status_str = "🟢 فعال" if auto_delete_enabled else "🔴 غیرفعال"
+    toggle_text = (
+        "🔴 غیرفعال‌سازی حذف خودکار" if auto_delete_enabled else "🟢 فعال‌سازی حذف خودکار"
+    )
+
+    del_str = (
+        f"<b>{to_persian_digits(auto_delete_days)} روز پس از انقضا</b>"
+        if auto_delete_days > 0 and auto_delete_enabled
+        else "<b>🔴 غیرفعال (سرویس‌ها حذف نمی‌شوند)</b>"
+    )
+
+    text = (
+        "🗑 <b>حذف خودکار اکانت‌های منقضی</b>\n\n"
+        "اشتراک‌هایی که اعتبار زمانی یا ترافیک آن‌ها به پایان رسیده باشد، پس از سپری شدن مهلت نگهداری، "
+        "به صورت خودکار از پنل سرور پاکسازی می‌شوند.\n\n"
+        f"🔘 <b>وضعیت سیستم:</b> <b>{status_str}</b>\n"
+        f"⏳ <b>مهلت نگهداری پس از انقضا:</b> {del_str}\n\n"
+        "<i>نکته: در صورت غیرفعال بودن یا تنظیم مهلت روی ۰، هیچ سرویسی به طور خودکار حذف نمی‌شود.</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=toggle_text,
+                    callback_data="admin_auto_delete_toggle",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 تغییر مهلت حذف منقضی‌شده‌ها (روز)",
+                    callback_data="admin_alert_edit_delete_days",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به هشدارها",
+                    callback_data="admin_alerts_menu",
+                )
+            ],
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "admin_auto_delete_toggle")
+async def admin_auto_delete_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _require_permission(callback, "alerts"):
+        return
+
+    from db.models import get_alert_config, set_alert_config
+
+    cfg = await get_alert_config()
+    curr = bool(cfg.get("auto_delete_enabled", True))
+    await set_alert_config(auto_delete_enabled=not curr)
+    await callback.answer(
+        f"✅ حذف خودکار منقضی‌ها {'غیرفعال' if curr else 'فعال'} شد.", show_alert=True
+    )
+    await admin_auto_delete_menu_handler(callback, state)
 
 
 @router.callback_query(F.data == "admin_alert_edit_gb")
@@ -12587,7 +12773,7 @@ async def admin_bulk_gift_gb_confirm(callback: types.CallbackQuery, bot: Bot) ->
 @router.callback_query(F.data == "admin_bulk_gift_days_start")
 @router.callback_query(F.data.startswith("admin_bulk_gift_days_step_"))
 async def admin_bulk_gift_days_stepper(callback: types.CallbackQuery) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     if callback.data.startswith("admin_bulk_gift_days_step_"):
@@ -15906,8 +16092,8 @@ async def _build_backup_menu_content(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به تنظیمات",
-                callback_data="admin_cancel_to_settings",
+                text="🔙 بازگشت به سرور و زیرساخت",
+                callback_data="admin_cancel_to_servers",
             ),
         ]
     )

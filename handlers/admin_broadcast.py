@@ -83,7 +83,7 @@ async def admin_broadcast_start(
 async def admin_broadcast_message_received(
     message: types.Message, state: FSMContext
 ) -> None:
-    if not _is_admin(message):
+    if not await _is_admin(message):
         return
 
     if message.text and message.text.strip() == "/cancel":
@@ -139,7 +139,7 @@ async def admin_broadcast_message_received(
 async def admin_broadcast_execute(
     callback: types.CallbackQuery, state: FSMContext, bot: Bot
 ) -> None:
-    if not _is_admin(callback):
+    if not await _is_admin(callback):
         return
 
     data = await state.get_data()

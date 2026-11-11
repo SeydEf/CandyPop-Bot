@@ -849,8 +849,8 @@ def bulk_gift_menu_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به هشدارها و زمان‌بندها",
-                    callback_data="admin_alerts_menu",
+                    text="🔙 بازگشت به تخفیف‌ها و هدایا",
+                    callback_data="admin_discounts_hub_menu",
                 )
             ],
         ]
@@ -1423,8 +1423,8 @@ def admin_invoices_list_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به مدیریت کاربران",
-                callback_data="admin_sub_users_menu",
+                text="🔙 بازگشت به قیمت و مالی",
+                callback_data="admin_pricing_menu",
             )
         ]
     )
