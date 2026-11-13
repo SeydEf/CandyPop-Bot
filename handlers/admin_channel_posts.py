@@ -178,6 +178,7 @@ def _build_inline_keyboard_from_rows(
             btn_type = btn.get("type", "custom_url")
             btn_text = btn.get("text", "دکمه")
             btn_val = btn.get("value", "")
+            btn_style = btn.get("style")
 
             target_url: str | None = None
             if btn_type == "smart_buy":
@@ -192,7 +193,13 @@ def _build_inline_keyboard_from_rows(
                 target_url = btn_val
 
             if target_url:
-                current_row.append(InlineKeyboardButton(text=btn_text, url=target_url))
+                current_row.append(
+                    InlineKeyboardButton(
+                        text=btn_text,
+                        url=target_url,
+                        style=btn_style,
+                    )
+                )
         if current_row:
             keyboard_rows.append(current_row)
 
@@ -529,6 +536,45 @@ async def _build_template_detail_panel(
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _build_color_selection_keyboard(
+    cb_prefix: str, cancel_cb: str
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🟢 سبز (Success)",
+                    callback_data=f"{cb_prefix}:success",
+                    style="success",
+                ),
+                InlineKeyboardButton(
+                    text="🔵 آبی (Primary)",
+                    callback_data=f"{cb_prefix}:primary",
+                    style="primary",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔴 قرمز (Danger)",
+                    callback_data=f"{cb_prefix}:danger",
+                    style="danger",
+                ),
+                InlineKeyboardButton(
+                    text="⚪️ بدون رنگ (پیش‌فرض)",
+                    callback_data=f"{cb_prefix}:none",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data=cancel_cb,
+                    style="danger",
+                )
+            ],
+        ]
+    )
+
+
 async def _build_auto_buttons_panel(
     bot_username: str,
 ) -> tuple[str, InlineKeyboardMarkup]:
@@ -552,8 +598,16 @@ async def _build_auto_buttons_panel(
     if not buttons or not any(row for row in buttons):
         text += "<i>هیچ دکمه‌ای تنظیم نشده است.</i>\n"
     else:
+        style_badges = {
+            "primary": "🔵",
+            "success": "🟢",
+            "danger": "🔴",
+        }
         for idx, row in enumerate(buttons, start=1):
-            row_titles = " | ".join(f"[{b.get('text', '')}]" for b in row)
+            row_titles = " | ".join(
+                f"[{style_badges.get(b.get('style', ''), '⚪️')} {b.get('text', '')}]"
+                for b in row
+            )
             text += f"ردیف {idx}: {row_titles}\n"
 
     rows: list[list[InlineKeyboardButton]] = [
@@ -1034,7 +1088,7 @@ async def admin_channel_posts_add_auto_btn_handler(
 
 @router.callback_query(F.data.startswith("admin_channel_posts_add_smart_auto:"))
 async def admin_channel_posts_add_smart_auto_handler(
-    callback: types.CallbackQuery, bot: Bot
+    callback: types.CallbackQuery,
 ) -> None:
     if not await _require_permission(callback, "channel_posts"):
         return
@@ -1046,9 +1100,39 @@ async def admin_channel_posts_add_smart_auto_handler(
         "smart_bot": "🤖 ورود به ربات",
     }
     title = titles.get(btn_type, "دکمه")
+    text = (
+        f"🎨 <b>انتخاب رنگ برای دکمه «{title}»</b>\n\n"
+        "لطفاً رنگ مورد نظر خود را برای این دکمه انتخاب کنید:"
+    )
+    kb = _build_color_selection_keyboard(
+        f"admin_channel_posts_auto_smart_style:{btn_type}",
+        "admin_channel_posts_buttons",
+    )
+    if callback.message:
+        await safe_edit_text(callback.message, text, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_channel_posts_auto_smart_style:"))
+async def admin_channel_posts_auto_smart_style_handler(
+    callback: types.CallbackQuery, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "channel_posts"):
+        return
+    parts = callback.data.split(":")
+    btn_type = parts[1]
+    style_choice = parts[2]
+    style = None if style_choice == "none" else style_choice
+    titles = {
+        "smart_buy": "🛒 خرید اشتراک",
+        "smart_test": "🎁 تست رایگان",
+        "smart_support": "👨‍💻 پشتیبانی",
+        "smart_bot": "🤖 ورود به ربات",
+    }
+    title = titles.get(btn_type, "دکمه")
 
     buttons = await get_channel_auto_buttons()
-    buttons.append([{"text": title, "type": btn_type, "value": ""}])
+    buttons.append([{"text": title, "type": btn_type, "value": "", "style": style}])
     await set_channel_auto_buttons(buttons)
 
     bot_info = await bot.get_me()
@@ -1152,18 +1236,46 @@ async def admin_channel_posts_recv_custom_auto_url(
     if url.startswith("t.me/"):
         url = "https://" + url
 
+    await state.update_data(new_auto_btn_url=url)
     data = await state.get_data()
     btn_text = data.get("new_auto_btn_text", "لینک")
 
+    text = (
+        f"🎨 <b>انتخاب رنگ برای دکمه «{btn_text}»</b>\n\n"
+        "لطفاً رنگ مورد نظر خود را برای این دکمه انتخاب کنید:"
+    )
+    kb = _build_color_selection_keyboard(
+        "admin_channel_posts_auto_custom_style",
+        "admin_channel_posts_buttons",
+    )
+    await message.answer(text, reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("admin_channel_posts_auto_custom_style:"))
+async def admin_channel_posts_auto_custom_style_handler(
+    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "channel_posts"):
+        return
+    style_choice = callback.data.split(":")[1]
+    style = None if style_choice == "none" else style_choice
+
+    data = await state.get_data()
+    btn_text = data.get("new_auto_btn_text", "لینک")
+    url = data.get("new_auto_btn_url", "")
+
     buttons = await get_channel_auto_buttons()
-    buttons.append([{"text": btn_text, "type": "custom_url", "value": url}])
+    buttons.append(
+        [{"text": btn_text, "type": "custom_url", "value": url, "style": style}]
+    )
     await set_channel_auto_buttons(buttons)
     await state.clear()
 
-    await message.answer(f"✅ دکمه «{btn_text}» با موفقیت اضافه شد.")
     bot_info = await bot.get_me()
     text, kb = await _build_auto_buttons_panel(bot_info.username or "")
-    await message.answer(text, reply_markup=kb)
+    if callback.message:
+        await safe_edit_text(callback.message, text, reply_markup=kb)
+    await callback.answer(f"✅ دکمه «{btn_text}» با موفقیت اضافه شد.")
 
 
 @router.callback_query(F.data == "admin_channel_posts_reset")
@@ -1460,7 +1572,7 @@ async def channel_draft_add_btn_menu_handler(
 
 @router.callback_query(F.data.startswith("channel_draft_add_smart:"))
 async def channel_draft_add_smart_handler(
-    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+    callback: types.CallbackQuery,
 ) -> None:
     if not await _require_permission(callback, "channel_posts"):
         return
@@ -1472,10 +1584,42 @@ async def channel_draft_add_smart_handler(
         "smart_bot": "🤖 ورود به ربات",
     }
     btn_text = titles.get(btn_type, "دکمه")
+    text = (
+        f"🎨 <b>انتخاب رنگ برای دکمه «{btn_text}»</b>\n\n"
+        "لطفاً رنگ مورد نظر خود را برای این دکمه انتخاب کنید:"
+    )
+    kb = _build_color_selection_keyboard(
+        f"channel_draft_smart_style:{btn_type}",
+        "channel_draft_return_ctrl",
+    )
+    if callback.message:
+        await safe_edit_text(callback.message, text, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("channel_draft_smart_style:"))
+async def channel_draft_smart_style_handler(
+    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "channel_posts"):
+        return
+    parts = callback.data.split(":")
+    btn_type = parts[1]
+    style_choice = parts[2]
+    style = None if style_choice == "none" else style_choice
+    titles = {
+        "smart_buy": "🛒 خرید اشتراک",
+        "smart_test": "🎁 تست رایگان",
+        "smart_support": "👨‍💻 پشتیبانی",
+        "smart_bot": "🤖 ورود به ربات",
+    }
+    btn_text = titles.get(btn_type, "دکمه")
 
     data = await state.get_data()
     draft_buttons: list[list[dict[str, str]]] = data.get("draft_buttons", [])
-    draft_buttons.append([{"text": btn_text, "type": btn_type, "value": ""}])
+    draft_buttons.append(
+        [{"text": btn_text, "type": btn_type, "value": "", "style": style}]
+    )
     await state.update_data(draft_buttons=draft_buttons)
 
     bot_info = await bot.get_me()
@@ -1590,24 +1734,57 @@ async def channel_draft_recv_custom_btn_url(
     if url.startswith("t.me/"):
         url = "https://" + url
 
+    await state.update_data(draft_custom_btn_url=url)
     data = await state.get_data()
     btn_text = data.get("draft_custom_btn_text", "لینک")
+
+    text = (
+        f"🎨 <b>انتخاب رنگ برای دکمه «{btn_text}»</b>\n\n"
+        "لطفاً رنگ مورد نظر خود را برای این دکمه انتخاب کنید:"
+    )
+    kb = _build_color_selection_keyboard(
+        "channel_draft_custom_style",
+        "channel_draft_return_ctrl",
+    )
+    await message.answer(text, reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("channel_draft_custom_style:"))
+async def channel_draft_custom_style_handler(
+    callback: types.CallbackQuery, state: FSMContext, bot: Bot
+) -> None:
+    if not await _require_permission(callback, "channel_posts"):
+        return
+    style_choice = callback.data.split(":")[1]
+    style = None if style_choice == "none" else style_choice
+
+    data = await state.get_data()
+    btn_text = data.get("draft_custom_btn_text", "لینک")
+    url = data.get("draft_custom_btn_url", "")
     draft_buttons: list[list[dict[str, str]]] = data.get("draft_buttons", [])
-    draft_buttons.append([{"text": btn_text, "type": "custom_url", "value": url}])
+    draft_buttons.append(
+        [{"text": btn_text, "type": "custom_url", "value": url, "style": style}]
+    )
     await state.update_data(draft_buttons=draft_buttons)
 
     bot_info = await bot.get_me()
-    await message.answer(f"✅ دکمه «{btn_text}» افزوده شد. پیش‌نمایش به‌روزرسانی‌شده:")
-    await _send_preview_draft(
-        chat_id=message.chat.id,
-        bot=bot,
-        content_type=data.get("content_type", "text"),
-        file_id=data.get("file_id", ""),
-        text_or_caption=data.get("text_or_caption", ""),
-        buttons=draft_buttons,
-        bot_username=bot_info.username or "",
-    )
-    await message.answer("کنترل پیش‌نویس:", reply_markup=_build_draft_control_keyboard())
+    if callback.message:
+        await callback.message.answer(
+            f"✅ دکمه «{btn_text}» افزوده شد. پیش‌نمایش به‌روزرسانی‌شده:"
+        )
+        await _send_preview_draft(
+            chat_id=callback.message.chat.id,
+            bot=bot,
+            content_type=data.get("content_type", "text"),
+            file_id=data.get("file_id", ""),
+            text_or_caption=data.get("text_or_caption", ""),
+            buttons=draft_buttons,
+            bot_username=bot_info.username or "",
+        )
+        await callback.message.answer(
+            "کنترل پیش‌نویس:", reply_markup=_build_draft_control_keyboard()
+        )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "channel_draft_clear_btns")
