@@ -130,12 +130,14 @@ async def _process_client_ip_limit(
                                 InlineKeyboardButton(
                                     text="✅ رفع مسدودی و فعال‌سازی",
                                     callback_data=f"admin_ip_reactivate_{email}",
+                                    style="success",
                                 )
                             ],
                             [
                                 InlineKeyboardButton(
                                     text="🗑 حذف کامل سرویس",
                                     callback_data=f"admin_ip_delete_{email}",
+                                    style="danger",
                                 )
                             ],
                         ]

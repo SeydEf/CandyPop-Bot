@@ -18,6 +18,7 @@ from db.models import (
 from services import xui_api
 from utils.formatting import to_persian_digits
 from utils.helpers import _build_sub_link
+from keyboards.inline_kb import sub_config_links_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +247,13 @@ async def activate_reserved_renewal(
             final_attachment = await get_sub_final_attachment()
             if final_attachment:
                 msg += final_attachment
-            await bot.send_message(chat_id=tg_id, text=msg, parse_mode="HTML")
+
+            await bot.send_message(
+                chat_id=tg_id,
+                text=msg,
+                reply_markup=sub_config_links_keyboard(email),
+                parse_mode="HTML",
+            )
         except Exception as e:
             logger.warning(
                 "Failed to send renewal activation notification to user %d: %s",

@@ -37,8 +37,7 @@ async def volume_keyboard() -> InlineKeyboardMarkup:
         else:
             label = format_volume_button_text(item, data_price)
         btn = InlineKeyboardButton(
-            text=label,
-            callback_data=f"buy_vol_{gb}", style="primary"
+            text=label, callback_data=f"buy_vol_{gb}", style="primary"
         )
         rows.append([btn])
 
@@ -47,13 +46,16 @@ async def volume_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="📝 حجم دلخواه",
-                    callback_data="buy_vol_custom", style="success"
+                    callback_data="buy_vol_custom",
+                    style="success",
                 )
             ]
         )
     rows.append(
         [
-            InlineKeyboardButton(text="❌ انصراف از خرید", callback_data="buy_cancel", style="danger"),
+            InlineKeyboardButton(
+                text="❌ انصراف از خرید", callback_data="buy_cancel", style="danger"
+            ),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -66,14 +68,18 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="➖", callback_data=f"buy_users_step_{gb}_{dec_users}", style="danger"
+                    text="➖",
+                    callback_data=f"buy_users_step_{gb}_{dec_users}",
+                    style="danger",
                 ),
                 InlineKeyboardButton(
                     text=f"👤 {to_persian_digits(users)} کاربر",
-                    callback_data="buy_noop"
+                    callback_data="buy_noop",
                 ),
                 InlineKeyboardButton(
-                    text="➕", callback_data=f"buy_users_step_{gb}_{inc_users}", style="success"
+                    text="➕",
+                    callback_data=f"buy_users_step_{gb}_{inc_users}",
+                    style="success",
                 ),
             ],
             [
@@ -85,7 +91,9 @@ def users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 بازگشت به انتخاب حجم", callback_data="buy_back_volume", style="danger"
+                    text="🔙 بازگشت به انتخاب حجم",
+                    callback_data="buy_back_volume",
+                    style="danger",
                 ),
                 InlineKeyboardButton(
                     text="❌ انصراف از خرید", callback_data="buy_cancel", style="danger"
@@ -139,7 +147,9 @@ async def duration_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=label, callback_data=f"buy_dur_{gb}_{users}_{days}", style="primary"
+                    text=label,
+                    callback_data=f"buy_dur_{gb}_{users}_{days}",
+                    style="primary",
                 )
             ]
         )
@@ -152,7 +162,8 @@ async def duration_keyboard(
             [
                 InlineKeyboardButton(
                     text="⏱ مدت زمان دلخواه",
-                    callback_data=f"buy_dur_custom_{gb}_{users}", style="success"
+                    callback_data=f"buy_dur_custom_{gb}_{users}",
+                    style="success",
                 )
             ]
         )
@@ -160,12 +171,14 @@ async def duration_keyboard(
     if skip_users_step:
         back_btn = InlineKeyboardButton(
             text="🔙 بازگشت به انتخاب حجم",
-            callback_data="buy_back_volume", style="danger"
+            callback_data="buy_back_volume",
+            style="danger",
         )
     else:
         back_btn = InlineKeyboardButton(
             text="🔙 بازگشت به انتخاب کاربر",
-            callback_data=f"buy_back_users_{gb}_{users}", style="danger"
+            callback_data=f"buy_back_users_{gb}_{users}",
+            style="danger",
         )
 
     rows.append(
@@ -232,7 +245,8 @@ def payment_method_keyboard(
         [
             InlineKeyboardButton(
                 text="🔙 بازگشت",
-                callback_data=f"buy_back_duration_{gb}_{users}", style="danger"
+                callback_data=f"buy_back_duration_{gb}_{users}",
+                style="danger",
             ),
             InlineKeyboardButton(
                 text="❌ انصراف از خرید", callback_data="buy_cancel", style="danger"
@@ -292,11 +306,13 @@ def admin_payment_review_keyboard(invoice_id: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="✅ تأیید پرداخت",
-                    callback_data=f"admin_approve_{invoice_id}", style="success"
+                    callback_data=f"admin_approve_{invoice_id}",
+                    style="success",
                 ),
                 InlineKeyboardButton(
                     text="❌ رد پرداخت",
-                    callback_data=f"admin_reject_{invoice_id}", style="danger"
+                    callback_data=f"admin_reject_{invoice_id}",
+                    style="danger",
                 ),
             ]
         ]
@@ -360,7 +376,8 @@ def subscriptions_list_keyboard(
             [
                 InlineKeyboardButton(
                     text=f"{status_icon} {name}",
-                    callback_data=f"sub_view_{email}", style="primary"
+                    callback_data=f"sub_view_{email}",
+                    style="primary",
                 )
             ]
         )
@@ -402,8 +419,7 @@ def subscription_manage_keyboard(
     if not is_test_sub:
         second_row.append(
             InlineKeyboardButton(
-                text="✏️ تغییر نام",
-                callback_data=f"sub_rename_{email}", style="primary"
+                text="✏️ تغییر نام", callback_data=f"sub_rename_{email}", style="primary"
             )
         )
     second_row.append(
@@ -433,15 +449,15 @@ def subscription_manage_keyboard(
         [
             InlineKeyboardButton(
                 text="🔗 دریافت لینک تکی کانفیگ‌ها",
-                callback_data=f"sub_links_{email}", style="primary"
+                callback_data=f"sub_links_{email}",
+                style="primary",
             ),
         ]
     )
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به لیست",
-                callback_data="sub_back_list", style="danger"
+                text="🔙 بازگشت به لیست", callback_data="sub_back_list", style="danger"
             ),
         ]
     )
@@ -481,8 +497,7 @@ def renew_options_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت",
-                callback_data="sub_view_current", style="danger"
+                text="🔙 بازگشت", callback_data="sub_view_current", style="danger"
             ),
         ]
     )
@@ -511,7 +526,11 @@ async def renew_duration_keyboard(
         surch = await get_volume_plan_duration_surcharge(gb, days)
         label = format_duration_button_text(item, surcharge=surch)
         rows.append(
-            [InlineKeyboardButton(text=label, callback_data=f"renew_dur_{days}", style="primary")]
+            [
+                InlineKeyboardButton(
+                    text=label, callback_data=f"renew_dur_{days}", style="primary"
+                )
+            ]
         )
 
     if (
@@ -521,7 +540,9 @@ async def renew_duration_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="⏱ مدت زمان دلخواه", callback_data="renew_dur_custom", style="success"
+                    text="⏱ مدت زمان دلخواه",
+                    callback_data="renew_dur_custom",
+                    style="success",
                 )
             ]
         )
@@ -554,7 +575,8 @@ def renew_users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="➖",
-                    callback_data=f"renew_users_step_{dec_users}", style="danger"
+                    callback_data=f"renew_users_step_{dec_users}",
+                    style="danger",
                 ),
                 InlineKeyboardButton(
                     text=f"👤 {to_persian_digits(users)} کاربر",
@@ -562,7 +584,8 @@ def renew_users_keyboard(gb: int, users: int) -> InlineKeyboardMarkup:
                 ),
                 InlineKeyboardButton(
                     text="➕",
-                    callback_data=f"renew_users_step_{inc_users}", style="success"
+                    callback_data=f"renew_users_step_{inc_users}",
+                    style="success",
                 ),
             ],
             [
@@ -614,8 +637,7 @@ async def renew_volume_keyboard(
         else:
             label = format_volume_button_text(item, data_price)
         btn = InlineKeyboardButton(
-            text=label,
-            callback_data=f"renew_vol_{gb}", style="primary"
+            text=label, callback_data=f"renew_vol_{gb}", style="primary"
         )
         rows.append([btn])
 
@@ -624,15 +646,15 @@ async def renew_volume_keyboard(
             [
                 InlineKeyboardButton(
                     text="📝 حجم دلخواه",
-                    callback_data="renew_vol_custom", style="success"
+                    callback_data="renew_vol_custom",
+                    style="success",
                 )
             ]
         )
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت",
-                callback_data="sub_renew_current", style="danger"
+                text="🔙 بازگشت", callback_data="sub_renew_current", style="danger"
             ),
             InlineKeyboardButton(
                 text="❌ انصراف", callback_data="sub_view_current", style="danger"
@@ -695,8 +717,7 @@ def renew_payment_method_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت",
-                callback_data=back_callback, style="danger"
+                text="🔙 بازگشت", callback_data=back_callback, style="danger"
             ),
             InlineKeyboardButton(
                 text="❌ انصراف", callback_data="sub_view_current", style="danger"
@@ -845,10 +866,14 @@ def orders_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMar
     if total_pages > 1:
         prev_btn = (
             InlineKeyboardButton(
-                text="◀️ قبلی", callback_data=f"profile_orders_{page - 1}", style="primary"
+                text="◀️ قبلی",
+                callback_data=f"profile_orders_{page - 1}",
+                style="primary",
             )
             if page > 0
-            else InlineKeyboardButton(text=" ⬛️ ", callback_data="buy_noop", style="danger")
+            else InlineKeyboardButton(
+                text=" ⬛️ ", callback_data="buy_noop", style="danger"
+            )
         )
 
         page_indicator = InlineKeyboardButton(
@@ -858,10 +883,14 @@ def orders_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMar
 
         next_btn = (
             InlineKeyboardButton(
-                text="بعدی ▶️", callback_data=f"profile_orders_{page + 1}", style="primary"
+                text="بعدی ▶️",
+                callback_data=f"profile_orders_{page + 1}",
+                style="primary",
             )
             if page < total_pages - 1
-            else InlineKeyboardButton(text=" ⬛️ ", callback_data="buy_noop", style="danger")
+            else InlineKeyboardButton(
+                text=" ⬛️ ", callback_data="buy_noop", style="danger"
+            )
         )
 
         rows.append([prev_btn, page_indicator, next_btn])
@@ -869,7 +898,9 @@ def orders_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMar
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت به پروفایل", callback_data="profile_main", style="danger"
+                text="🔙 بازگشت به پروفایل",
+                callback_data="profile_main",
+                style="danger",
             )
         ]
     )

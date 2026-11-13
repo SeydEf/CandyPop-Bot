@@ -129,6 +129,7 @@ async def _process_single_client(
                         InlineKeyboardButton(
                             text="🛒 خرید اشتراک",
                             callback_data="buy_start",
+                            style="success",
                         ),
                     ]
                 ]
@@ -201,6 +202,7 @@ async def _process_single_client(
                             InlineKeyboardButton(
                                 text=btn_renew_text,
                                 callback_data=f"sub_renew_{email}",
+                                style="success",
                             )
                         ]
                     ]
@@ -303,6 +305,7 @@ async def _process_single_client(
                                 InlineKeyboardButton(
                                     text=btn_renew_text,
                                     callback_data=f"sub_renew_{email}",
+                                    style="success",
                                 )
                             ]
                         ]
@@ -355,6 +358,7 @@ async def _process_single_client(
                                 InlineKeyboardButton(
                                     text=btn_renew_text,
                                     callback_data=f"sub_renew_{email}",
+                                    style="success",
                                 )
                             ]
                         ]
