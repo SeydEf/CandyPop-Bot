@@ -360,7 +360,7 @@ def subscriptions_list_keyboard(
             [
                 InlineKeyboardButton(
                     text=f"{status_icon} {name}",
-                    callback_data=f"sub_view_{email}",
+                    callback_data=f"sub_view_{email}", style="primary"
                 )
             ]
         )
