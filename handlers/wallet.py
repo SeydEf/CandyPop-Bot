@@ -68,7 +68,9 @@ async def wallet_deposit_preset(
             inline_keyboard=[
                 [
                     types.InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت", callback_data="deposit_back"
+                        text="❌ انصراف و بازگشت",
+                        callback_data="deposit_back",
+                        style="danger",
                     )
                 ]
             ]
@@ -227,7 +229,9 @@ async def wallet_deposit_custom_input(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
-                    text="❌ انصراف و بازگشت", callback_data="deposit_back"
+                    text="❌ انصراف و بازگشت",
+                    callback_data="deposit_back",
+                    style="danger",
                 )
             ]
         ]

@@ -2087,12 +2087,14 @@ async def sub_act_res_prompt_handler(callback: types.CallbackQuery) -> None:
                 InlineKeyboardButton(
                     text="⚡️ بله، فعال شود",
                     callback_data=f"sub_act_res_confirm_{email}",
+                    style="success",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="🔙 انصراف و بازگشت",
                     callback_data=f"sub_view_{email}",
+                    style="danger",
                 )
             ],
         ]

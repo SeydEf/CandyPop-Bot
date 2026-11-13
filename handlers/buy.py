@@ -221,7 +221,7 @@ async def buy_custom_volume(callback: types.CallbackQuery, state: FSMContext) ->
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف و بازگشت", callback_data="buy_back_volume"
+                    text="❌ انصراف و بازگشت", callback_data="buy_back_volume", style="danger"
                 )
             ]
         ]
@@ -260,7 +260,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت", callback_data="buy_back_volume"
+                        text="❌ انصراف و بازگشت", callback_data="buy_back_volume", style="danger"
                     )
                 ]
             ]
@@ -294,7 +294,7 @@ async def buy_custom_volume_input(message: types.Message, state: FSMContext) -> 
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="❌ انصراف و بازگشت", callback_data="buy_back_volume"
+                        text="❌ انصراف و بازگشت", callback_data="buy_back_volume", style="danger"
                     )
                 ]
             ]
@@ -651,7 +651,7 @@ async def buy_custom_duration_prompt(
             [
                 InlineKeyboardButton(
                     text="❌ انصراف و بازگشت",
-                    callback_data=f"buy_back_duration_{gb}_{users}",
+                    callback_data=f"buy_back_duration_{gb}_{users}", style="danger"
                 )
             ]
         ]
@@ -684,7 +684,7 @@ async def buy_custom_duration_input(message: types.Message, state: FSMContext) -
             [
                 InlineKeyboardButton(
                     text="❌ انصراف و بازگشت",
-                    callback_data=f"buy_back_duration_{gb}_{users}",
+                    callback_data=f"buy_back_duration_{gb}_{users}", style="danger"
                 )
             ]
         ]
@@ -1054,6 +1054,7 @@ async def buy_discount_apply_prompt(
                 InlineKeyboardButton(
                     text="❌ انصراف و بازگشت",
                     callback_data=f"buy_discount_cancel_{duration}_{users}_{gb}_{price}",
+                    style="danger"
                 )
             ]
         ]
@@ -1132,6 +1133,7 @@ async def buy_discount_process(message: types.Message, state: FSMContext) -> Non
                     InlineKeyboardButton(
                         text="❌ انصراف و بازگشت",
                         callback_data=f"buy_discount_cancel_{duration}_{users}_{gb}_{original_price}",
+                        style="danger"
                     )
                 ]
             ]
@@ -1541,7 +1543,7 @@ async def paid_button(callback: types.CallbackQuery, state: FSMContext) -> None:
             [
                 InlineKeyboardButton(
                     text="❌ انصراف از خرید",
-                    callback_data=f"cancel_inv_{invoice_id}",
+                    callback_data=f"cancel_inv_{invoice_id}", style="danger"
                 )
             ]
         ]
@@ -1748,7 +1750,7 @@ async def receive_receipt_photo(
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف از خرید",
-                        callback_data="buy_cancel",
+                        callback_data="buy_cancel", style="danger"
                     )
                 ]
             ]
@@ -1879,7 +1881,7 @@ async def receive_receipt_text(
                 [
                     InlineKeyboardButton(
                         text="❌ انصراف از خرید",
-                        callback_data="buy_cancel",
+                        callback_data="buy_cancel", style="danger"
                     )
                 ]
             ]
@@ -2102,12 +2104,14 @@ async def _handle_unpaid_receipt_reminder(message: types.Message) -> bool:
                 InlineKeyboardButton(
                     text="✅ ارسال رسید پرداختی",
                     callback_data=f"paid_{invoice_id}",
+                    style="success",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="❌ انصراف از خرید",
                     callback_data=f"cancel_inv_{invoice_id}",
+                    style="danger",
                 )
             ],
         ]

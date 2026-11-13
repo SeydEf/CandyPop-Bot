@@ -50,6 +50,7 @@ async def test_subscription(message: types.Message) -> None:
                         types.InlineKeyboardButton(
                             text="🛒 خرید اشتراک",
                             callback_data="buy_start",
+                            style="primary",
                         ),
                     ]
                 ]
