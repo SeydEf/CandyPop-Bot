@@ -12478,11 +12478,13 @@ async def admin_ip_reactivate_start(callback: types.CallbackQuery) -> None:
                 InlineKeyboardButton(
                     text="🟢 بله، فعال شود",
                     callback_data=f"admin_ip_confirm_reactivate_{email}",
+                    style="success",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف و بازگشت", callback_data=f"admin_ip_cancel_{email}"
+                    text="🔙 بازگشت به پیام مسدودی",
+                    callback_data=f"admin_ip_cancel_{email}",
                 )
             ],
         ]
@@ -12551,11 +12553,13 @@ async def admin_ip_delete_start(callback: types.CallbackQuery) -> None:
                 InlineKeyboardButton(
                     text="🔴 بله، حذف شود",
                     callback_data=f"admin_ip_confirm_delete_{email}",
+                    style="danger",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ انصراف و بازگشت", callback_data=f"admin_ip_cancel_{email}"
+                    text="🔙 بازگشت به پیام مسدودی",
+                    callback_data=f"admin_ip_cancel_{email}",
                 )
             ],
         ]
@@ -12608,7 +12612,57 @@ async def admin_ip_confirm_delete(callback: types.CallbackQuery, bot: Bot) -> No
 async def admin_ip_cancel(callback: types.CallbackQuery) -> None:
     if not await _is_admin(callback):
         return
-    await callback.message.edit_text("❌ عملیات تعیین تکلیف سرویس لغو شد.")
+    email = callback.data[len("admin_ip_cancel_") :]
+
+    from db.models import get_ip_violation, resolve_client_tg_id
+    from services import xui_api
+
+    ip_rec = await get_ip_violation(email)
+    incidents = ip_rec.get("total_incidents", 1) if ip_rec else 1
+    ip_count = ip_rec.get("last_ip_count", 0) if ip_rec else 0
+
+    client_full = await xui_api.get_client(email)
+    if not client_full:
+        await callback.message.edit_text(
+            f"⚠️ اطلاعات سرویس <code>{email}</code> در سرور یافت نشد.",
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    limit_ip = client_full.get("limitIp", 0)
+    tg_id = await resolve_client_tg_id(client_full)
+    user_info = (
+        f"<code>{tg_id}</code>" if tg_id > 0 else "بدون شناسه تلگرام (ثبت خارج ربات)"
+    )
+
+    text = (
+        f"🚨 <b>اطلاعیه مسدودی خودکار سرویس (تخلف IP)</b>\n\n"
+        f"👤 <b>شناسه کاربر:</b> {user_info}\n"
+        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+        f"📡 <b>تعداد اتصالات همزمان:</b> <b>{to_persian_digits(ip_count)} از {to_persian_digits(limit_ip)} IP</b>\n"
+        f"🚨 <b>کل سوابق مسدودی IP این حساب:</b> <b>{to_persian_digits(incidents)} بار</b>\n\n"
+        f"لطفاً جهت تعیین تکلیف سرویس یکی از گزینه‌های زیر را انتخاب نمایید:"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ رفع مسدودی و فعال‌سازی",
+                    callback_data=f"admin_ip_reactivate_{email}",
+                    style="success",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف کامل سرویس",
+                    callback_data=f"admin_ip_delete_{email}",
+                    style="danger",
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
