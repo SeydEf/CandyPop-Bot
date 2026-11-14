@@ -467,6 +467,7 @@ def subscription_manage_keyboard(
 def renew_options_keyboard(
     is_reserve_mode: bool = False,
     allow_same_plan: bool = True,
+    back_callback: str = "sub_view_current",
 ) -> InlineKeyboardMarkup:
     same_text = "📦 رزرو با مشخصات فعلی" if is_reserve_mode else "🔄 تمدید پلن فعلی"
     change_text = (
@@ -497,7 +498,7 @@ def renew_options_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                text="🔙 بازگشت", callback_data="sub_view_current", style="danger"
+                text="🔙 بازگشت", callback_data=back_callback, style="danger"
             ),
         ]
     )

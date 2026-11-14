@@ -113,6 +113,68 @@ async def my_subscriptions(message: types.Message) -> None:
     )
 
 
+async def _build_renew_quick_list_content(
+    user_id: int,
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    subs = await _fetch_subs_from_xui(user_id)
+    renewable_subs = [
+        s
+        for s in subs
+        if not (s.get("email", "").endswith("_test") or "_test" in s.get("email", ""))
+    ]
+
+    if not renewable_subs:
+        return None
+
+    from db.models import get_reserved_renewal
+
+    lines = [
+        "🔄 <b>تمدید سریع اشتراک</b>\n",
+        "👇 لطفاً اشتراکی را که قصد تمدید آن را دارید انتخاب کنید:\n",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for idx, sub in enumerate(renewable_subs, 1):
+        email = sub.get("email", "")
+        total_bytes = sub.get("totalGB", 0) or 0
+        used_traffic = sub.get("usedTraffic", 0) or 0
+        remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
+        total_gb_int = int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
+        is_unl = (total_bytes == 0) or (await is_unlimited_volume(total_gb_int))
+
+        if is_unl:
+            vol_str = "نامحدود"
+        elif total_bytes > 0:
+            vol_str = format_size_persian_gb(remaining)
+        else:
+            vol_str = "نامحدود"
+
+        days_str = format_remaining_days(sub.get("expiryTime", 0))
+        status_icon = "🟢" if sub.get("enable", True) else "🔴"
+
+        res_rec = await get_reserved_renewal(email)
+        res_suffix = " <i>(دارای تمدید رزروشده)</i>" if res_rec else ""
+
+        lines.append(
+            f"{to_persian_digits(idx)}. {status_icon} <code>{email}</code>{res_suffix}\n"
+            f"⏳ اعتبار: <b>{days_str}</b>\n🔋 ترافیک باقیمانده: <b>{vol_str}</b>"
+        )
+
+        btn_text = f"🔄 {email} ({days_str})"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"sub_quick_renew_{email}",
+                    style="primary",
+                )
+            ]
+        )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    return "\n".join(lines), keyboard
+
+
 @router.message(Command("renew"))
 @router.message(F.text == BTN_RENEW)
 async def renew_subscription_menu(message: types.Message, state: FSMContext) -> None:
@@ -161,60 +223,59 @@ async def renew_subscription_menu(message: types.Message, state: FSMContext) -> 
 
     if len(renewable_subs) == 1:
         single_email = renewable_subs[0].get("email", "")
-        await _render_renew_options(message, state, single_email, is_edit=False)
+        await state.update_data(renew_back_callback="sub_view_current")
+        await _render_renew_options(
+            message,
+            state,
+            single_email,
+            is_edit=False,
+            back_callback="sub_view_current",
+        )
         return
 
-    from db.models import get_reserved_renewal
+    res = await _build_renew_quick_list_content(message.from_user.id)
+    if not res:
+        return
 
-    lines = [
-        "🔄 <b>تمدید سریع اشتراک</b>\n",
-        "👇 لطفاً اشتراکی را که قصد تمدید آن را دارید انتخاب کنید:\n",
-    ]
-    rows: list[list[InlineKeyboardButton]] = []
-
-    for idx, sub in enumerate(renewable_subs, 1):
-        email = sub.get("email", "")
-        total_bytes = sub.get("totalGB", 0) or 0
-        used_traffic = sub.get("usedTraffic", 0) or 0
-        remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
-        total_gb_int = int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
-        is_unl = (total_bytes == 0) or (await is_unlimited_volume(total_gb_int))
-
-        if is_unl:
-            vol_str = "نامحدود"
-        elif total_bytes > 0:
-            vol_str = format_size_persian_gb(remaining)
-        else:
-            vol_str = "نامحدود"
-
-        days_str = format_remaining_days(sub.get("expiryTime", 0))
-        status_icon = "🟢" if sub.get("enable", True) else "🔴"
-
-        res_rec = await get_reserved_renewal(email)
-        res_suffix = " <i>(دارای تمدید رزروشده)</i>" if res_rec else ""
-
-        lines.append(
-            f"{to_persian_digits(idx)}. {status_icon} <code>{email}</code>{res_suffix}\n"
-            f"   ⏳ اعتبار: <b>{days_str}</b> | 🔋 ترافیک باقیمانده: <b>{vol_str}</b>"
-        )
-
-        btn_text = f"🔄 {email} ({days_str})"
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=btn_text,
-                    callback_data=f"sub_renew_{email}",
-                    style="primary",
-                )
-            ]
-        )
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    text, keyboard = res
     await message.answer(
-        "\n".join(lines),
+        text,
         reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data.startswith("sub_quick_renew_"))
+async def sub_quick_renew_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    email = callback.data[len("sub_quick_renew_") :]
+    await state.update_data(renew_back_callback="sub_renew_back_list")
+    await _render_renew_options(
+        callback,
+        state,
+        email,
+        is_edit=True,
+        back_callback="sub_renew_back_list",
+    )
+
+
+@router.callback_query(F.data == "sub_renew_back_list")
+async def sub_renew_back_to_list(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not callback.from_user:
+        return
+    await state.clear()
+    res = await _build_renew_quick_list_content(callback.from_user.id)
+    if not res:
+        await _render_subscriptions_list(callback)
+        await callback.answer()
+        return
+
+    text, keyboard = res
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
 
 
 async def _render_subscriptions_list(callback: types.CallbackQuery) -> None:
@@ -783,7 +844,14 @@ async def _render_renew_options(
     state: FSMContext,
     email: str,
     is_edit: bool = True,
+    back_callback: str | None = None,
 ) -> None:
+    data = await state.get_data()
+    if back_callback is not None:
+        await state.update_data(renew_back_callback=back_callback)
+    else:
+        back_callback = data.get("renew_back_callback", "sub_view_current")
+
     from db.models import get_shop_status
 
     shop_status = await get_shop_status()
@@ -858,6 +926,7 @@ async def _render_renew_options(
     keyboard = renew_options_keyboard(
         is_reserve_mode=reserve_enabled,
         allow_same_plan=allow_same_plan,
+        back_callback=back_callback,
     )
 
     if is_edit and isinstance(target, types.CallbackQuery) and target.message:
