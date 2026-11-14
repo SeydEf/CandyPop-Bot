@@ -11783,28 +11783,42 @@ async def admin_ip_checker_menu_handler(
         if len(suspended_clients) > 5:
             text += f"  <i>... و {to_persian_digits(len(suspended_clients) - 5)} مورد دیگر</i>\n"
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=toggle_text,
-                    callback_data="admin_ip_checker_toggle",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
-                    callback_data="admin_ip_edit_interval",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت به هشدارها",
-                    callback_data="admin_alerts_menu",
-                )
-            ],
+    rows: list[list[InlineKeyboardButton]] = []
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"🚨 مدیریت اشتراک‌های مسدودشده ({to_persian_digits(len(suspended_clients))} مورد)",
+                callback_data="admin_ip_suspended_list_0",
+                style="danger",
+            )
         ]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=toggle_text,
+                callback_data="admin_ip_checker_toggle",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⏳ تغییر فاصله زمان پایش IP (دقیقه)",
+                callback_data="admin_ip_edit_interval",
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به هشدارها",
+                callback_data="admin_alerts_menu",
+            )
+        ]
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
     await safe_edit_text(
         callback.message,
@@ -12528,6 +12542,16 @@ async def admin_ip_confirm_reactivate(callback: types.CallbackQuery, bot: Bot) -
 
         await callback.message.edit_text(
             f"✅ سرویس <code>{email}</code> با موفقیت توسط مدیریت رفع مسدودی و فعال شد.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔙 بازگشت به لیست مسدودها",
+                            callback_data="admin_ip_suspended_list_0",
+                        )
+                    ]
+                ]
+            ),
             parse_mode="HTML",
         )
     except Exception as e:
@@ -12599,6 +12623,16 @@ async def admin_ip_confirm_delete(callback: types.CallbackQuery, bot: Bot) -> No
 
         await callback.message.edit_text(
             f"🗑 سرویس <code>{email}</code> با موفقیت از سرور حذف گردید.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔙 بازگشت به لیست مسدودها",
+                            callback_data="admin_ip_suspended_list_0",
+                        )
+                    ]
+                ]
+            ),
             parse_mode="HTML",
         )
     except Exception as e:
@@ -12660,10 +12694,342 @@ async def admin_ip_cancel(callback: types.CallbackQuery) -> None:
                     style="danger",
                 )
             ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به لیست مسدودها",
+                    callback_data="admin_ip_suspended_list_0",
+                )
+            ],
         ]
     )
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
+
+
+async def _build_ip_suspended_list_panel(
+    page: int = 0,
+) -> tuple[str, InlineKeyboardMarkup]:
+    from db.models import get_all_ip_violations_dict
+
+    v_dict = await get_all_ip_violations_dict()
+    suspended_clients = [v for v in v_dict.values() if v.get("suspended") == 1]
+    suspended_clients.sort(
+        key=lambda x: str(x.get("last_violated_at") or ""), reverse=True
+    )
+
+    total = len(suspended_clients)
+    if total == 0:
+        text = (
+            "🚨 <b>مدیریت اشتراک‌های مسدودشده (تخلف IP)</b>\n\n"
+            "✅ در حال حاضر هیچ اشتراکی در وضعیت مسدودی قرار ندارد."
+        )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به پایش IP",
+                        callback_data="admin_ip_checker_menu",
+                    )
+                ]
+            ]
+        )
+        return text, keyboard
+
+    page_size = 6
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page < 0:
+        page = 0
+    elif page >= total_pages:
+        page = total_pages - 1
+
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, total)
+    current_items = suspended_clients[start_idx:end_idx]
+
+    text = (
+        "🚨 <b>مدیریت اشتراک‌های مسدودشده به دلیل تخلف IP</b>\n\n"
+        f"تعداد کل اشتراک‌های مسدودشده: <b>{to_persian_digits(total)} مورد</b>\n"
+        f"صفحه <b>{to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}</b>\n\n"
+        "جهت مشاهده اطلاعات، فعال‌سازی مجدد یا حذف سرویس، اشتراک مورد نظر را انتخاب نمایید:"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="♻️ رفع مسدودی همگانی همه اشتراک‌ها",
+                callback_data="admin_ip_unban_all_confirm",
+                style="primary",
+            )
+        ]
+    ]
+
+    for item in current_items:
+        email = item.get("email", "")
+        incidents = item.get("total_incidents", 1)
+        btn_text = f"🚫 {email} ({to_persian_digits(incidents)} بار)"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"admin_ip_manage:{page}:{email}",
+                )
+            ]
+        )
+
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="◀️ قبلی",
+                callback_data=f"admin_ip_suspended_list_{page - 1}",
+            )
+        )
+    if total_pages > 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{to_persian_digits(page + 1)} / {to_persian_digits(total_pages)}",
+                callback_data="admin_ip_noop",
+            )
+        )
+    if page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="بعدی ▶️",
+                callback_data=f"admin_ip_suspended_list_{page + 1}",
+            )
+        )
+
+    if nav_row:
+        rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به پایش IP",
+                callback_data="admin_ip_checker_menu",
+            )
+        ]
+    )
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data.regexp(r"^admin_ip_suspended_list_(\d+)$"))
+async def admin_ip_suspended_list_view(callback: types.CallbackQuery) -> None:
+    if not await _is_admin(callback):
+        return
+
+    match = re.match(r"^admin_ip_suspended_list_(\d+)$", callback.data or "")
+    page = int(match.group(1)) if match else 0
+
+    panel_text, keyboard = await _build_ip_suspended_list_panel(page)
+    await callback.message.edit_text(
+        panel_text, reply_markup=keyboard, parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ip_noop")
+async def admin_ip_noop(callback: types.CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_ip_manage:"))
+async def admin_ip_manage_client(callback: types.CallbackQuery) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split(":", 2)
+    if len(parts) < 3:
+        await callback.answer("داده نامعتبر است.")
+        return
+    page = int(parts[1]) if parts[1].isdigit() else 0
+    email = parts[2]
+
+    from db.models import get_ip_violation, resolve_client_tg_id
+    from services import xui_api
+
+    ip_rec = await get_ip_violation(email)
+    incidents = ip_rec.get("total_incidents", 1) if ip_rec else 1
+    last_violation = ip_rec.get("last_violated_at") if ip_rec else None
+
+    client_full = await xui_api.get_client(email)
+    if not client_full:
+        text = (
+            f"⚠️ <b>اطلاعات سرویس یافت نشد</b>\n\n"
+            f"سرویس <code>{email}</code> در سرور یافت نشد (احتمالاً دستی حذف شده است).\n"
+            f"می‌توانید سابقه تخلف این ایمیل را پاکسازی کنید:"
+        )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🗑 پاکسازی سابقه تخلف",
+                        callback_data=f"admin_ip_confirm_delete_{email}",
+                        style="danger",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔙 بازگشت به لیست مسدودها",
+                        callback_data=f"admin_ip_suspended_list_{page}",
+                    )
+                ],
+            ]
+        )
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await callback.answer()
+        return
+
+    limit_ip = client_full.get("limitIp", 0)
+    tg_id = await resolve_client_tg_id(client_full)
+    user_info = f"<code>{tg_id}</code>" if tg_id > 0 else "بدون شناسه تلگرام (ثبت دستی)"
+    last_time_str = format_datetime(last_violation) if last_violation else "ثبت نشده"
+
+    text = (
+        f"🚨 <b>مدیریت اشتراک مسدودشده</b>\n\n"
+        f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n"
+        f"👤 <b>شناسه کاربر:</b> {user_info}\n"
+        f"📡 <b>سقف مجاز اتصال:</b> <b>{to_persian_digits(limit_ip)} IP</b>\n"
+        f"🚨 <b>کل سوابق مسدودی:</b> <b>{to_persian_digits(incidents)} بار</b>\n"
+        f"🕒 <b>زمان آخرین تخلف:</b> <code>{last_time_str}</code>\n\n"
+        f"جهت رفع مسدودی یا حذف دائمی این سرویس اقدام فرمایید:"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ رفع مسدودی و فعال‌سازی",
+                    callback_data=f"admin_ip_reactivate_{email}",
+                    style="success",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف کامل سرویس",
+                    callback_data=f"admin_ip_delete_{email}",
+                    style="danger",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به لیست مسدودها",
+                    callback_data=f"admin_ip_suspended_list_{page}",
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ip_unban_all_confirm")
+async def admin_ip_unban_all_confirm(callback: types.CallbackQuery) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from db.models import get_all_ip_violations_dict
+
+    v_dict = await get_all_ip_violations_dict()
+    count = sum(1 for v in v_dict.values() if v.get("suspended") == 1)
+
+    text = (
+        f"⚠️ <b>تأییدیه رفع مسدودی همگانی</b>\n\n"
+        f"آیا مطمئن هستید که می‌خواهید مسدودی تمام <b>{to_persian_digits(count)}</b> اشتراک مسدودشده را لغو کرده و آن‌ها را مجدداً فعال نمایید؟\n\n"
+        f"<i>کلیه این اشتراک‌ها در پنل سرور فعال شده و تخلفات آن‌ها صفر خواهد شد.</i>"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🟢 بله، همه را رفع مسدودی کن",
+                    callback_data="admin_ip_unban_all_do",
+                    style="success",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 انصراف و بازگشت",
+                    callback_data="admin_ip_suspended_list_0",
+                )
+            ],
+        ]
+    )
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_ip_unban_all_do")
+async def admin_ip_unban_all_do(callback: types.CallbackQuery, bot: Bot) -> None:
+    if not await _is_admin(callback):
+        return
+
+    from db.models import (
+        get_all_ip_violations_dict,
+        reset_ip_violations,
+        resolve_client_tg_id,
+    )
+    from services import xui_api
+
+    v_dict = await get_all_ip_violations_dict()
+    suspended_emails = [email for email, v in v_dict.items() if v.get("suspended") == 1]
+
+    if not suspended_emails:
+        await callback.answer("هیچ اشتراک مسدودشده‌ای یافت نشد.", show_alert=True)
+        panel_text, kb = await _build_ip_suspended_list_panel(0)
+        await callback.message.edit_text(panel_text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    await callback.answer("⏳ در حال رفع مسدودی همگانی...")
+    success_count = 0
+    fail_count = 0
+
+    for email in suspended_emails:
+        try:
+            client_full = await xui_api.get_client(email)
+            if client_full:
+                update_data = dict(client_full)
+                update_data["enable"] = True
+                await xui_api.update_client(email, update_data)
+
+                tg_id = await resolve_client_tg_id(client_full)
+                if tg_id > 0:
+                    try:
+                        user_msg = (
+                            f"✅ <b>اشتراک شما مجدداً فعال گردید</b>\n\n"
+                            f"🏷 <b>نام سرویس:</b> <code>{email}</code>\n\n"
+                            f"اشتراک شما توسط مدیریت از حالت مسدودی خارج و فعال گردید. لطفاً سقف استفاده همزمان دستگاه‌ها را رعایت فرمایید."
+                        )
+                        await bot.send_message(
+                            chat_id=tg_id, text=user_msg, parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+
+            await reset_ip_violations(email)
+            success_count += 1
+        except Exception as e:
+            logger.exception("Failed to bulk unban %s: %s", email, e)
+            fail_count += 1
+
+    msg = (
+        f"♻️ <b>عملیات رفع مسدودی همگانی به پایان رسید.</b>\n\n"
+        f"✅ موفق: <b>{to_persian_digits(success_count)} مورد</b>\n"
+    )
+    if fail_count > 0:
+        msg += f"❌ ناموفق: <b>{to_persian_digits(fail_count)} مورد</b>\n"
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به پایش IP",
+                    callback_data="admin_ip_checker_menu",
+                )
+            ]
+        ]
+    )
+    await callback.message.edit_text(msg, reply_markup=keyboard, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_ip_edit_interval")
