@@ -36,23 +36,23 @@ def main_menu_keyboard(show_pricing: bool | None = None) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text=BTN_TEST),
+                KeyboardButton(text=BTN_TEST, style="success"),
             ],
             [
                 KeyboardButton(text=BTN_BUY),
-                KeyboardButton(text=BTN_MY_SUBS),
+                KeyboardButton(text=BTN_RENEW),
             ],
             [
-                KeyboardButton(text=BTN_RENEW),
+                KeyboardButton(text=BTN_MY_SUBS),
             ],
             [
                 KeyboardButton(text=BTN_PROFILE),
                 KeyboardButton(text=BTN_INCREASE_WALLET),
             ],
-            pricing_row,
             [
                 KeyboardButton(text=BTN_INVITE),
             ],
+            pricing_row,
             [
                 KeyboardButton(text=BTN_SUPPORT),
             ],

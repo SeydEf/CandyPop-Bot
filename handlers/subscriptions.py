@@ -194,14 +194,8 @@ async def renew_subscription_menu(message: types.Message, state: FSMContext) -> 
         )
         return
 
-    subs = await _fetch_subs_from_xui(message.from_user.id)
-    renewable_subs = [
-        s
-        for s in subs
-        if not (s.get("email", "").endswith("_test") or "_test" in s.get("email", ""))
-    ]
-
-    if not renewable_subs:
+    res = await _build_renew_quick_list_content(message.from_user.id)
+    if not res:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -219,22 +213,6 @@ async def renew_subscription_menu(message: types.Message, state: FSMContext) -> 
             reply_markup=kb,
             parse_mode="HTML",
         )
-        return
-
-    if len(renewable_subs) == 1:
-        single_email = renewable_subs[0].get("email", "")
-        await state.update_data(renew_back_callback="sub_view_current")
-        await _render_renew_options(
-            message,
-            state,
-            single_email,
-            is_edit=False,
-            back_callback="sub_view_current",
-        )
-        return
-
-    res = await _build_renew_quick_list_content(message.from_user.id)
-    if not res:
         return
 
     text, keyboard = res
