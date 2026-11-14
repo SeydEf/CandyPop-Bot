@@ -36,7 +36,7 @@ from keyboards.inline_kb import (
     subscription_manage_keyboard,
     subscriptions_list_keyboard,
 )
-from keyboards.reply_kb import BTN_MY_SUBS
+from keyboards.reply_kb import BTN_MY_SUBS, BTN_RENEW
 from services import xui_api
 from services.pricing import (
     format_volume_label,
@@ -109,6 +109,110 @@ async def my_subscriptions(message: types.Message) -> None:
         f"📋 <b>فهرست اشتراک‌های فعال شما ({to_persian_digits(len(subs))} سرویس):</b>\n\n"
         "👇 برای مشاهده وضعیت و مدیریت هر سرویس، آن را انتخاب کنید:",
         reply_markup=subscriptions_list_keyboard(subs),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("renew"))
+@router.message(F.text == BTN_RENEW)
+async def renew_subscription_menu(message: types.Message, state: FSMContext) -> None:
+    if not message.from_user:
+        return
+
+    await state.clear()
+
+    from db.models import get_shop_status
+
+    shop_status = await get_shop_status()
+    if not shop_status["renewals_enabled"]:
+        await message.answer(
+            "⛔️ <b>تمدید اشتراک‌ها موقتاً غیرفعال است.</b>\n\n"
+            "امکان تمدید سرویس در حال حاضر موقتاً متوقف شده است. لطفاً بعداً مراجعه کنید.",
+            parse_mode="HTML",
+        )
+        return
+
+    subs = await _fetch_subs_from_xui(message.from_user.id)
+    renewable_subs = [
+        s
+        for s in subs
+        if not (s.get("email", "").endswith("_test") or "_test" in s.get("email", ""))
+    ]
+
+    if not renewable_subs:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🛒 خرید اشتراک جدید",
+                        callback_data="buy_start",
+                        style="primary",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "📭 <b>شما در حال حاضر هیچ اشتراک فعالی برای تمدید ندارید.</b>\n\n"
+            "🚀 برای تهیه سرویس جدید می‌توانید از دکمه زیر یا منوی اصلی استفاده کنید.",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+        return
+
+    if len(renewable_subs) == 1:
+        single_email = renewable_subs[0].get("email", "")
+        await _render_renew_options(message, state, single_email, is_edit=False)
+        return
+
+    from db.models import get_reserved_renewal
+
+    lines = [
+        "🔄 <b>تمدید سریع اشتراک</b>\n",
+        "👇 لطفاً اشتراکی را که قصد تمدید آن را دارید انتخاب کنید:\n",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for idx, sub in enumerate(renewable_subs, 1):
+        email = sub.get("email", "")
+        total_bytes = sub.get("totalGB", 0) or 0
+        used_traffic = sub.get("usedTraffic", 0) or 0
+        remaining = max(0, total_bytes - used_traffic) if total_bytes > 0 else 0
+        total_gb_int = int(round(total_bytes / (1024**3))) if total_bytes > 0 else 0
+        is_unl = (total_bytes == 0) or (await is_unlimited_volume(total_gb_int))
+
+        if is_unl:
+            vol_str = "نامحدود"
+        elif total_bytes > 0:
+            vol_str = format_size_persian_gb(remaining)
+        else:
+            vol_str = "نامحدود"
+
+        days_str = format_remaining_days(sub.get("expiryTime", 0))
+        status_icon = "🟢" if sub.get("enable", True) else "🔴"
+
+        res_rec = await get_reserved_renewal(email)
+        res_suffix = " <i>(دارای تمدید رزروشده)</i>" if res_rec else ""
+
+        lines.append(
+            f"{to_persian_digits(idx)}. {status_icon} <code>{email}</code>{res_suffix}\n"
+            f"   ⏳ اعتبار: <b>{days_str}</b> | 🔋 ترافیک باقیمانده: <b>{vol_str}</b>"
+        )
+
+        btn_text = f"🔄 {email} ({days_str})"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"sub_renew_{email}",
+                    style="primary",
+                )
+            ]
+        )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=keyboard,
         parse_mode="HTML",
     )
 
@@ -674,46 +778,51 @@ async def sub_view_current(callback: types.CallbackQuery, state: FSMContext) -> 
     await callback.answer()
 
 
-@router.callback_query(F.data == "sub_renew_current")
-@router.callback_query(F.data.startswith("sub_renew_"))
-async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> None:
+async def _render_renew_options(
+    target: types.Message | types.CallbackQuery,
+    state: FSMContext,
+    email: str,
+    is_edit: bool = True,
+) -> None:
     from db.models import get_shop_status
 
     shop_status = await get_shop_status()
     if not shop_status["renewals_enabled"]:
-        await callback.answer("⛔️ تمدید اشتراک‌ها موقتاً غیرفعال است.", show_alert=True)
-        await callback.message.answer(
+        msg_text = (
             "⛔️ <b>تمدید اشتراک‌ها موقتاً غیرفعال است.</b>\n\n"
-            "امکان تمدید سرویس در حال حاضر موقتاً متوقف شده است. لطفاً بعداً مراجعه کنید.",
-            parse_mode="HTML",
+            "امکان تمدید سرویس در حال حاضر موقتاً متوقف شده است. لطفاً بعداً مراجعه کنید."
         )
+        if isinstance(target, types.CallbackQuery):
+            await target.answer("⛔️ تمدید اشتراک‌ها موقتاً غیرفعال است.", show_alert=True)
+            if target.message:
+                await target.message.answer(msg_text, parse_mode="HTML")
+        else:
+            await target.answer(msg_text, parse_mode="HTML")
         return
 
-    if callback.data.startswith("sub_renew_") and callback.data != "sub_renew_current":
-        email = callback.data[len("sub_renew_") :]
-        await state.update_data(renew_email=email)
-    else:
-        data = await state.get_data()
-        email = data.get("renew_email")
-
-    if not email:
-        await callback.answer("❌ متأسفانه اشتراک پیدا نشد.", show_alert=True)
-        return
+    await state.update_data(renew_email=email)
 
     from db.models import get_reserved_renewal
 
     res_rec = await get_reserved_renewal(email)
     if res_rec:
-        await callback.answer(
+        err_msg = (
             "⚠️ شما در حال حاضر یک بسته تمدید رزروشده برای این سرویس دارید.\n"
-            "امکان رزرو بیش از یک بسته وجود ندارد.",
-            show_alert=True,
+            "امکان رزرو بیش از یک بسته وجود ندارد."
         )
+        if isinstance(target, types.CallbackQuery):
+            await target.answer(err_msg, show_alert=True)
+        else:
+            await target.answer(err_msg, parse_mode="HTML")
         return
 
     client = await xui_api.get_client(email)
     if not client:
-        await callback.answer("❌ اشتراک در پنل سرور یافت نشد.", show_alert=True)
+        err_msg = "❌ اشتراک در پنل سرور یافت نشد."
+        if isinstance(target, types.CallbackQuery):
+            await target.answer(err_msg, show_alert=True)
+        else:
+            await target.answer(err_msg, parse_mode="HTML")
         return
 
     total_bytes = client.get("totalGB", 0) or 0
@@ -746,15 +855,48 @@ async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> N
         f"👥 <b>ظرفیت اتصال فعلی:</b> <b>{to_persian_digits(current_users)} کاربر</b>\n\n"
         f"{prompt_desc}"
     )
-    await callback.message.edit_text(
-        text,
-        reply_markup=renew_options_keyboard(
-            is_reserve_mode=reserve_enabled,
-            allow_same_plan=allow_same_plan,
-        ),
-        parse_mode="HTML",
+    keyboard = renew_options_keyboard(
+        is_reserve_mode=reserve_enabled,
+        allow_same_plan=allow_same_plan,
     )
-    await callback.answer()
+
+    if is_edit and isinstance(target, types.CallbackQuery) and target.message:
+        await target.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        await target.answer()
+    elif isinstance(target, types.CallbackQuery):
+        if target.message:
+            await target.message.answer(
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        await target.answer()
+    else:
+        await target.answer(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data == "sub_renew_current")
+@router.callback_query(F.data.startswith("sub_renew_"))
+async def sub_renew_start(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if callback.data.startswith("sub_renew_") and callback.data != "sub_renew_current":
+        email = callback.data[len("sub_renew_") :]
+    else:
+        data = await state.get_data()
+        email = data.get("renew_email")
+
+    if not email:
+        await callback.answer("❌ متأسفانه اشتراک پیدا نشد.", show_alert=True)
+        return
+
+    await _render_renew_options(callback, state, email, is_edit=True)
 
 
 async def _build_renewal_invoice(

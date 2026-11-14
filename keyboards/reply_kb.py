@@ -3,6 +3,7 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 BTN_TEST = "🎁 اشتراک تست"
 BTN_BUY = "🛒 خرید اشتراک"
 BTN_MY_SUBS = "📋 اشتراک‌های من"
+BTN_RENEW = "🔄 تمدید اشتراک"
 BTN_INCREASE_WALLET = "💳 افزایش موجودی"
 BTN_PROFILE = "👤 پروفایل"
 BTN_PRICING = "💰 تعرفه‌ها"
@@ -40,6 +41,9 @@ def main_menu_keyboard(show_pricing: bool | None = None) -> ReplyKeyboardMarkup:
             [
                 KeyboardButton(text=BTN_BUY),
                 KeyboardButton(text=BTN_MY_SUBS),
+            ],
+            [
+                KeyboardButton(text=BTN_RENEW),
             ],
             [
                 KeyboardButton(text=BTN_PROFILE),
