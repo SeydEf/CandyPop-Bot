@@ -532,7 +532,8 @@ async def delete_invoice(invoice_id: str) -> bool:
         "DELETE FROM bank_sms_transactions WHERE invoice_id = ?", (invoice_id,)
     )
     await db.execute(
-        "DELETE FROM reserved_renewals WHERE invoice_id = ?", (invoice_id,)
+        "DELETE FROM reserved_renewals WHERE invoice_id = ? AND status = 'pending'",
+        (invoice_id,),
     )
     cursor = await db.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
     await db.commit()
@@ -2073,7 +2074,9 @@ async def get_database_stats() -> dict[str, Any]:
     async with db.execute("SELECT COUNT(*) FROM bot_admins") as c:
         row = await c.fetchone()
         stats["admins_count"] = row[0] if row else 0
-    async with db.execute("SELECT COUNT(*) FROM reserved_renewals") as c:
+    async with db.execute(
+        "SELECT COUNT(*) FROM reserved_renewals WHERE status = 'pending'"
+    ) as c:
         row = await c.fetchone()
         stats["reserved_renewals_count"] = row[0] if row else 0
     return stats
@@ -2082,7 +2085,11 @@ async def get_database_stats() -> dict[str, Any]:
 async def get_reserved_renewal(email: str) -> dict[str, Any] | None:
     db = await get_db()
     async with db.execute(
-        "SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id FROM reserved_renewals WHERE email = ?",
+        """
+        SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id, status, activated_at, activation_type
+        FROM reserved_renewals
+        WHERE email = ? AND status = 'pending'
+        """,
         (email,),
     ) as cursor:
         row = await cursor.fetchone()
@@ -2092,7 +2099,12 @@ async def get_reserved_renewal(email: str) -> dict[str, Any] | None:
 async def get_all_reserved_renewals() -> list[dict[str, Any]]:
     db = await get_db()
     async with db.execute(
-        "SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id FROM reserved_renewals ORDER BY id ASC"
+        """
+        SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id, status, activated_at, activation_type
+        FROM reserved_renewals
+        WHERE status = 'pending'
+        ORDER BY id ASC
+        """
     ) as cursor:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -2101,7 +2113,12 @@ async def get_all_reserved_renewals() -> list[dict[str, Any]]:
 async def get_reserved_renewals_by_user(tg_id: int) -> list[dict[str, Any]]:
     db = await get_db()
     async with db.execute(
-        "SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id FROM reserved_renewals WHERE tg_id = ? ORDER BY id ASC",
+        """
+        SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id, status, activated_at, activation_type
+        FROM reserved_renewals
+        WHERE tg_id = ? AND status = 'pending'
+        ORDER BY id ASC
+        """,
         (tg_id,),
     ) as cursor:
         rows = await cursor.fetchall()
@@ -2117,10 +2134,16 @@ async def create_reserved_renewal(
     invoice_id: str | None = None,
 ) -> int:
     db = await get_db()
+    await db.execute(
+        "DELETE FROM reserved_renewals WHERE email = ? AND status = 'pending'",
+        (email,),
+    )
     cursor = await db.execute(
         """
-        INSERT OR REPLACE INTO reserved_renewals (email, tg_id, duration_days, data_gb, users_count, invoice_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO reserved_renewals (
+            email, tg_id, duration_days, data_gb, users_count, invoice_id, status, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
         """,
         (email, tg_id, duration_days, data_gb, users_count, invoice_id),
     )
@@ -2130,41 +2153,31 @@ async def create_reserved_renewal(
 
 async def delete_reserved_renewal(email: str) -> bool:
     db = await get_db()
-    cursor = await db.execute("DELETE FROM reserved_renewals WHERE email = ?", (email,))
+    cursor = await db.execute(
+        "DELETE FROM reserved_renewals WHERE email = ? AND status = 'pending'",
+        (email,),
+    )
     await db.commit()
     return cursor.rowcount > 0
 
 
-async def log_reserved_renewal_activation(
+async def mark_reserved_renewal_activated(
     email: str,
-    tg_id: int,
-    duration_days: int,
-    data_gb: int,
-    users_count: int = 1,
-    invoice_id: str | None = None,
     activation_type: str = "auto",
-    created_at: str | None = None,
-) -> int:
+) -> bool:
     db = await get_db()
     cursor = await db.execute(
         """
-        INSERT INTO reserved_renewal_logs (
-            email, tg_id, duration_days, data_gb, users_count, invoice_id, activation_type, created_at, activated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        UPDATE reserved_renewals
+        SET status = 'activated',
+            activated_at = datetime('now'),
+            activation_type = ?
+        WHERE email = ? AND status = 'pending'
         """,
-        (
-            email,
-            tg_id,
-            duration_days,
-            data_gb,
-            users_count,
-            invoice_id,
-            activation_type,
-            created_at,
-        ),
+        (activation_type, email),
     )
     await db.commit()
-    return cursor.lastrowid or 0
+    return cursor.rowcount > 0
 
 
 async def get_user_reserved_renewal_logs_paginated(
@@ -2172,7 +2185,7 @@ async def get_user_reserved_renewal_logs_paginated(
 ) -> tuple[list[dict[str, Any]], int]:
     db = await get_db()
     async with db.execute(
-        "SELECT COUNT(*) as total FROM reserved_renewal_logs WHERE tg_id = ?",
+        "SELECT COUNT(*) as total FROM reserved_renewals WHERE tg_id = ? AND status = 'activated'",
         (tg_id,),
     ) as cursor:
         row = await cursor.fetchone()
@@ -2181,8 +2194,8 @@ async def get_user_reserved_renewal_logs_paginated(
     async with db.execute(
         """
         SELECT id, email, tg_id, duration_days, data_gb, users_count, invoice_id, activation_type, created_at, activated_at
-        FROM reserved_renewal_logs
-        WHERE tg_id = ?
+        FROM reserved_renewals
+        WHERE tg_id = ? AND status = 'activated'
         ORDER BY id DESC
         LIMIT ? OFFSET ?
         """,
@@ -2199,11 +2212,7 @@ async def rename_client_references(old_email: str, new_email: str) -> None:
         return
     db = await get_db()
     await db.execute(
-        "UPDATE OR REPLACE reserved_renewals SET email = ? WHERE email = ?",
-        (new_email, old_email),
-    )
-    await db.execute(
-        "UPDATE reserved_renewal_logs SET email = ? WHERE email = ?",
+        "UPDATE reserved_renewals SET email = ? WHERE email = ?",
         (new_email, old_email),
     )
     await db.execute(

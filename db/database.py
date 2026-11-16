@@ -120,14 +120,17 @@ async def init_db() -> None:
         );
 
         CREATE TABLE IF NOT EXISTS reserved_renewals (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            email         TEXT NOT NULL UNIQUE,
-            tg_id         INTEGER NOT NULL,
-            duration_days INTEGER NOT NULL,
-            data_gb       INTEGER NOT NULL,
-            users_count   INTEGER NOT NULL DEFAULT 1,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            invoice_id    TEXT
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            email           TEXT NOT NULL,
+            tg_id           INTEGER NOT NULL,
+            duration_days   INTEGER NOT NULL,
+            data_gb         INTEGER NOT NULL,
+            users_count     INTEGER NOT NULL DEFAULT 1,
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            invoice_id      TEXT,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            activated_at    TEXT,
+            activation_type TEXT
         );
 
         CREATE TABLE IF NOT EXISTS bank_sms_transactions (
@@ -148,24 +151,59 @@ async def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_bank_sms_fingerprint ON bank_sms_transactions(fingerprint);
         CREATE INDEX IF NOT EXISTS idx_bank_sms_amount ON bank_sms_transactions(amount_toman);
-
-        CREATE TABLE IF NOT EXISTS reserved_renewal_logs (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            email           TEXT NOT NULL,
-            tg_id           INTEGER NOT NULL,
-            duration_days   INTEGER NOT NULL,
-            data_gb         INTEGER NOT NULL,
-            users_count     INTEGER NOT NULL DEFAULT 1,
-            invoice_id      TEXT,
-            activation_type TEXT NOT NULL DEFAULT 'auto',
-            created_at      TEXT,
-            activated_at    TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_res_logs_tg_id ON reserved_renewal_logs(tg_id);
-        CREATE INDEX IF NOT EXISTS idx_res_logs_email ON reserved_renewal_logs(email);
     """)
 
+    async with db.execute("PRAGMA table_info(reserved_renewals)") as cur:
+        cols = {row["name"]: dict(row) for row in await cur.fetchall()}
+    if "status" not in cols:
+        await db.execute(
+            "ALTER TABLE reserved_renewals ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
+        )
+    if "activated_at" not in cols:
+        await db.execute("ALTER TABLE reserved_renewals ADD COLUMN activated_at TEXT")
+    if "activation_type" not in cols:
+        await db.execute(
+            "ALTER TABLE reserved_renewals ADD COLUMN activation_type TEXT"
+        )
+
+    async with db.execute("PRAGMA index_list(reserved_renewals)") as cur:
+        indices = await cur.fetchall()
+        has_auto_unique = any(
+            idx["unique"] and "autoindex" in idx["name"] for idx in indices
+        )
+    if has_auto_unique:
+        await db.executescript("""
+            CREATE TABLE reserved_renewals_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                email           TEXT NOT NULL,
+                tg_id           INTEGER NOT NULL,
+                duration_days   INTEGER NOT NULL,
+                data_gb         INTEGER NOT NULL,
+                users_count     INTEGER NOT NULL DEFAULT 1,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                invoice_id      TEXT,
+                status          TEXT NOT NULL DEFAULT 'pending',
+                activated_at    TEXT,
+                activation_type TEXT
+            );
+            INSERT INTO reserved_renewals_new (id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id, status, activated_at, activation_type)
+            SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id, status, activated_at, activation_type
+            FROM reserved_renewals;
+            DROP TABLE reserved_renewals;
+            ALTER TABLE reserved_renewals_new RENAME TO reserved_renewals;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_res_renewals_pending_email
+                ON reserved_renewals(email) WHERE status = 'pending';
+            CREATE INDEX IF NOT EXISTS idx_res_renewals_tg_id
+                ON reserved_renewals(tg_id, status);
+        """)
+
+    await db.execute("DROP TABLE IF EXISTS reserved_renewal_logs")
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_res_renewals_pending_email ON reserved_renewals(email) WHERE status = 'pending'"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_res_renewals_tg_id ON reserved_renewals(tg_id, status)"
+    )
     await db.commit()
 
 
