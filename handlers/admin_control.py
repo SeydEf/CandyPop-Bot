@@ -17,6 +17,7 @@ from db.models import reset_all_test_subs
 from services.pricing import (
     format_volume_label,
     get_pricing_config,
+    is_unlimited_volume,
     reset_pricing_config_to_defaults,
     update_base_gb_rate,
     update_user_surcharge,
@@ -13374,31 +13375,62 @@ async def _render_invoices_list(
             )
 
             target_email = inv.get("target_email")
-            if target_email == "TOPUP" or (
-                inv.get("duration_days") == 0 and inv.get("data_gb") == 0
-            ):
+            dur = inv.get("duration_days", 0)
+            gb = inv.get("data_gb", 0)
+            users = inv.get("users_count", 1)
+
+            if target_email == "TOPUP" or (dur == 0 and gb == 0):
                 service_desc = "💵 شارژ کیف پول"
+                spec_str = ""
             elif target_email:
                 service_desc = f"🔄 تمدید اشتراک: <code>{target_email}</code>"
+                vol_str = await format_volume_label(gb, with_fair_policy=True)
+                spec_parts = []
+                if gb > 0 or await is_unlimited_volume(gb):
+                    spec_parts.append(f"📊 حجم: {vol_str}")
+                if dur > 0:
+                    spec_parts.append(f"⏱ مدت: {to_persian_digits(dur)} روز")
+                if users > 0:
+                    spec_parts.append(f"👥 کاربر: {to_persian_digits(users)}")
+                spec_str = " | ".join(spec_parts)
             else:
-                gb = inv.get("data_gb", 0)
-                dur = inv.get("duration_days", 0)
-                service_desc = (
-                    f"🛍 خرید بسته: {format_size_gb(gb)} | {to_persian_digits(dur)} روز"
-                )
+                service_desc = "🛍 خرید اشتراک جدید"
+                vol_str = await format_volume_label(gb, with_fair_policy=True)
+                spec_parts = []
+                if gb > 0 or await is_unlimited_volume(gb):
+                    spec_parts.append(f"📊 حجم: {vol_str}")
+                if dur > 0:
+                    spec_parts.append(f"⏱ مدت: {to_persian_digits(dur)} روز")
+                if users > 0:
+                    spec_parts.append(f"👥 کاربر: {to_persian_digits(users)}")
+                spec_str = " | ".join(spec_parts)
 
-            card = (
-                f"{emoji} <b>فاکتور:</b> <code>{short_id}</code> | {st_badge}\n"
-                f"   👤 کاربر: <b>{u_name}</b> ({u_str}) | 🆔 <code>{inv['tg_id']}</code>\n"
-                f"   📦 عملیات: {service_desc}\n"
-                f"   💰 مبلغ: <b>{amount_str}</b> ({method_str})\n"
-                f"   📅 تاریخ ثبت: <code>{dt_str}</code>\n"
-            )
+            card_lines = [
+                f"{emoji} <b>فاکتور:</b> <code>{short_id}</code> | {st_badge}",
+                f"   👤 کاربر: <b>{u_name}</b> ({u_str}) | 🆔 <code>{inv['tg_id']}</code>",
+                f"   📦 عملیات: {service_desc}",
+            ]
+            if spec_str:
+                card_lines.append(f"   ⚙️ مشخصات: {spec_str}")
+
+            card_lines.append(f"   💰 مبلغ: <b>{amount_str}</b> ({method_str})")
+
+            discount_code = inv.get("discount_code")
+            orig_amount = inv.get("original_amount")
+            if discount_code:
+                disc_str = f"🏷 تخفیف: <code>{discount_code}</code>"
+                if orig_amount and orig_amount > inv.get("amount", 0):
+                    disc_str += f" (مبلغ اولیه: {format_price(orig_amount)})"
+                card_lines.append(f"   {disc_str}")
+
+            card_lines.append(f"   📅 تاریخ ثبت: <code>{dt_str}</code>")
+
             if inv.get("processed_at") and st in ("approved", "paid", "rejected"):
                 proc_dt = format_datetime(inv.get("processed_at"))
                 lbl = "زمان تأیید" if st in ("approved", "paid") else "زمان رد"
-                card += f"   ⏱ {lbl}: <code>{proc_dt}</code>\n"
-            lines.append(card)
+                card_lines.append(f"   ⏱ {lbl}: <code>{proc_dt}</code>")
+
+            lines.append("\n".join(card_lines))
         text = "\n".join(lines)
 
     keyboard = admin_invoices_list_keyboard(

@@ -2779,36 +2779,73 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
             status_str = "⌛️ منقضی‌شده"
         elif status == "rejected":
             status_str = "🔴 ردشده"
+        elif status == "cancelled":
+            status_str = "🚫 لغوشده"
         else:
             status_str = f"❌ {status}"
 
         pm = inv.get("payment_method") or "card"
-        pm_str = "💰 کیف پول" if pm == "wallet" else "💳 کارت به کارت"
+        pm_str = "کیف پول 👛" if pm == "wallet" else "کارت به کارت 💳"
         created_at = inv.get("created_at")
         date_str = format_datetime(created_at) if created_at else "نامشخص"
 
         target_email = inv.get("target_email")
-        if target_email == "TOPUP" or (
-            inv.get("duration_days") == 0 and inv.get("data_gb") == 0
-        ):
-            item_desc = "💵 شارژ کیف پول"
+        dur = inv.get("duration_days", 0)
+        gb = inv.get("data_gb", 0)
+        users = inv.get("users_count", 1)
+
+        if target_email == "TOPUP" or (dur == 0 and gb == 0):
+            item_desc = "💵 شارژ مستقیم کیف پول"
+            spec_line = ""
         elif target_email:
             item_desc = f"🔄 تمدید: <code>{target_email}</code>"
+            vol_str = await format_volume_label(gb, with_fair_policy=True)
+            spec_parts = []
+            if gb > 0 or await is_unlimited_volume(gb):
+                spec_parts.append(f"📊 حجم: {vol_str}")
+            if dur > 0:
+                spec_parts.append(f"⏱ مدت: {to_persian_digits(dur)} روز")
+            if users > 0:
+                spec_parts.append(f"👥 کاربر: {to_persian_digits(users)}")
+            spec_line = " | ".join(spec_parts)
         else:
-            gb = inv.get("data_gb", 0)
-            dur = inv.get("duration_days", 0)
-            item_desc = (
-                f"🛍 خرید: {format_size_gb(gb)} ({to_persian_digits(dur)} روز)"
-                if (gb or dur)
-                else "🛍 خرید اشتراک"
-            )
+            item_desc = "🛍 خرید اشتراک جدید"
+            vol_str = await format_volume_label(gb, with_fair_policy=True)
+            spec_parts = []
+            if gb > 0 or await is_unlimited_volume(gb):
+                spec_parts.append(f"📊 حجم: {vol_str}")
+            if dur > 0:
+                spec_parts.append(f"⏱ مدت: {to_persian_digits(dur)} روز")
+            if users > 0:
+                spec_parts.append(f"👥 کاربر: {to_persian_digits(users)}")
+            spec_line = " | ".join(spec_parts)
 
-        lines.append(
-            f"🔹 <b>فاکتور #{inv_id}</b> | {amount}\n"
-            f"   بابت: {item_desc}\n"
-            f"   روش: {pm_str} | وضعیت: <b>{status_str}</b>\n"
-            f"   📅 تاریخ: <code>{date_str}</code>\n"
-        )
+        card_lines = [
+            f"🔹 <b>فاکتور #{inv_id}</b> | {status_str}",
+            f"   بابت: {item_desc}",
+        ]
+        if spec_line:
+            card_lines.append(f"   مشخصات: {spec_line}")
+
+        card_lines.append(f"   💰 مبلغ: <b>{amount}</b> ({pm_str})")
+
+        discount_code = inv.get("discount_code")
+        orig_amount = inv.get("original_amount")
+        if discount_code:
+            disc_str = f"🏷 تخفیف: <code>{discount_code}</code>"
+            if orig_amount and orig_amount > inv.get("amount", 0):
+                disc_str += f" (مبلغ اولیه: {format_price(orig_amount)})"
+            card_lines.append(f"   {disc_str}")
+
+        card_lines.append(f"   📅 تاریخ: <code>{date_str}</code>")
+
+        if inv.get("processed_at") and status in ("approved", "paid", "rejected"):
+            proc_dt = format_datetime(inv.get("processed_at"))
+            lbl = "زمان تأیید" if status in ("approved", "paid") else "زمان رد"
+            card_lines.append(f"   ⏱ {lbl}: <code>{proc_dt}</code>")
+
+        card_lines.append("")
+        lines.append("\n".join(card_lines))
 
     nav_btns = []
     if page > 0:
