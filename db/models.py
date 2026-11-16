@@ -2135,12 +2135,75 @@ async def delete_reserved_renewal(email: str) -> bool:
     return cursor.rowcount > 0
 
 
+async def log_reserved_renewal_activation(
+    email: str,
+    tg_id: int,
+    duration_days: int,
+    data_gb: int,
+    users_count: int = 1,
+    invoice_id: str | None = None,
+    activation_type: str = "auto",
+    created_at: str | None = None,
+) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        """
+        INSERT INTO reserved_renewal_logs (
+            email, tg_id, duration_days, data_gb, users_count, invoice_id, activation_type, created_at, activated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """,
+        (
+            email,
+            tg_id,
+            duration_days,
+            data_gb,
+            users_count,
+            invoice_id,
+            activation_type,
+            created_at,
+        ),
+    )
+    await db.commit()
+    return cursor.lastrowid or 0
+
+
+async def get_user_reserved_renewal_logs_paginated(
+    tg_id: int, offset: int = 0, limit: int = 5
+) -> tuple[list[dict[str, Any]], int]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) as total FROM reserved_renewal_logs WHERE tg_id = ?",
+        (tg_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        total = row["total"] if row else 0
+
+    async with db.execute(
+        """
+        SELECT id, email, tg_id, duration_days, data_gb, users_count, invoice_id, activation_type, created_at, activated_at
+        FROM reserved_renewal_logs
+        WHERE tg_id = ?
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (tg_id, limit, offset),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        logs = [dict(r) for r in rows]
+
+    return logs, total
+
+
 async def rename_client_references(old_email: str, new_email: str) -> None:
     if not old_email or not new_email or old_email == new_email:
         return
     db = await get_db()
     await db.execute(
         "UPDATE OR REPLACE reserved_renewals SET email = ? WHERE email = ?",
+        (new_email, old_email),
+    )
+    await db.execute(
+        "UPDATE reserved_renewal_logs SET email = ? WHERE email = ?",
         (new_email, old_email),
     )
     await db.execute(

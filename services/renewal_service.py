@@ -14,6 +14,7 @@ from db.models import (
     get_reserved_renewal,
     get_start_first_use_config,
     get_sub_final_attachment,
+    log_reserved_renewal_activation,
 )
 from services import xui_api
 from utils.formatting import to_persian_digits
@@ -163,6 +164,7 @@ async def activate_reserved_renewal(
     email: str,
     force: bool = False,
     bot: Bot | None = None,
+    activation_type: str = "auto",
 ) -> RenewalActivationResult:
     reserved = await get_reserved_renewal(email)
     if not reserved:
@@ -217,6 +219,16 @@ async def activate_reserved_renewal(
 
     await xui_api.update_client(email, client)
     await clear_notified_alerts(email)
+    await log_reserved_renewal_activation(
+        email=email,
+        tg_id=tg_id,
+        duration_days=duration_days,
+        data_gb=data_gb,
+        users_count=users_count,
+        invoice_id=reserved.get("invoice_id"),
+        activation_type=activation_type,
+        created_at=reserved.get("created_at"),
+    )
     await delete_reserved_renewal(email)
 
     sub_id = client.get("subId", "")

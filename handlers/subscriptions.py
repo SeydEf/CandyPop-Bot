@@ -2228,7 +2228,9 @@ async def renew_card_payment(callback: types.CallbackQuery, state: FSMContext) -
 async def sub_act_res_confirm_handler(callback: types.CallbackQuery) -> None:
     email = callback.data[len("sub_act_res_confirm_") :]
 
-    res = await activate_reserved_renewal(email, force=True, bot=callback.bot)
+    res = await activate_reserved_renewal(
+        email, force=True, bot=callback.bot, activation_type="early"
+    )
     if res.get("status") == "activated":
         await callback.answer("✅ بسته رزرو با موفقیت فعال شد!", show_alert=True)
     elif res.get("status") == "no_reserved":

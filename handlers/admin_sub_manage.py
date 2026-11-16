@@ -621,6 +621,12 @@ async def _render_user_dashboard(
         ],
         [
             InlineKeyboardButton(
+                text="📦 لاگ تمدیدهای رزروشده",
+                callback_data=f"admin_user_res_logs_{tg_id}_0",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="♻️ بازنشانی امکان اشتراک تست کاربر",
                 callback_data=f"admin_user_reset_test_{tg_id}",
             )
@@ -1544,7 +1550,9 @@ async def admin_sub_res_act(callback: types.CallbackQuery, state: FSMContext) ->
     email = callback.data[len("admin_sub_res_act_") :]
     from services.renewal_service import activate_reserved_renewal
 
-    res = await activate_reserved_renewal(email, force=True, bot=callback.bot)
+    res = await activate_reserved_renewal(
+        email, force=True, bot=callback.bot, activation_type="admin"
+    )
     if res.get("status") == "activated":
         notice = f"✅ <b>بسته رزرو اشتراک «{email}» با موفقیت فعال شد.</b>"
     elif res.get("status") == "no_reserved":
@@ -2881,6 +2889,157 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
         ]
     )
 
+    text = "\n".join(lines)
+    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_user_res_logs_"))
+async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split("_")
+    if len(parts) < 5:
+        await callback.answer("خطای داده نامعتبر.", show_alert=True)
+        return
+
+    u_id = int(parts[4])
+    page = int(parts[5]) if len(parts) > 5 else 0
+    page_size = 5
+    offset = page * page_size
+
+    from db.models import (
+        get_reserved_renewals_by_user,
+        get_user,
+        get_user_reserved_renewal_logs_paginated,
+    )
+
+    user = await get_user(u_id)
+    full_name = user.get("full_name") or str(u_id) if user else str(u_id)
+
+    pending_res = await get_reserved_renewals_by_user(u_id)
+    logs, total_logs = await get_user_reserved_renewal_logs_paginated(
+        u_id, offset=offset, limit=page_size
+    )
+
+    if not pending_res and total_logs == 0:
+        await callback.answer(
+            "📭 هیچ بسته رزروی (فعال یا لاگ قبلی) برای این کاربر ثبت نشده است.",
+            show_alert=True,
+        )
+        return
+
+    import math
+
+    total_pages = max(1, math.ceil(total_logs / page_size))
+    page = max(0, min(page, total_pages - 1))
+
+    lines = [
+        f"📦 <b>لاگ‌ها و وضعیت بسته‌های رزروشده کاربر {full_name}</b> (<code>{u_id}</code>)\n"
+    ]
+
+    if pending_res:
+        lines.append(
+            f"⏳ <b>بسته‌های رزروی فعال در انتظار اعمال ({to_persian_digits(len(pending_res))} مورد):</b>"
+        )
+        for pr in pending_res:
+            pr_email = pr.get("email", "")
+            pr_dur = pr.get("duration_days", 0)
+            pr_gb = pr.get("data_gb", 0)
+            pr_users = pr.get("users_count", 1)
+            pr_created = (
+                format_datetime(pr.get("created_at"))
+                if pr.get("created_at")
+                else "نامشخص"
+            )
+            pr_vol = await format_volume_label(pr_gb, with_fair_policy=True)
+            inv_str = f" | فاکتور: #{pr['invoice_id']}" if pr.get("invoice_id") else ""
+            lines.append(
+                f"🔹 سرویس: <code>{pr_email}</code>{inv_str}\n"
+                f"   مشخصات: 📊 حجم: {pr_vol} | ⏱ مدت: {to_persian_digits(pr_dur)} روز | 👥 کاربر: {to_persian_digits(pr_users)}\n"
+                f"   📅 تاریخ رزرو: <code>{pr_created}</code>\n"
+                f"   وضعیت: ⏳ در انتظار پایان سرویس فعلی\n"
+            )
+
+    lines.append(
+        f"📋 <b>تاریخچه بسته‌های فعال‌شده ({to_persian_digits(total_logs)} مورد):</b>"
+    )
+    if not logs:
+        lines.append("<i>هنوز هیچ بسته رزروی برای این کاربر فعال نشده است.</i>\n")
+    else:
+        for log in logs:
+            log_email = log.get("email", "")
+            log_dur = log.get("duration_days", 0)
+            log_gb = log.get("data_gb", 0)
+            log_users = log.get("users_count", 1)
+            act_type = log.get("activation_type", "auto")
+            if act_type == "early":
+                type_badge = "⚡️ زودهنگام توسط کاربر"
+            elif act_type == "admin":
+                type_badge = "👨‍💼 دستی توسط مدیریت"
+            else:
+                type_badge = "🟢 خودکار پس از انقضا"
+
+            act_time = (
+                format_datetime(log.get("activated_at"))
+                if log.get("activated_at")
+                else "نامشخص"
+            )
+            res_time = (
+                format_datetime(log.get("created_at"))
+                if log.get("created_at")
+                else "نامشخص"
+            )
+            log_vol = await format_volume_label(log_gb, with_fair_policy=True)
+
+            inv_str = (
+                f" | فاکتور: #{log['invoice_id']}" if log.get("invoice_id") else ""
+            )
+            lines.append(
+                f"✅ سرویس: <code>{log_email}</code>{inv_str}\n"
+                f"   نحوه فعال‌سازی: <b>{type_badge}</b>\n"
+                f"   مشخصات: 📊 حجم: {log_vol} | ⏱ مدت: {to_persian_digits(log_dur)} روز | 👥 کاربر: {to_persian_digits(log_users)}\n"
+                f"   ⏱ زمان فعال‌سازی: <code>{act_time}</code>\n"
+                f"   📅 زمان رزرو اولیه: <code>{res_time}</code>\n"
+            )
+
+    nav_btns = []
+    if page > 0:
+        nav_btns.append(
+            InlineKeyboardButton(
+                text="◀️ قبلی",
+                callback_data=f"admin_user_res_logs_{u_id}_{page - 1}",
+            )
+        )
+    if total_pages > 1 or page > 0:
+        nav_btns.append(
+            InlineKeyboardButton(
+                text=f"صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}",
+                callback_data="admin_users_list_noop",
+            )
+        )
+    if page < total_pages - 1:
+        nav_btns.append(
+            InlineKeyboardButton(
+                text="بعدی ▶️",
+                callback_data=f"admin_user_res_logs_{u_id}_{page + 1}",
+            )
+        )
+
+    rows = []
+    if nav_btns:
+        rows.append(nav_btns)
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به مدیریت کاربر",
+                callback_data=f"admin_manage_user_{u_id}_back",
+            )
+        ]
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
     text = "\n".join(lines)
     await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()

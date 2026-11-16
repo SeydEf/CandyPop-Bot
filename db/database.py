@@ -148,6 +148,22 @@ async def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_bank_sms_fingerprint ON bank_sms_transactions(fingerprint);
         CREATE INDEX IF NOT EXISTS idx_bank_sms_amount ON bank_sms_transactions(amount_toman);
+
+        CREATE TABLE IF NOT EXISTS reserved_renewal_logs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            email           TEXT NOT NULL,
+            tg_id           INTEGER NOT NULL,
+            duration_days   INTEGER NOT NULL,
+            data_gb         INTEGER NOT NULL,
+            users_count     INTEGER NOT NULL DEFAULT 1,
+            invoice_id      TEXT,
+            activation_type TEXT NOT NULL DEFAULT 'auto',
+            created_at      TEXT,
+            activated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_res_logs_tg_id ON reserved_renewal_logs(tg_id);
+        CREATE INDEX IF NOT EXISTS idx_res_logs_email ON reserved_renewal_logs(email);
     """)
 
     await db.commit()
