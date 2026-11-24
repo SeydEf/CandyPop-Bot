@@ -2151,6 +2151,50 @@ async def create_reserved_renewal(
     return cursor.lastrowid or 0
 
 
+async def get_reserved_renewal_by_id(res_id: int) -> dict[str, Any] | None:
+    db = await get_db()
+    async with db.execute(
+        """
+        SELECT id, email, tg_id, duration_days, data_gb, users_count, created_at, invoice_id, status, activated_at, activation_type
+        FROM reserved_renewals
+        WHERE id = ?
+        """,
+        (res_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_reserved_renewal(
+    res_id: int,
+    *,
+    data_gb: int | None = None,
+    duration_days: int | None = None,
+    users_count: int | None = None,
+) -> bool:
+    fields: list[str] = []
+    params: list[Any] = []
+    if data_gb is not None:
+        fields.append("data_gb = ?")
+        params.append(data_gb)
+    if duration_days is not None:
+        fields.append("duration_days = ?")
+        params.append(duration_days)
+    if users_count is not None:
+        fields.append("users_count = ?")
+        params.append(users_count)
+    if not fields:
+        return False
+    params.append(res_id)
+    db = await get_db()
+    cursor = await db.execute(
+        f"UPDATE reserved_renewals SET {', '.join(fields)} WHERE id = ? AND status = 'pending'",
+        tuple(params),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
 async def delete_reserved_renewal(email: str) -> bool:
     db = await get_db()
     cursor = await db.execute(

@@ -4,7 +4,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from aiogram import F, Router, types
+from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -66,6 +66,10 @@ class AdminSearchStates(StatesGroup):
     waiting_user_direct_msg = State()
     waiting_sub_custom_group = State()
     waiting_sub_tgid = State()
+    waiting_res_gb = State()
+    waiting_res_dur = State()
+    waiting_res_users = State()
+    waiting_res_edit_val = State()
 
 
 @router.message(Command("search", "find", "find_user"))
@@ -621,7 +625,7 @@ async def _render_user_dashboard(
         ],
         [
             InlineKeyboardButton(
-                text="📦 لاگ تمدیدهای رزروشده",
+                text="📦 مدیریت و لاگ رزروها",
                 callback_data=f"admin_user_res_logs_{tg_id}_0",
             )
         ],
@@ -2894,56 +2898,71 @@ async def admin_user_invoices(callback: types.CallbackQuery, state: FSMContext) 
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("admin_user_res_logs_"))
-async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) -> None:
-    if not await _is_admin(callback):
-        return
+async def _notify_user_reserved(bot: Bot | None, tg_id: int, text: str) -> bool:
+    if not bot or tg_id <= 0:
+        return False
+    try:
+        await bot.send_message(chat_id=tg_id, text=text, parse_mode="HTML")
+        return True
+    except Exception as e:
+        logger.warning("Failed to notify user %s about reserved renewal: %s", tg_id, e)
+        return False
 
-    parts = callback.data.split("_")
-    if len(parts) < 5:
-        await callback.answer("خطای داده نامعتبر.", show_alert=True)
-        return
 
-    u_id = int(parts[4])
-    page = int(parts[5]) if len(parts) > 5 else 0
-    page_size = 5
-    offset = page * page_size
+def _parse_int_input(raw: str | None, min_val: int = 1) -> int | None:
+    if not raw:
+        return None
+    try:
+        val = int(persian_to_english_digits(raw.strip()))
+    except ValueError:
+        return None
+    return val if val >= min_val else None
+
+
+async def _render_user_res_panel(
+    event: types.CallbackQuery | types.Message,
+    u_id: int,
+    state: FSMContext,
+    page: int = 0,
+    notice: str = "",
+) -> None:
+    import math
 
     from db.models import (
         get_reserved_renewals_by_user,
-        get_user,
         get_user_reserved_renewal_logs_paginated,
     )
 
+    page_size = 5
     user = await get_user(u_id)
     full_name = user.get("full_name") or str(u_id) if user else str(u_id)
 
     pending_res = await get_reserved_renewals_by_user(u_id)
-    logs, total_logs = await get_user_reserved_renewal_logs_paginated(
-        u_id, offset=offset, limit=page_size
+    _, total_logs = await get_user_reserved_renewal_logs_paginated(
+        u_id, offset=0, limit=1
     )
-
-    if not pending_res and total_logs == 0:
-        await callback.answer(
-            "📭 هیچ بسته رزروی (فعال یا لاگ قبلی) برای این کاربر ثبت نشده است.",
-            show_alert=True,
-        )
-        return
-
-    import math
-
     total_pages = max(1, math.ceil(total_logs / page_size))
     page = max(0, min(page, total_pages - 1))
+    logs, total_logs = await get_user_reserved_renewal_logs_paginated(
+        u_id, offset=page * page_size, limit=page_size
+    )
 
-    lines = [
-        f"📦 <b>لاگ‌ها و وضعیت بسته‌های رزروشده کاربر {full_name}</b> (<code>{u_id}</code>)\n"
-    ]
+    lines: list[str] = []
+    if notice:
+        lines.append(f"{notice}\n")
+    lines.append(
+        f"📦 <b>مدیریت و لاگ بسته‌های رزرو کاربر {full_name}</b> (<code>{u_id}</code>)\n"
+    )
 
-    if pending_res:
-        lines.append(
-            f"⏳ <b>بسته‌های رزروی فعال در انتظار اعمال ({to_persian_digits(len(pending_res))} مورد):</b>"
-        )
+    lines.append(
+        f"⏳ <b>بسته‌های رزرو در انتظار اعمال ({to_persian_digits(len(pending_res))} مورد):</b>"
+    )
+    rows: list[list[InlineKeyboardButton]] = []
+    if not pending_res:
+        lines.append("<i>در حال حاضر بسته رزرو در انتظاری وجود ندارد.</i>\n")
+    else:
         for pr in pending_res:
+            pr_id = pr["id"]
             pr_email = pr.get("email", "")
             pr_dur = pr.get("duration_days", 0)
             pr_gb = pr.get("data_gb", 0)
@@ -2957,10 +2976,26 @@ async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) 
             inv_str = f" | فاکتور: #{pr['invoice_id']}" if pr.get("invoice_id") else ""
             lines.append(
                 f"🔹 سرویس: <code>{pr_email}</code>{inv_str}\n"
-                f"   مشخصات: 📊 حجم: {pr_vol} | ⏱ مدت: {to_persian_digits(pr_dur)} روز | 👥 کاربر: {to_persian_digits(pr_users)}\n"
-                f"   📅 تاریخ رزرو: <code>{pr_created}</code>\n"
-                f"   وضعیت: ⏳ در انتظار پایان سرویس فعلی\n"
+                f"   مشخصات: 📊 {pr_vol} | ⏱ {to_persian_digits(pr_dur)} روز | 👥 {to_persian_digits(pr_users)} کاربر\n"
+                f"   📅 تاریخ ثبت: <code>{pr_created}</code>\n"
             )
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"⚙️ مدیریت رزرو «{pr_email}»",
+                        callback_data=f"admin_res_item_{pr_id}",
+                    )
+                ]
+            )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن بسته رزرو جدید",
+                callback_data=f"admin_res_new_{u_id}",
+            )
+        ]
+    )
 
     lines.append(
         f"📋 <b>تاریخچه بسته‌های فعال‌شده ({to_persian_digits(total_logs)} مورد):</b>"
@@ -2999,12 +3034,11 @@ async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) 
             lines.append(
                 f"✅ سرویس: <code>{log_email}</code>{inv_str}\n"
                 f"   نحوه فعال‌سازی: <b>{type_badge}</b>\n"
-                f"   مشخصات: 📊 حجم: {log_vol} | ⏱ مدت: {to_persian_digits(log_dur)} روز | 👥 کاربر: {to_persian_digits(log_users)}\n"
-                f"   ⏱ زمان فعال‌سازی: <code>{act_time}</code>\n"
-                f"   📅 زمان رزرو اولیه: <code>{res_time}</code>\n"
+                f"   مشخصات: 📊 {log_vol} | ⏱ {to_persian_digits(log_dur)} روز | 👥 {to_persian_digits(log_users)} کاربر\n"
+                f"   ⏱ فعال‌سازی: <code>{act_time}</code> | 📅 رزرو: <code>{res_time}</code>\n"
             )
 
-    nav_btns = []
+    nav_btns: list[InlineKeyboardButton] = []
     if page > 0:
         nav_btns.append(
             InlineKeyboardButton(
@@ -3027,7 +3061,6 @@ async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) 
             )
         )
 
-    rows = []
     if nav_btns:
         rows.append(nav_btns)
     rows.append(
@@ -3041,8 +3074,852 @@ async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) 
 
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
     text = "\n".join(lines)
-    await safe_edit_text(callback.message, text, reply_markup=kb, parse_mode="HTML")
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_text(event.message, text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+async def _render_res_item(
+    event: types.CallbackQuery | types.Message,
+    res_id: int,
+    state: FSMContext,
+    notice: str = "",
+) -> None:
+    from db.models import get_reserved_renewal_by_id
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        msg = "❌ این بسته رزرو دیگر در انتظار نیست (فعال یا حذف شده است)."
+        if rec and rec.get("tg_id"):
+            await _render_user_res_panel(
+                event, int(rec["tg_id"]), state, page=0, notice=msg
+            )
+            return
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return
+
+    email = rec["email"]
+    u_id = int(rec["tg_id"])
+    vol_label = await format_volume_label(
+        int(rec.get("data_gb", 0)), with_fair_policy=True
+    )
+    dur = int(rec.get("duration_days", 0))
+    users_cnt = int(rec.get("users_count", 1) or 1)
+    created_str = (
+        format_datetime(rec.get("created_at")) if rec.get("created_at") else "نامشخص"
+    )
+    inv_str = (
+        f"\n🧾 <b>فاکتور مرتبط:</b> #{rec['invoice_id']}"
+        if rec.get("invoice_id")
+        else ""
+    )
+
+    notice_block = f"{notice}\n\n" if notice else ""
+    text = (
+        f"{notice_block}"
+        f"📦 <b>مدیریت بسته رزرو سرویس <code>{email}</code></b>\n\n"
+        f"📊 <b>حجم بسته:</b> {vol_label}\n"
+        f"⏱ <b>مدت اعتبار:</b> {to_persian_digits(dur)} روز\n"
+        f"👥 <b>سقف کاربر:</b> {to_persian_digits(users_cnt)} کاربر\n"
+        f"📅 <b>تاریخ ثبت رزرو:</b> <code>{created_str}</code>"
+        f"{inv_str}\n\n"
+        f"💡 <i>این بسته به محض پایان حجم یا زمان سرویس فعلی به‌صورت خودکار فعال می‌شود.</i>"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 ویرایش حجم",
+                    callback_data=f"admin_res_edit_gb_{res_id}",
+                ),
+                InlineKeyboardButton(
+                    text="⏱ ویرایش مدت",
+                    callback_data=f"admin_res_edit_dur_{res_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 ویرایش سقف کاربر",
+                    callback_data=f"admin_res_edit_usr_{res_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚡️ فعال‌سازی آنی",
+                    callback_data=f"admin_res_act_{res_id}",
+                ),
+                InlineKeyboardButton(
+                    text="🗑 حذف رزرو",
+                    callback_data=f"admin_res_del_{res_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به لیست رزروها",
+                    callback_data=f"admin_user_res_logs_{u_id}_0",
+                )
+            ],
+        ]
+    )
+
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_text(event.message, text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("admin_user_res_logs_"))
+async def admin_user_res_logs(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split("_")
+    if len(parts) < 5:
+        await callback.answer("خطای داده نامعتبر.", show_alert=True)
+        return
+
+    await _clear_fsm_keep_nav(state)
+    u_id = int(parts[4])
+    page = int(parts[5]) if len(parts) > 5 else 0
+    await _render_user_res_panel(callback, u_id, state, page=page)
+
+
+@router.callback_query(F.data.startswith("admin_res_item_"))
+async def admin_res_item_view(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    await _clear_fsm_keep_nav(state)
+    try:
+        res_id = int(callback.data[len("admin_res_item_") :])
+    except ValueError:
+        await callback.answer("شناسه رزرو نامعتبر است.", show_alert=True)
+        return
+
+    from db.models import get_reserved_renewal_by_id
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        await callback.answer("❌ این بسته رزرو دیگر در انتظار نیست.", show_alert=True)
+        if rec and rec.get("tg_id"):
+            await _render_user_res_panel(callback, int(rec["tg_id"]), state, page=0)
+        return
+
+    await _render_res_item(callback, res_id, state)
+
+
+# ─── Create Reserved Renewal ──────────────────────────────────────────────────
+
+
+@router.callback_query(F.data.startswith("admin_res_new_"))
+async def admin_res_new_select_sub(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    u_id = int(callback.data[len("admin_res_new_") :])
+    clients = await xui_api.get_normalized_clients_by_tg_id(u_id)
+    if not clients:
+        await callback.answer(
+            "❌ این کاربر هیچ اشتراکی در سرور ندارد.", show_alert=True
+        )
+        return
+
+    from db.models import get_reserved_renewals_by_user
+
+    pending = await get_reserved_renewals_by_user(u_id)
+    pending_emails = {p["email"] for p in pending}
+
+    emails = [c.get("email", "") for c in clients if c.get("email")]
+    await state.update_data(res_add_emails=emails, res_add_tg_id=u_id)
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for idx, c in enumerate(clients):
+        em = c.get("email", "")
+        if not em:
+            continue
+        badge = " 📦 (دارای رزرو)" if em in pending_emails else ""
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🔹 {em}{badge}",
+                    callback_data=f"admin_res_pick_{u_id}_{idx}",
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="❌ انصراف و بازگشت",
+                callback_data=f"admin_user_res_logs_{u_id}_0",
+            )
+        ]
+    )
+
+    await safe_edit_text(
+        callback.message,
+        f"➕ <b>افزودن بسته رزرو جدید برای کاربر <code>{u_id}</code></b>\n\n"
+        "سرویس مورد نظر را انتخاب کنید:\n"
+        "<i>(اگر سرویسی از قبل بسته رزرو داشته باشد، بسته جدید جایگزین آن می‌شود.)</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        parse_mode="HTML",
+    )
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_res_pick_"))
+async def admin_res_pick_sub(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    parts = callback.data.split("_")
+    u_id = int(parts[3])
+    idx = int(parts[4])
+
+    data = await state.get_data()
+    emails = data.get("res_add_emails") or []
+    email = emails[idx] if 0 <= idx < len(emails) else None
+    if not email:
+        clients = await xui_api.get_normalized_clients_by_tg_id(u_id)
+        if 0 <= idx < len(clients):
+            email = clients[idx].get("email")
+    if not email:
+        await callback.answer("❌ اشتراک یافت نشد.", show_alert=True)
+        return
+
+    client = await xui_api.get_client(email)
+    curr_users = max(1, int((client or {}).get("limitIp") or 1))
+
+    await state.update_data(
+        res_add_tg_id=u_id,
+        res_add_email=email,
+        res_add_default_users=curr_users,
+    )
+    await state.set_state(AdminSearchStates.waiting_res_gb)
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_user_res_logs_{u_id}_0",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        f"➕ <b>بسته رزرو برای سرویس <code>{email}</code></b>\n\n"
+        "<b>مرحله ۱ از ۳:</b> حجم بسته رزرو را به گیگابایت وارد کنید:\n"
+        "• مثال: <code>50</code>\n"
+        "• برای حجم نامحدود عدد <code>0</code> را بفرستید.\n\n"
+        "💡 <i>برای انصراف می‌توانید /cancel بفرستید یا دکمه زیر را بزنید.</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminSearchStates.waiting_res_gb, F.text)
+async def admin_res_gb_input(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    u_id = int(data.get("res_add_tg_id") or 0)
+
+    if message.text and message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        await _render_user_res_panel(
+            message, u_id, state, notice="❌ ساخت بسته رزرو لغو شد."
+        )
+        return
+
+    gb_val = _parse_int_input(message.text, min_val=0)
+    if gb_val is None:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data=f"admin_user_res_logs_{u_id}_0"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً یک عدد صحیح معتبر (۰ یا بیشتر) وارد کنید.",
+            reply_markup=kb,
+        )
+        return
+
+    await state.update_data(res_add_gb=gb_val)
+    await state.set_state(AdminSearchStates.waiting_res_dur)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_user_res_logs_{u_id}_0",
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "<b>مرحله ۲ از ۳:</b> مدت اعتبار بسته رزرو را به روز وارد کنید:\n"
+        "مثال: <code>30</code>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminSearchStates.waiting_res_dur, F.text)
+async def admin_res_dur_input(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    u_id = int(data.get("res_add_tg_id") or 0)
+
+    if message.text and message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        await _render_user_res_panel(
+            message, u_id, state, notice="❌ ساخت بسته رزرو لغو شد."
+        )
+        return
+
+    dur_val = _parse_int_input(message.text, min_val=1)
+    if dur_val is None:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data=f"admin_user_res_logs_{u_id}_0"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً تعداد روز معتبر (بزرگ‌تر از صفر) وارد کنید.",
+            reply_markup=kb,
+        )
+        return
+
+    default_users = int(data.get("res_add_default_users") or 1)
+    await state.update_data(res_add_dur=dur_val)
+    await state.set_state(AdminSearchStates.waiting_res_users)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"✅ استفاده از سقف فعلی ({to_persian_digits(default_users)} کاربر)",
+                    callback_data="admin_res_usr_keep",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_user_res_logs_{u_id}_0",
+                )
+            ],
+        ]
+    )
+    await message.answer(
+        "<b>مرحله ۳ از ۳:</b> سقف کاربر همزمان را وارد کنید یا از دکمه زیر سقف فعلی سرویس را تایید کنید:\n"
+        "مثال: <code>2</code>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+async def _show_res_add_confirm(
+    event: types.CallbackQuery | types.Message,
+    state: FSMContext,
+    users_val: int,
+) -> None:
+    from db.models import get_reserved_renewal
+
+    data = await state.get_data()
+    u_id = int(data.get("res_add_tg_id") or 0)
+    email = data.get("res_add_email", "")
+    gb_val = int(data.get("res_add_gb") or 0)
+    dur_val = int(data.get("res_add_dur") or 30)
+
+    await state.update_data(res_add_users=users_val)
+    await state.set_state(None)
+
+    existing = await get_reserved_renewal(email)
+    replace_warn = (
+        "\n⚠️ <i>این سرویس یک بسته رزرو در انتظار دارد؛ با ثبت، بسته جدید جایگزین می‌شود.</i>"
+        if existing
+        else ""
+    )
+    vol_label = await format_volume_label(gb_val, with_fair_policy=True)
+    text = (
+        f"📋 <b>تایید ثبت بسته رزرو جدید</b>\n\n"
+        f"🔹 <b>سرویس:</b> <code>{email}</code>\n"
+        f"📊 <b>حجم:</b> {vol_label}\n"
+        f"⏱ <b>مدت:</b> {to_persian_digits(dur_val)} روز\n"
+        f"👥 <b>سقف کاربر:</b> {to_persian_digits(users_val)} کاربر"
+        f"{replace_warn}\n\n"
+        "نحوه ثبت را انتخاب کنید:"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ ثبت رزرو (بی‌صدا)", callback_data="admin_res_save_0"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ ثبت + 📩 اطلاع به کاربر", callback_data="admin_res_save_1"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data=f"admin_user_res_logs_{u_id}_0"
+                )
+            ],
+        ]
+    )
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_text(event.message, text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_res_usr_keep")
+async def admin_res_usr_keep_cb(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    data = await state.get_data()
+    default_users = int(data.get("res_add_default_users") or 1)
+    await _show_res_add_confirm(callback, state, default_users)
+
+
+@router.message(AdminSearchStates.waiting_res_users, F.text)
+async def admin_res_users_input(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    u_id = int(data.get("res_add_tg_id") or 0)
+
+    if message.text and message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        await _render_user_res_panel(
+            message, u_id, state, notice="❌ ساخت بسته رزرو لغو شد."
+        )
+        return
+
+    users_val = _parse_int_input(message.text, min_val=1)
+    if users_val is None:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data=f"admin_user_res_logs_{u_id}_0"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ لطفاً تعداد کاربر معتبر (۱ یا بیشتر) وارد کنید.",
+            reply_markup=kb,
+        )
+        return
+
+    await _show_res_add_confirm(message, state, users_val)
+
+
+@router.callback_query(F.data.startswith("admin_res_save_"))
+async def admin_res_add_save(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    notify = callback.data.endswith("_1")
+    data = await state.get_data()
+    u_id = int(data.get("res_add_tg_id") or 0)
+    email = data.get("res_add_email")
+    gb_val = data.get("res_add_gb")
+    dur_val = data.get("res_add_dur")
+    users_val = int(data.get("res_add_users") or 1)
+
+    if not email or gb_val is None or not dur_val or not u_id:
+        await callback.answer("❌ اطلاعات رزرو منقضی شده است.", show_alert=True)
+        return
+
+    from db.models import create_reserved_renewal
+
+    await create_reserved_renewal(
+        email=email,
+        tg_id=u_id,
+        duration_days=int(dur_val),
+        data_gb=int(gb_val),
+        users_count=users_val,
+    )
+
+    notify_note = ""
+    if notify:
+        vol_label = await format_volume_label(int(gb_val), with_fair_policy=True)
+        sent = await _notify_user_reserved(
+            callback.bot,
+            u_id,
+            f"📦 <b>یک بسته تمدید رزرو جدید برای سرویس شما ثبت شد!</b>\n\n"
+            f"🔹 <b>نام سرویس:</b> <code>{email}</code>\n"
+            f"📊 <b>حجم:</b> {vol_label}\n"
+            f"⏱ <b>مدت اعتبار:</b> {to_persian_digits(int(dur_val))} روز\n"
+            f"👥 <b>سقف کاربر:</b> {to_persian_digits(users_val)} کاربر\n\n"
+            f"💡 <i>این بسته پس از اتمام حجم یا زمان سرویس فعلی به‌صورت خودکار فعال می‌شود.</i>",
+        )
+        notify_note = (
+            " (پیام به کاربر ارسال شد)" if sent else " (ارسال پیام به کاربر ناموفق بود)"
+        )
+
+    await _clear_fsm_keep_nav(state)
+    await _render_user_res_panel(
+        callback,
+        u_id,
+        state,
+        notice=f"✅ <b>بسته رزرو برای «{email}» ثبت شد{notify_note}.</b>",
+    )
+
+
+# ─── Edit Reserved Renewal ────────────────────────────────────────────────────
+
+_RES_EDIT_META = {
+    "gb": ("data_gb", "حجم (گیگابایت)", 0, "۰ برای نامحدود، یا عدد مثبت مثل ۵۰"),
+    "dur": ("duration_days", "مدت اعتبار (روز)", 1, "عدد بزرگ‌تر از صفر مثل ۳۰"),
+    "usr": ("users_count", "سقف کاربر همزمان", 1, "عدد ۱ یا بیشتر مثل ۲"),
+}
+
+
+@router.callback_query(F.data.startswith("admin_res_edit_"))
+async def admin_res_edit_start(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    payload = callback.data[len("admin_res_edit_") :]
+    field_key, id_str = payload.split("_", 1)
+    if field_key not in _RES_EDIT_META or not id_str.isdigit():
+        await callback.answer("خطای داده نامعتبر.", show_alert=True)
+        return
+
+    res_id = int(id_str)
+    from db.models import get_reserved_renewal_by_id
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        await callback.answer("❌ بسته رزرو در انتظار یافت نشد.", show_alert=True)
+        return
+
+    col, label, _, hint = _RES_EDIT_META[field_key]
+    await state.update_data(res_edit_id=res_id, res_edit_field=field_key)
+    await state.set_state(AdminSearchStates.waiting_res_edit_val)
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data=f"admin_res_item_{res_id}",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        f"✏️ <b>ویرایش {label} برای بسته رزرو <code>{rec['email']}</code></b>\n\n"
+        f"مقدار فعلی: <code>{to_persian_digits(rec.get(col, 0))}</code>\n"
+        f"مقدار جدید را وارد کنید ({hint}):",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminSearchStates.waiting_res_edit_val, F.text)
+async def admin_res_edit_val_input(message: types.Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    res_id = int(data.get("res_edit_id") or 0)
+    field_key = data.get("res_edit_field", "")
+
+    if message.text and message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        await _render_res_item(message, res_id, state, notice="❌ ویرایش لغو شد.")
+        return
+
+    if field_key not in _RES_EDIT_META:
+        await _clear_fsm_keep_nav(state)
+        return
+
+    _, label, min_val, hint = _RES_EDIT_META[field_key]
+    val = _parse_int_input(message.text, min_val=min_val)
+    if val is None:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data=f"admin_res_item_{res_id}"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            f"❌ مقدار نامعتبر است. لطفاً عدد صحیح معتبر وارد کنید ({hint}).",
+            reply_markup=kb,
+        )
+        return
+
+    await state.update_data(res_edit_new_val=val)
+    await state.set_state(None)
+
+    val_display = (
+        await format_volume_label(val, with_fair_policy=True)
+        if field_key == "gb"
+        else to_persian_digits(val)
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ ذخیره (بی‌صدا)", callback_data="admin_res_esave_0"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ ذخیره + 📩 اطلاع به کاربر",
+                    callback_data="admin_res_esave_1",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف", callback_data=f"admin_res_item_{res_id}"
+                )
+            ],
+        ]
+    )
+    await message.answer(
+        f"✏️ <b>تایید تغییر {label}:</b>\n\n"
+        f"مقدار جدید: <b>{val_display}</b>\n"
+        "چطور ثبت شود؟",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_res_esave_"))
+async def admin_res_edit_save(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    notify = callback.data.endswith("_1")
+    data = await state.get_data()
+    res_id = int(data.get("res_edit_id") or 0)
+    field_key = data.get("res_edit_field", "")
+    new_val = data.get("res_edit_new_val")
+
+    if not res_id or field_key not in _RES_EDIT_META or new_val is None:
+        await callback.answer("❌ اطلاعات ویرایش منقضی شده است.", show_alert=True)
+        return
+
+    from db.models import get_reserved_renewal_by_id, update_reserved_renewal
+
+    col, label, _, _ = _RES_EDIT_META[field_key]
+    await update_reserved_renewal(res_id, **{col: int(new_val)})
+    rec = await get_reserved_renewal_by_id(res_id)
+
+    notify_note = ""
+    if notify and rec:
+        vol_label = await format_volume_label(
+            int(rec.get("data_gb", 0)), with_fair_policy=True
+        )
+        sent = await _notify_user_reserved(
+            callback.bot,
+            int(rec["tg_id"]),
+            f"✏️ <b>مشخصات بسته رزرو سرویس شما توسط مدیریت ویرایش شد:</b>\n\n"
+            f"🔹 <b>نام سرویس:</b> <code>{rec['email']}</code>\n"
+            f"📊 <b>حجم:</b> {vol_label}\n"
+            f"⏱ <b>مدت اعتبار:</b> {to_persian_digits(int(rec.get('duration_days', 0)))} روز\n"
+            f"👥 <b>سقف کاربر:</b> {to_persian_digits(int(rec.get('users_count', 1) or 1))} کاربر",
+        )
+        notify_note = (
+            " (به کاربر اطلاع داده شد)" if sent else " (ارسال پیام به کاربر ناموفق بود)"
+        )
+
+    await _clear_fsm_keep_nav(state)
+    await _render_res_item(
+        callback,
+        res_id,
+        state,
+        notice=f"✅ <b>{label} با موفقیت ویرایش شد{notify_note}.</b>",
+    )
+
+
+# ─── Instant Activate & Delete from Reserved Panel ────────────────────────────
+
+
+@router.callback_query(F.data.startswith("admin_res_act_"))
+async def admin_res_activate_ask(callback: types.CallbackQuery) -> None:
+    if not await _is_admin(callback):
+        return
+
+    res_id = int(callback.data[len("admin_res_act_") :])
+    from db.models import get_reserved_renewal_by_id
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        await callback.answer("❌ این بسته رزرو در انتظار نیست.", show_alert=True)
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⚡️ بله، همین الان فعال شود",
+                    callback_data=f"admin_res_actgo_{res_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data=f"admin_res_item_{res_id}",
+                )
+            ],
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        f"⚡️ <b>فعال‌سازی آنی بسته رزرو</b>\n\n"
+        f"آیا مطمئن هستید که بسته رزرو سرویس <code>{rec['email']}</code> همین الان فعال شود؟\n"
+        "<i>(با این کار ترافیک فعلی صفر، مشخصات جدید روی سرویس اعمال و پیام فعال‌سازی به کاربر ارسال می‌شود.)</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_res_actgo_"))
+async def admin_res_activate_go(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    res_id = int(callback.data[len("admin_res_actgo_") :])
+    from db.models import get_reserved_renewal_by_id
+    from services.renewal_service import activate_reserved_renewal
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        await callback.answer("❌ بسته رزرو در انتظار یافت نشد.", show_alert=True)
+        return
+
+    email = rec["email"]
+    u_id = int(rec["tg_id"])
+    res = await activate_reserved_renewal(
+        email, force=True, bot=callback.bot, activation_type="admin"
+    )
+    if res.get("status") == "activated":
+        notice = f"✅ <b>بسته رزرو «{email}» با موفقیت فعال شد.</b>"
+    elif res.get("status") == "no_reserved":
+        notice = "❌ <b>بسته رزروی برای این اشتراک یافت نشد.</b>"
+    else:
+        notice = f"❌ <b>خطا در فعال‌سازی:</b> {res.get('msg', 'ناشناخته')}"
+
+    await _render_user_res_panel(callback, u_id, state, page=0, notice=notice)
+
+
+@router.callback_query(F.data.startswith("admin_res_del_"))
+async def admin_res_delete_ask(callback: types.CallbackQuery) -> None:
+    if not await _is_admin(callback):
+        return
+
+    res_id = int(callback.data[len("admin_res_del_") :])
+    from db.models import get_reserved_renewal_by_id
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        await callback.answer("❌ این بسته رزرو در انتظار نیست.", show_alert=True)
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف (بی‌صدا)",
+                    callback_data=f"admin_res_delgo_{res_id}_0",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗑 حذف + 📩 اطلاع به کاربر",
+                    callback_data=f"admin_res_delgo_{res_id}_1",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف",
+                    callback_data=f"admin_res_item_{res_id}",
+                )
+            ],
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        f"🗑 <b>حذف بسته رزرو</b>\n\n"
+        f"آیا از حذف بسته رزرو سرویس <code>{rec['email']}</code> مطمئن هستید؟\n"
+        "<i>(این کار موجودی کیف پول کاربر را تغییر نمی‌دهد.)</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_res_delgo_"))
+async def admin_res_delete_go(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    payload = callback.data[len("admin_res_delgo_") :]
+    id_str, notify_flag = payload.split("_", 1)
+    res_id = int(id_str)
+    notify = notify_flag == "1"
+
+    from db.models import delete_reserved_renewal, get_reserved_renewal_by_id
+
+    rec = await get_reserved_renewal_by_id(res_id)
+    if not rec or rec.get("status") != "pending":
+        await callback.answer("❌ بسته رزرو در انتظار یافت نشد.", show_alert=True)
+        return
+
+    email = rec["email"]
+    u_id = int(rec["tg_id"])
+    await delete_reserved_renewal(email)
+
+    notify_note = ""
+    if notify:
+        sent = await _notify_user_reserved(
+            callback.bot,
+            u_id,
+            f"🗑 <b>بسته تمدید رزرو سرویس <code>{email}</code> توسط مدیریت لغو و حذف شد.</b>\n"
+            "در صورت نیاز می‌توانید با پشتیبانی در ارتباط باشید.",
+        )
+        notify_note = (
+            " (به کاربر اطلاع داده شد)" if sent else " (ارسال پیام به کاربر ناموفق بود)"
+        )
+
+    await _render_user_res_panel(
+        callback,
+        u_id,
+        state,
+        page=0,
+        notice=f"🗑 <b>بسته رزرو «{email}» حذف شد{notify_note}.</b>",
+    )
 
 
 @router.callback_query(F.data.startswith("admin_user_subs_"))
