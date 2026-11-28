@@ -106,6 +106,7 @@ async def list_clients() -> list[dict[str, Any]]:
                     "inboundIds": item.get("inboundIds", []),
                     "up": up,
                     "down": down,
+                    "createdAt": item.get("createdAt", 0) or 0,
                 }
                 result.append(client_obj)
     except Exception as e:

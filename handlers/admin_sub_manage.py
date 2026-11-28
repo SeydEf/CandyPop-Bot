@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from typing import Any
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
@@ -70,6 +71,7 @@ class AdminSearchStates(StatesGroup):
     waiting_res_dur = State()
     waiting_res_users = State()
     waiting_res_edit_val = State()
+    waiting_cdate_range = State()
 
 
 @router.message(Command("search", "find", "find_user"))
@@ -414,6 +416,8 @@ async def _render_sub_dashboard(
             back_btn_text = "🔙 بازگشت به اشتراک‌های کاربر"
         elif "admin_online_clients_" in sub_back:
             back_btn_text = "🔙 بازگشت به لیست آنلاین‌ها"
+        elif sub_back.startswith("admin_cdate_page_"):
+            back_btn_text = "🔙 بازگشت به لیست تاریخ ساخت"
         else:
             back_btn_text = "🔙 بازگشت به مدیریت کاربر"
         back_btn_callback = sub_back
@@ -694,6 +698,8 @@ async def _clear_fsm_keep_nav(state: FSMContext) -> None:
         "current_list_page",
         "last_search_query",
         "manage_user_id",
+        "cdate_filter",
+        "cdate_emails",
     )
     nav_data = {k: data[k] for k in nav_keys if k in data}
     await state.clear()
@@ -1723,6 +1729,15 @@ async def admin_sub_delete(callback: types.CallbackQuery, state: FSMContext) -> 
                 logger.warning(
                     "Failed to return to admin online clients list after delete: %s", e
                 )
+        elif sub_back.startswith("admin_cdate_page_"):
+            try:
+                page = int(sub_back[len("admin_cdate_page_") :])
+            except ValueError:
+                page = 0
+            await _render_clients_by_date_list(
+                callback, state, page=page, notice=notice_text
+            )
+            return
 
     if manage_user_id:
         await _render_user_dashboard(
@@ -4032,3 +4047,519 @@ async def admin_user_subsel(callback: types.CallbackQuery, state: FSMContext) ->
         manage_user_id=tg_id,
     )
     await _render_sub_dashboard(callback, email, state)
+
+
+# ─── Clients By Creation Date ────────────────────────────────────────────────
+
+_CDATE_PRESETS: dict[str, tuple[int, str]] = {
+    "1h": (3_600_000, "۱ ساعت اخیر"),
+    "6h": (6 * 3_600_000, "۶ ساعت اخیر"),
+    "24h": (24 * 3_600_000, "۲۴ ساعت اخیر"),
+    "7d": (7 * 86_400_000, "۷ روز اخیر"),
+    "30d": (30 * 86_400_000, "۳۰ روز اخیر"),
+    "all": (0, "همه کانفیگ‌ها"),
+}
+
+_CDATE_KIND_CYCLE = ("all", "main", "test")
+_CDATE_KIND_LABELS = {
+    "all": "همه",
+    "main": "فقط اصلی",
+    "test": "فقط تست",
+}
+
+
+def _to_ms(raw: Any) -> int:
+    try:
+        val = int(float(raw or 0))
+    except (TypeError, ValueError):
+        return 0
+    if val <= 0:
+        return 0
+    return val * 1000 if val < 100_000_000_000 else val
+
+
+def _parse_cdate_input(raw: str | None) -> dict[str, Any] | None:
+    import re
+    from datetime import timedelta
+
+    import jdatetime
+
+    if not raw or not raw.strip():
+        return None
+
+    txt = persian_to_english_digits(raw.strip())
+    tz_iran = timezone(timedelta(hours=3, minutes=30))
+
+    date_matches = re.findall(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}", txt)
+    if date_matches:
+        if len(date_matches) > 2:
+            return None
+        parsed_dates: list[jdatetime.datetime] = []
+        for dm in date_matches:
+            parts = re.split(r"[/-]", dm)
+            try:
+                y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                parsed_dates.append(
+                    jdatetime.datetime(y, m, d, 0, 0, 0, tzinfo=tz_iran)
+                )
+            except ValueError:
+                return None
+
+        if len(parsed_dates) == 1:
+            d1 = d2 = parsed_dates[0]
+            label = f"تاریخ {to_persian_digits(d1.strftime('%Y/%m/%d'))}"
+        else:
+            d1, d2 = sorted(parsed_dates)
+            label = (
+                f"از {to_persian_digits(d1.strftime('%Y/%m/%d'))} "
+                f"تا {to_persian_digits(d2.strftime('%Y/%m/%d'))}"
+            )
+
+        start_ms = int(d1.togregorian().timestamp() * 1000)
+        end_dt = d2 + jdatetime.timedelta(days=1)
+        end_ms = int(end_dt.togregorian().timestamp() * 1000) - 1
+        return {"rel_ms": 0, "start_ms": start_ms, "end_ms": end_ms, "label": label}
+
+    m = re.match(
+        r"^(\d+(?:\.\d+)?)\s*(m|min|دقیقه|h|hr|ساعت|d|day|روز|w|week|هفته)?$",
+        txt.lower(),
+    )
+    if not m:
+        return None
+
+    val = float(m.group(1))
+    unit = m.group(2) or "h"
+    if val <= 0:
+        return None
+
+    val_str = to_persian_digits(int(val) if val.is_integer() else val)
+    if unit in ("m", "min", "دقیقه"):
+        rel_ms = int(val * 60_000)
+        label = f"{val_str} دقیقه اخیر"
+    elif unit in ("d", "day", "روز"):
+        rel_ms = int(val * 86_400_000)
+        label = f"{val_str} روز اخیر"
+    elif unit in ("w", "week", "هفته"):
+        rel_ms = int(val * 7 * 86_400_000)
+        label = f"{val_str} هفته اخیر"
+    else:
+        rel_ms = int(val * 3_600_000)
+        label = f"{val_str} ساعت اخیر"
+
+    return {"rel_ms": rel_ms, "start_ms": 0, "end_ms": 0, "label": label}
+
+
+def _filter_and_sort_clients(
+    clients: list[dict[str, Any]],
+    flt: dict[str, Any],
+    now_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    rel_ms = int(flt.get("rel_ms") or 0)
+    start_ms = int(flt.get("start_ms") or 0)
+    end_ms = int(flt.get("end_ms") or 0)
+    kind = flt.get("kind", "all")
+    sort_desc = flt.get("sort", "desc") == "desc"
+
+    if rel_ms > 0:
+        start_ms = now_ms - rel_ms
+        end_ms = now_ms
+
+    has_window = start_ms > 0 or end_ms > 0
+    matched: list[tuple[int, int, dict[str, Any]]] = []
+    for c in clients:
+        email = c.get("email", "")
+        if not email:
+            continue
+        is_test = email.endswith("_test")
+        if kind == "test" and not is_test:
+            continue
+        if kind == "main" and is_test:
+            continue
+
+        c_ms = _to_ms(c.get("createdAt"))
+        if has_window:
+            if c_ms <= 0:
+                continue
+            if start_ms > 0 and c_ms < start_ms:
+                continue
+            if end_ms > 0 and c_ms > end_ms:
+                continue
+
+        matched.append((c_ms, int(c.get("id") or 0), c))
+
+    matched.sort(key=lambda item: (item[0], item[1]), reverse=sort_desc)
+    return [item[2] for item in matched]
+
+
+async def _render_clients_by_date_list(
+    event: types.CallbackQuery | types.Message,
+    state: FSMContext,
+    page: int = 0,
+    notice: str = "",
+) -> None:
+    import math
+
+    data = await state.get_data()
+    flt = data.get("cdate_filter") or {
+        "rel_ms": 0,
+        "start_ms": 0,
+        "end_ms": 0,
+        "label": "همه کانفیگ‌ها",
+        "sort": "desc",
+        "kind": "all",
+    }
+
+    clients = await xui_api.list_clients()
+    filtered = _filter_and_sort_clients(clients, flt)
+
+    page_size = 6
+    total = len(filtered)
+    total_pages = max(1, math.ceil(total / page_size))
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * page_size
+    page_items = filtered[start_idx : start_idx + page_size]
+
+    await state.update_data(
+        cdate_filter=flt,
+        cdate_emails=[c.get("email", "") for c in page_items],
+        sub_back_callback=f"admin_cdate_page_{page}",
+        manage_user_id=None,
+    )
+
+    sort_dir = flt.get("sort", "desc")
+    sort_label = "جدیدترین اول" if sort_dir == "desc" else "قدیمی‌ترین اول"
+    kind_key = flt.get("kind", "all")
+    kind_label = _CDATE_KIND_LABELS.get(kind_key, "همه")
+
+    lines: list[str] = []
+    if notice:
+        lines.append(f"{notice}\n")
+    lines.append(
+        f"📅 <b>کانفیگ‌ها بر اساس تاریخ ساخت</b>\n"
+        f"🕒 بازه: <b>{flt.get('label', 'همه')}</b> | 🔘 نوع: <b>{kind_label}</b>\n"
+        f"🔢 تعداد: <b>{to_persian_digits(total)}</b> کانفیگ | ترتیب: <b>{sort_label}</b>\n"
+    )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if not page_items:
+        lines.append("<i>هیچ کانفیگی در این بازه زمانی یافت نشد.</i>")
+    else:
+        for idx, c in enumerate(page_items):
+            num = start_idx + idx + 1
+            email = c.get("email", "")
+            c_ms = _to_ms(c.get("createdAt"))
+            c_str = format_datetime(c_ms) if c_ms > 0 else "نامشخص"
+            total_b = c.get("totalGB", 0) or 0
+            used_b = (c.get("up", 0) or 0) + (c.get("down", 0) or 0)
+            vol_str = format_size_persian_gb(total_b) if total_b > 0 else "نامحدود"
+            used_str = format_detailed_traffic(used_b)
+            tg_id = c.get("tgId", 0) or 0
+
+            badges = []
+            if email.endswith("_test"):
+                badges.append("🎁 تست")
+            if not c.get("enable", True):
+                badges.append("🔴 غیرفعال")
+            badge_str = f" ({' | '.join(badges)})" if badges else ""
+            tg_str = f" | 👤 <code>{tg_id}</code>" if tg_id else ""
+
+            lines.append(
+                f"<b>{to_persian_digits(num)}.</b> <code>{email}</code>{badge_str}\n"
+                f"   📅 ساخت: <code>{c_str}</code>{tg_str}\n"
+                f"   📊 مصرف: <b>{used_str}</b> از <b>{vol_str}</b>\n"
+            )
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"⚙️ مدیریت: {email}",
+                        callback_data=f"admin_cdate_sub_{page}_{idx}",
+                    )
+                ]
+            )
+
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="◀️ قبلی", callback_data=f"admin_cdate_page_{page - 1}"
+            )
+        )
+    if total_pages > 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)}",
+                callback_data="admin_users_list_noop",
+            )
+        )
+    if page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="بعدی ▶️", callback_data=f"admin_cdate_page_{page + 1}"
+            )
+        )
+    if nav_row:
+        rows.append(nav_row)
+
+    sort_btn_text = "⬇️ ترتیب: جدیدترین" if sort_dir == "desc" else "⬆️ ترتیب: قدیمی‌ترین"
+    rows.append(
+        [
+            InlineKeyboardButton(text=sort_btn_text, callback_data="admin_cdate_sort"),
+            InlineKeyboardButton(
+                text=f"🔘 نوع: {kind_label}", callback_data="admin_cdate_kind"
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔄 بروزرسانی", callback_data=f"admin_cdate_page_{page}"
+            ),
+            InlineKeyboardButton(
+                text="🕒 تغییر بازه", callback_data="admin_clients_by_date_menu"
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 بازگشت به مدیریت کاربران",
+                callback_data="admin_sub_users_menu",
+            )
+        ]
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+    text = "\n".join(lines)
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_text(event.message, text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_clients_by_date_menu")
+async def admin_clients_by_date_menu(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    await _clear_fsm_keep_nav(state)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🕒 ۱ ساعت اخیر", callback_data="admin_cdate_preset_1h"
+                ),
+                InlineKeyboardButton(
+                    text="🕕 ۶ ساعت اخیر", callback_data="admin_cdate_preset_6h"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📅 ۲۴ ساعت اخیر", callback_data="admin_cdate_preset_24h"
+                ),
+                InlineKeyboardButton(
+                    text="📆 ۷ روز اخیر", callback_data="admin_cdate_preset_7d"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🗓 ۳۰ روز اخیر", callback_data="admin_cdate_preset_30d"
+                ),
+                InlineKeyboardButton(
+                    text="📋 همه کانفیگ‌ها", callback_data="admin_cdate_preset_all"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ وارد کردن دستی بازه", callback_data="admin_cdate_manual"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت به مدیریت کاربران",
+                    callback_data="admin_sub_users_menu",
+                )
+            ],
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "📅 <b>مشاهده و مرتب‌سازی کانفیگ‌ها بر اساس تاریخ ساخت</b>\n\n"
+        "یکی از بازه‌های آماده زیر را انتخاب کنید یا بازه دلخواهتان را دستی وارد کنید:",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_cdate_preset_"))
+async def admin_cdate_preset(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+
+    key = callback.data[len("admin_cdate_preset_") :]
+    rel_ms, label = _CDATE_PRESETS.get(key, (0, "همه کانفیگ‌ها"))
+    await state.update_data(
+        cdate_filter={
+            "rel_ms": rel_ms,
+            "start_ms": 0,
+            "end_ms": 0,
+            "label": label,
+            "sort": "desc",
+            "kind": "all",
+        }
+    )
+    await _render_clients_by_date_list(callback, state, page=0)
+
+
+@router.callback_query(F.data == "admin_cdate_manual")
+async def admin_cdate_manual_prompt(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+
+    await state.set_state(AdminSearchStates.waiting_cdate_range)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ انصراف و بازگشت",
+                    callback_data="admin_clients_by_date_menu",
+                )
+            ]
+        ]
+    )
+    await safe_edit_text(
+        callback.message,
+        "✏️ <b>ورود دستی بازه تاریخ ساخت</b>\n\n"
+        "می‌توانید به یکی از روش‌های زیر بازه را بفرستید:\n"
+        "• <b>مدت اخیر:</b> <code>30m</code> (دقیقه)، <code>12h</code> یا <code>12</code> (ساعت)، <code>5d</code> (روز)، <code>2w</code> (هفته)\n"
+        "• <b>یک تاریخ شمسی:</b> <code>1405/09/08</code>\n"
+        "• <b>بازه دو تاریخ شمسی:</b> <code>1405/09/01 تا 1405/09/08</code> یا <code>1405/09/01-1405/09/08</code>\n\n"
+        "💡 <i>برای انصراف /cancel بفرستید یا دکمه زیر را بزنید.</i>",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(AdminSearchStates.waiting_cdate_range, F.text)
+async def admin_cdate_manual_save(message: types.Message, state: FSMContext) -> None:
+    if message.text and message.text.strip() == "/cancel":
+        await _clear_fsm_keep_nav(state)
+        await _render_clients_by_date_list(
+            message, state, page=0, notice="❌ ورود دستی بازه لغو شد."
+        )
+        return
+
+    parsed = _parse_cdate_input(message.text)
+    if not parsed:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="❌ انصراف", callback_data="admin_clients_by_date_menu"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            "❌ فرمت بازه معتبر نیست.\n"
+            "نمونه معتبر: <code>12h</code>، <code>5d</code>، <code>1405/09/08</code> یا <code>1405/09/01-1405/09/08</code>",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+        return
+
+    await state.set_state(None)
+    await state.update_data(
+        cdate_filter={
+            **parsed,
+            "sort": "desc",
+            "kind": "all",
+        }
+    )
+    await _render_clients_by_date_list(message, state, page=0)
+
+
+@router.callback_query(F.data.startswith("admin_cdate_page_"))
+async def admin_cdate_page(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not await _is_admin(callback):
+        return
+    try:
+        page = int(callback.data[len("admin_cdate_page_") :])
+    except ValueError:
+        page = 0
+    await _render_clients_by_date_list(callback, state, page=page)
+
+
+@router.callback_query(F.data == "admin_cdate_sort")
+async def admin_cdate_sort_toggle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    data = await state.get_data()
+    flt = dict(
+        data.get("cdate_filter")
+        or {"label": "همه کانفیگ‌ها", "sort": "desc", "kind": "all"}
+    )
+    flt["sort"] = "asc" if flt.get("sort", "desc") == "desc" else "desc"
+    await state.update_data(cdate_filter=flt)
+    await _render_clients_by_date_list(callback, state, page=0)
+
+
+@router.callback_query(F.data == "admin_cdate_kind")
+async def admin_cdate_kind_cycle(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    data = await state.get_data()
+    flt = dict(
+        data.get("cdate_filter")
+        or {"label": "همه کانفیگ‌ها", "sort": "desc", "kind": "all"}
+    )
+    curr = flt.get("kind", "all")
+    next_idx = (
+        (_CDATE_KIND_CYCLE.index(curr) + 1) % len(_CDATE_KIND_CYCLE)
+        if curr in _CDATE_KIND_CYCLE
+        else 0
+    )
+    flt["kind"] = _CDATE_KIND_CYCLE[next_idx]
+    await state.update_data(cdate_filter=flt)
+    await _render_clients_by_date_list(callback, state, page=0)
+
+
+@router.callback_query(F.data.startswith("admin_cdate_sub_"))
+async def admin_cdate_sub_select(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
+    if not await _is_admin(callback):
+        return
+    parts = callback.data.split("_")
+    try:
+        page = int(parts[3])
+        idx = int(parts[4])
+    except (IndexError, ValueError):
+        await callback.answer("خطای انتخاب اشتراک.", show_alert=True)
+        return
+
+    data = await state.get_data()
+    emails = data.get("cdate_emails") or []
+    if not (0 <= idx < len(emails)) or not emails[idx]:
+        await callback.answer(
+            "❌ لیست قدیمی شده است؛ لطفاً بروزرسانی کنید.", show_alert=True
+        )
+        return
+
+    await state.update_data(
+        sub_back_callback=f"admin_cdate_page_{page}",
+        manage_user_id=None,
+    )
+    await _render_sub_dashboard(callback, emails[idx], state)

@@ -315,6 +315,12 @@ def _build_users_submenu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text="📅 کانفیگ‌ها بر اساس تاریخ ساخت",
+                    callback_data="admin_clients_by_date_menu",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="👥 مدیریت گروه‌های مشتری (Groups)",
                     callback_data="admin_groups_menu",
                 ),
